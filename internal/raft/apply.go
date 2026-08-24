@@ -59,6 +59,7 @@ func (n *Node) kickApplyLocked() {
 		return
 	}
 	n.applying = true
+	n.bgWG.Add(1)
 	go n.applyLoop()
 }
 
@@ -69,6 +70,7 @@ func (n *Node) kickApplyLocked() {
 // every current and future waiter for an index beyond lastApplied
 // receives that error. A committed entry is never skipped.
 func (n *Node) applyLoop() {
+	defer n.bgWG.Done()
 	for {
 		n.mu.Lock()
 		if n.applyErr != nil || n.lastApplied >= n.commitIndex {
