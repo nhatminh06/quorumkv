@@ -18,26 +18,27 @@ KV State Machine
 
 ## Current milestone
 
-Single-node deterministic KV state machine, a persistent append-only
-write-ahead log (WAL) with crash-safe replay, a bounded TCP transport for
-exchanging framed messages between nodes, and persistent Raft term/vote
-state with RequestVote-based leader election for an empty-log cluster.
-See [docs/wal.md](docs/wal.md), [docs/transport.md](docs/transport.md),
-and [docs/raft-election.md](docs/raft-election.md).
+Raft leader election, heartbeats, persistent replicated logs, conflict
+repair, and majority commit advancement are implemented, alongside the
+single-node KV state machine, its application WAL, and the bounded TCP
+transport from earlier milestones. See [docs/wal.md](docs/wal.md),
+[docs/transport.md](docs/transport.md),
+[docs/raft-election.md](docs/raft-election.md), and
+[docs/raft-log-replication.md](docs/raft-log-replication.md).
 
-Election alone does not make a stable or usable distributed system yet:
-there is no AppendEntries or heartbeats (an elected leader has no way to
-stay leader), no Raft log or log replication, no commit index, no
-client-facing writes through Raft, no snapshots, and no consistency
-guarantee of any kind.
+Committed entries are not yet exposed through a distributed client API,
+and are not yet applied to the KV state machine — there is no
+`lastApplied` pipeline connecting Raft's `commitIndex` to `internal/kv`
+yet. There is no snapshotting, no membership changes, and no
+linearizability claim.
 
 ## Layout
 
 ```text
 internal/kv/        command representation and the deterministic KV state machine
-internal/wal/       append-only write-ahead log
+internal/wal/       append-only write-ahead log (application command history, not the Raft log)
 internal/transport/ bounded message framing and TCP request/response transport
-internal/raft/      persistent Raft term/vote state and RequestVote leader election
+internal/raft/      persistent Raft state, log replication, RequestVote/AppendEntries, leader election
 docs/                format and design notes
 ```
 

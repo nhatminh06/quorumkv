@@ -1,9 +1,12 @@
 # Raft leader election
 
 `internal/raft` implements persistent Raft term/vote state and
-RequestVote-based leader election for an empty-log cluster. It does not
-implement AppendEntries, heartbeats, or log replication — see
-"Known limitations" below.
+RequestVote-based leader election. Since Milestone 4 it uses each node's
+real replicated Raft log for vote freshness, and leader heartbeats
+(AppendEntries with no entries) now keep an elected leader stable — see
+[docs/raft-log-replication.md](raft-log-replication.md) for the log,
+AppendEntries, and commit model. "Known limitations" below still applies
+to what this document alone covers.
 
 ## Persistent vs. volatile state
 
@@ -68,11 +71,13 @@ neither RPC encoding duplicates that checksum. All integers big-endian.
 term (8B) | candidateID (8B) | lastLogIndex (8B) | lastLogTerm (8B)
 ```
 
-`lastLogIndex`/`lastLogTerm` are part of the RPC now, ahead of log
-replication, so the wire format won't need an incompatible change later.
-Until log replication exists every node's log is treated as empty:
-`lastLogIndex=0, lastLogTerm=0` is the fixed convention used both when a
-node issues RequestVote and when it evaluates one it receives.
+`lastLogIndex`/`lastLogTerm` were added to the RPC ahead of log
+replication so the wire format wouldn't need an incompatible change
+later. Since Milestone 4, both are populated from each node's actual
+`Log` (`LastIndex`/`LastTerm`) rather than a hardcoded `(0, 0)` — a fresh
+node with an empty log still naturally produces `(0, 0)` via the log's
+own sentinel convention (see docs/raft-log-replication.md), so behavior
+for an empty-log cluster is unchanged.
 
 `RequestVoteResponse` (9 bytes):
 
@@ -146,21 +151,21 @@ directly rather than going through the timer at all.
 
 `Node.Run` drives the production timer loop: if the timeout fires and the
 node isn't already Leader, it starts an election. The timer restarts
-whenever the timeout fires, an election attempt finishes, or a vote is
-granted (`resetTimer`, called from `HandleRequestVote`) — granting a vote
-is the only reset signal that exists this milestone, since there is no
-AppendEntries heartbeat yet.
+whenever the timeout fires, an election attempt finishes, or `resetTimer`
+is called. Since Milestone 4, `resetTimer` fires on two signals: granting
+a vote (`HandleRequestVote`), and any valid current-term (or higher-term)
+AppendEntries contact from a leader (`HandleAppendEntries`) — including a
+heartbeat. That second signal is now the primary mechanism keeping a
+healthy cluster's followers from starting unnecessary elections; see
+docs/raft-log-replication.md for the heartbeat interval and exact reset
+rules.
 
 ## Known limitations
 
-- No AppendEntries, no heartbeats: a node elected Leader has no way to
-  keep followers from independently starting new elections. This
-  milestone proves a leader *can* be elected, not that leadership stays
-  stable.
-- No Raft log, no log replication, no commit index. `lastLogIndex`/
-  `lastLogTerm` are fixed at the empty-log convention (0, 0) everywhere.
-- No client-facing writes through Raft.
+- No client-facing writes through Raft yet — only internal code can
+  `Propose`.
 - No snapshots, no membership changes.
 - `internal/kv` and `internal/wal` are untouched — the Milestone 1 WAL is
-  a state-machine command log, not the future replicated Raft log; they
-  are separate concerns by design.
+  a state-machine command log, not the Raft log; they are separate
+  concerns by design. See docs/raft-log-replication.md for further
+  limitations specific to log replication and commit.
