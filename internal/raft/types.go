@@ -20,6 +20,15 @@ type LogIndex uint64
 // addressed by.
 type NodeID uint64
 
+// ReadContext correlates a ReadIndex quorum probe (an AppendEntries with
+// no entries) with its responses. 0 is reserved for ordinary
+// replication/heartbeat traffic that isn't a read probe; a probe always
+// uses a non-zero value. It exists purely for in-process correlation
+// during one read operation — never persisted (a restart may reuse
+// low values; see docs/read-index.md) and never used as a client
+// request/dedup identifier.
+type ReadContext uint64
+
 // Role is a node's current, volatile Raft role. Role is never persisted:
 // a restarted node always starts as Follower, using whatever term/vote it
 // last persisted.
