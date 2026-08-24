@@ -13,9 +13,17 @@ There is no TLS and no authentication in this protocol.
 
 ## Request format
 
+Since Milestone 9 (protocol version 2 — an incompatible bump, not an
+additive field; a Milestone 1-8 client cannot talk to this server and
+that compatibility was never promised), a PUT/DELETE carries a request
+identity for deduplication; GET carries none — see
+[docs/request-dedup.md](request-dedup.md) for the full design.
+
 ```
-version      1B   = 1
+version      1B   = 2
 operation    1B   = PUT (1) | GET (2) | DELETE (3)
+clientID     16B  — non-zero for PUT/DELETE, all-zero for GET
+sequence     8B   — non-zero for PUT/DELETE, zero for GET
 keyLength    4B
 valueLength  4B
 key          N bytes
@@ -23,13 +31,16 @@ value        M bytes
 ```
 
 Big-endian. GET and DELETE must not carry a value (`valueLength` must be
-0). Bounds: `MaxKeySize` = 64 KiB, `MaxValueSize` = 200 KiB, validated
-before any allocation based on the declared lengths.
+0). A PUT/DELETE with a zero `clientID` or zero `sequence`, or a GET
+carrying either non-zero, is rejected as malformed — one uniform rule
+rather than treating the identity fields as ambiguously optional. Bounds:
+`MaxKeySize` = 64 KiB, `MaxValueSize` = 200 KiB, validated before any
+allocation based on the declared lengths.
 
 ## Response format
 
 ```
-version            1B   = 1
+version            1B   = 2
 status             1B
 leaderHintLength   2B
 valueLength        4B
@@ -44,12 +55,16 @@ for a successful GET.
 ## Status codes
 
 ```
-OK               — request succeeded
-NOT_FOUND        — GET found no value for the key
-NOT_LEADER       — this node is not the leader; see LeaderHint
-TIMEOUT          — this node gave up waiting for commit+apply; outcome uncertain
-INTERNAL_ERROR   — an unexpected local failure
-BAD_REQUEST      — the request was malformed/oversized before reaching Raft
+OK                 — request succeeded
+NOT_FOUND          — GET found no value for the key
+NOT_LEADER         — this node is not the leader; see LeaderHint
+TIMEOUT            — this node gave up waiting for commit+apply; outcome uncertain
+INTERNAL_ERROR     — an unexpected local failure
+BAD_REQUEST        — the request was malformed/oversized before reaching Raft
+STALE_REQUEST      — (Milestone 9) a PUT/DELETE's Sequence did not match this
+                      ClientID's expected next sequence; terminal, do not retry
+REQUEST_CONFLICT   — (Milestone 9) the same (ClientID, Sequence) was already
+                      used for a different operation; terminal, do not retry
 ```
 
 Internal Go error strings are never sent over the wire — only this fixed
@@ -60,25 +75,35 @@ set of codes.
 ### PUT / DELETE
 
 ```text
-decode request
+decode + validate request identity
   ↓
-encode kv.Command
+in-flight coalescing check / replicated dedup lookup (see
+  docs/request-dedup.md) — a recognized duplicate/stale/conflicting
+  request short-circuits here, never reaching Propose
+  ↓
+encode kv.Command (version 2, carrying ClientID/Sequence)
   ↓
 Propose (append to leader's local log, persist, start replicating)
   ↓
 WaitApplied (block until this exact entry is committed AND applied)
   ↓
-respond OK
+respond OK / STALE_REQUEST / REQUEST_CONFLICT per the real apply outcome
 ```
 
 `OK` for a PUT/DELETE means: **the entry was committed by Raft and
 applied to the leader's KV state machine** — never merely appended
 locally, and never merely replicated to a majority without also being
 applied. Deleting a key that doesn't exist is a deterministic no-op and
-still returns `OK` (matching `kv.StateMachine`'s existing semantics).
+still returns `OK` (matching `kv.StateMachine`'s existing semantics). As
+of Milestone 9, `OK` also covers a *recognized retry* of an
+already-applied request (the write did not happen again — see
+[docs/request-dedup.md](request-dedup.md) for exactly what "at most once"
+means here).
 
 A follower rejects PUT/DELETE (and GET) with `NOT_LEADER` before ever
-touching Raft — it never proposes on a client's behalf.
+touching Raft — it never proposes on a client's behalf, and never answers
+a write from local state as if authoritative even if it happens to
+already have that request applied.
 
 ### GET
 
@@ -136,15 +161,23 @@ after the first request.
 
 A `TIMEOUT` status or a transport-level failure (connection reset, EOF,
 context deadline) means **the client did not observe completion** — it
-does *not* mean the command was never committed. Without request
-deduplication (deliberately out of scope this milestone), the client
-never automatically retries a write after either kind of failure: a
-blind retry could duplicate a logical operation once commands stop being
-naturally idempotent. `internal/client` returns the failure to the
-caller instead of guessing.
+does *not* mean the command was never committed.
 
-PUT and DELETE happen to be idempotent for identical arguments today, but
-the protocol itself makes no exactly-once promise.
+As of Milestone 9, `internal/client.Client` safely retries a PUT/DELETE
+after either kind of failure, using the exact same request identity on
+every attempt, bounded by the caller's `ctx` — see
+[docs/request-dedup.md](request-dedup.md) for the full mechanism and why
+this is now safe (it was deliberately out of scope, and prohibited,
+through Milestone 8). `REQUEST_CONFLICT` and `STALE_REQUEST` are
+terminal and never retried: they mean this request identity was
+misused or the client's session state disagrees with the server's, not
+that the outcome is ambiguous.
+
+PUT and DELETE happen to be idempotent for identical arguments (same key,
+same value) independent of the dedup mechanism, but the protocol's actual
+at-most-once guarantee comes from request identity, not merely from PUT/
+DELETE's shape — see [docs/request-dedup.md](request-dedup.md)'s
+Limitations section for exactly what is and is not promised.
 
 ## Security limitation
 

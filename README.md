@@ -18,22 +18,29 @@ KV State Machine
 
 ## Current milestone
 
-QuorumKV now uses a ReadIndex-style quorum confirmation before serving
-GET, eliminating the previously documented stale-read path on an
-isolated old leader: a leader must prove it holds a current-term
-committed entry (appending an internal no-op barrier first if needed)
-and confirm, by contacting a quorum, that it is still recognized as
-leader before reading local state. This was proven with a real
-three-node cluster over real TCP: a leader isolated from the majority
-while a replacement is elected and commits a different write can no
-longer return the stale value on a direct GET — it gets `TIMEOUT` or
-`NOT_LEADER`, never a stale `OK` — while the majority-side leader serves
-the current value normally. See [docs/read-index.md](docs/read-index.md)
-for the mechanism, safety argument, and full test list.
+QuorumKV now gives PUT/DELETE a stable request identity (`ClientID` +
+a monotonic per-client sequence number) so an ambiguous write — a
+transport failure, a server-side `TIMEOUT`, or a `NOT_LEADER` redirect —
+can be safely retried: the replicated KV state machine deduplicates a
+retried request and applies its effect at most once, even across a
+leader failover. This closes Milestone 5-8's prohibition on write
+retries. Proven with a real three-node cluster over real TCP: a leader
+commits and applies a write, its response is lost, the leader crashes
+before the client can retry against it, a new leader is elected, and the
+client's retry — recognized purely from the new leader's own replicated
+dedup state, never a leader-local cache — returns success without a
+second mutation; the same holds when the request's original log entry
+has been compacted away and the new leader only ever received it via a
+real `InstallSnapshot` transfer. See
+[docs/request-dedup.md](docs/request-dedup.md) for the mechanism, the
+exact-next-sequence policy, and the full test list.
 
-PUT/DELETE remain commit-and-apply acknowledged, unchanged by this
-milestone. GET now waits for a current-term quorum-confirmed read index
-and local application through that index before answering.
+GET is unaffected: it carries no request identity and continues to use
+ReadIndex-style quorum confirmation
+([docs/read-index.md](docs/read-index.md)), eliminating the stale-read
+path on an isolated old leader — a leader must prove a current-term
+committed entry and confirm, by contacting a quorum, that it is still
+recognized as leader before reading local state.
 
 This builds on: bounded Raft log growth via snapshots and chunked
 `InstallSnapshot` catch-up ([docs/snapshots.md](docs/snapshots.md));
@@ -48,26 +55,34 @@ election/log replication/heartbeats
 [docs/raft-log-replication.md](docs/raft-log-replication.md)), plus
 [docs/wal.md](docs/wal.md) and [docs/transport.md](docs/transport.md).
 
-QuorumKV implements quorum-confirmed linearizable GET within its current
-static-membership Raft model, proven by targeted deterministic tests —
-not a formally verified linearizability proof and not Byzantine fault
-tolerant. Every GET pays for a quorum round trip (no lease reads, no
-follower reads, no clock assumptions). Snapshotting is caller-triggered
-only (no automatic threshold/schedule policy, no client-facing snapshot
-API, no distributed snapshot coordination between nodes); this is not a
-general-purpose storage engine. There is no membership-change support, no
-request deduplication, and no exactly-once write claim.
+The correct claim after verification: **replicated request identity
+provides at-most-once state-machine effects for retried PUT/DELETE
+operations that reuse the same ClientID and sequence number** — not
+exactly-once networking, delivery, or execution under arbitrary client
+misuse (the transport remains at-most/unreliable request-response), and
+not a claim about GET, which was already quorum-confirmed but carries no
+request identity. The dedup table's size grows with the number of
+distinct `ClientID`s a node has ever seen (no GC/quota yet — a known
+limitation). QuorumKV implements quorum-confirmed linearizable GET within
+its current static-membership Raft model, proven by targeted
+deterministic tests — not a formally verified linearizability proof and
+not Byzantine fault tolerant. Snapshotting is caller-triggered only (no
+automatic threshold/schedule policy, no client-facing snapshot API, no
+distributed snapshot coordination between nodes); this is not a
+general-purpose storage engine. There is no membership-change support and
+no client-side session persistence across a client process restart.
 
 ## Layout
 
 ```text
-internal/kv/          command representation, codec, and the deterministic KV state machine
+internal/reqid/       client request identity types (ClientID, Sequence) shared across layers
+internal/kv/          command representation, codec, deterministic KV state machine + request dedup
 internal/wal/         append-only write-ahead log (application command history, not the Raft log)
 internal/transport/   bounded message framing and TCP request/response transport
 internal/raft/        persistent Raft state, log replication, RequestVote/AppendEntries, leader election
 internal/clientproto/ bounded binary client PUT/GET/DELETE wire protocol
 internal/service/     wires a raft.Node to a kv.StateMachine and serves the client protocol
-internal/client/      reusable leader-aware Go client
+internal/client/      reusable leader-aware Go client with safe write retry
 docs/                  format and design notes
 ```
 
