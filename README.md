@@ -18,8 +18,25 @@ KV State Machine
 
 ## Current milestone
 
-QuorumKV now gives PUT/DELETE a stable request identity (`ClientID` +
-a monotonic per-client sequence number) so an ambiguous write — a
+QuorumKV now supports changing cluster membership — adding or removing
+exactly one voter at a time — through Raft's joint-consensus protocol:
+a transition passes through a joint phase (`C_old,new`) where every
+quorum-based decision (election, log commitment, ReadIndex, the
+current-term barrier, client writes) requires a majority of the old
+configuration **and** a majority of the new one simultaneously, never a
+majority of their union. Proven over a real three-node TCP cluster: a
+brand-new node with no prior log joins past a leader whose log is
+already compacted, catching up entirely through a real `InstallSnapshot`
+transfer; it is later removed; the leader removes itself and stops
+leading once that becomes final. Also proven: a cluster that loses its
+leader mid-transition — at either of two distinct crash points — always
+finishes the transition automatically once a new leader is elected,
+never getting stuck in the joint phase. See
+[docs/membership.md](docs/membership.md) for the full protocol, the API
+(`Node.AddVoter`/`Node.RemoveVoter`), and the complete test list.
+
+This builds on QuorumKV giving PUT/DELETE a stable request identity
+(`ClientID` + a monotonic per-client sequence number) so an ambiguous write — a
 transport failure, a server-side `TIMEOUT`, or a `NOT_LEADER` redirect —
 can be safely retried: the replicated KV state machine deduplicates a
 retried request and applies its effect at most once, even across a
@@ -63,14 +80,17 @@ misuse (the transport remains at-most/unreliable request-response), and
 not a claim about GET, which was already quorum-confirmed but carries no
 request identity. The dedup table's size grows with the number of
 distinct `ClientID`s a node has ever seen (no GC/quota yet — a known
-limitation). QuorumKV implements quorum-confirmed linearizable GET within
-its current static-membership Raft model, proven by targeted
-deterministic tests — not a formally verified linearizability proof and
-not Byzantine fault tolerant. Snapshotting is caller-triggered only (no
-automatic threshold/schedule policy, no client-facing snapshot API, no
-distributed snapshot coordination between nodes); this is not a
-general-purpose storage engine. There is no membership-change support and
-no client-side session persistence across a client process restart.
+limitation). QuorumKV implements quorum-confirmed linearizable GET,
+proven by targeted deterministic tests — not a formally verified
+linearizability proof and not Byzantine fault tolerant. Snapshotting is
+caller-triggered only (no automatic threshold/schedule policy, no
+client-facing snapshot API, no distributed snapshot coordination between
+nodes); this is not a general-purpose storage engine. Membership changes
+are limited to one voter at a time, with no batched multi-node changes,
+no learner/observer promotion as a public feature, and no automatic
+rebalancing or discovery (see [docs/membership.md](docs/membership.md)).
+There is no client-side session persistence across a client process
+restart.
 
 ## Layout
 

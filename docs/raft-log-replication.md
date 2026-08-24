@@ -23,9 +23,16 @@ conflict replacement, which an application command WAL doesn't.
 ```go
 type LogEntry struct {
     Term    Term
-    Command []byte // opaque; the log never interprets it
+    Kind    EntryKind // EntryApplication (zero value) | EntryNoop | EntryConfiguration
+    Command []byte    // opaque; the log never interprets it
 }
 ```
+
+`Kind` (Milestone 10) makes an entry's meaning explicit rather than
+inferred from `Command`'s length — see
+[docs/membership.md](membership.md) §3 for why and for the log format's
+v2 -> v3 upgrade (a v1/v2 file still decodes, with `Kind` inferred
+exactly as it was inferred before this field existed).
 
 `Log` is rewritten atomically as a whole on every mutation (`Append` or
 `TruncateAndAppend`), via the same temp-file/fsync/rename/directory-fsync
@@ -42,9 +49,10 @@ Per-entry record (big-endian), concatenated after a 5-byte file header
 ```
 recordLength    4B   length of everything below
 term            8B
+kind            1B   EntryApplication(0) | EntryNoop(1) | EntryConfiguration(2)
 commandLength   4B
 command         NB
-CRC32C          4B   over term|commandLength|command
+CRC32C          4B   over term|kind|commandLength|command
 ```
 
 Limits: `maxCommandSize` = 256 KiB per entry, checked before allocation on
@@ -66,7 +74,7 @@ prevLogTerm   8B
 leaderCommit  8B
 readContext   8B  (since Milestone 8; 0 for ordinary replication/heartbeat)
 entryCount    4B
-[entries]     each: term(8B) + commandLength(4B) + command(NB)
+[entries]     each: term(8B) + kind(1B) + commandLength(4B) + command(NB)
 ```
 
 A heartbeat is exactly this with `entryCount = 0` — there is no separate
@@ -142,7 +150,12 @@ entries (`Log.TruncateAndAppend`) — the matching prefix before that point
 is never touched. If every incoming entry already matches (an idempotent
 retransmission, or a plain heartbeat with no entries), nothing is written
 to disk at all. The resulting log is persisted before `success=true` is
-returned.
+returned. Configuration entries (Milestone 10) participate in this exact
+same matching/truncation logic like any other entry — no special-casing
+— but truncation additionally triggers a full effective-membership
+rebuild, so a discarded uncommitted Configuration entry never leaves
+stale membership state behind; see [docs/membership.md](membership.md)
+§4.
 
 ## Leader replication state
 
@@ -170,6 +183,13 @@ commitIndex may advance to N only if:
   a majority (including self) has matchIndex >= N
   log[N].term == currentTerm
 ```
+
+"A majority" means `Membership.HasQuorum` (Milestone 10): a plain
+majority of the current Stable configuration outside a transition, or a
+majority of *both* Old and New simultaneously during a Joint transition
+— see [docs/membership.md](membership.md) §5. There is exactly one
+commit-quorum implementation; this rule is not weakened for any entry
+kind, including a Configuration entry itself.
 
 The `currentTerm` restriction is mandatory: an older-term entry is never
 committed by majority replication alone. It can only become committed as
@@ -259,7 +279,9 @@ compact safety ordering, and follower-side installation, is in
 
 - No AppendEntries conflict-term optimization: backtracking is simple
   `nextIndex--`, one index per failed round.
-- No membership changes; the peer set is static.
-- No quorum-confirmed linearizable reads (no ReadIndex yet) — see
-  docs/client-protocol.md's GET section.
+- Membership changes exist since Milestone 10 (see
+  [docs/membership.md](membership.md)) but are limited to one voter at a
+  time, with no batched multi-node changes.
+- No quorum-confirmed linearizable reads is no longer accurate — see
+  [docs/read-index.md](read-index.md).
 - No request deduplication / exactly-once write semantics.

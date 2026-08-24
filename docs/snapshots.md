@@ -81,19 +81,26 @@ had already been compacted away.
 ## 4. Raft snapshot persistence (`internal/raft`)
 
 `SnapshotStore` persists exactly one canonical `Snapshot{LastIncludedIndex,
-LastIncludedTerm, Data}` per node, atomically rewritten on every `Save`
-(the same temp-file/fsync/rename/directory-fsync sequence as
-`PersistentState`/`Log`):
+LastIncludedTerm, Data, Configuration, ConfigurationPresent}` per node,
+atomically rewritten on every `Save` (the same
+temp-file/fsync/rename/directory-fsync sequence as `PersistentState`/`Log`):
 
 ```
 magic(4B "SNP1") | version(1B) | lastIncludedIndex(8B) | lastIncludedTerm(8B)
-  | payloadLength(8B) | payload(NB) | CRC32C(4B, over version..payload)
+  | payloadLength(8B) | payload(NB) | membershipLength(8B) | membership(NB)
+  | CRC32C(4B, over version..membership)
 ```
 
-A missing file is `(nil, nil)` from `Load` — "no snapshot yet," not an
-error. `Data` is opaque to this package (it's whatever `kv.Snapshot`
-produced); the 64 MiB bound here is kept in sync with `kv.MaxSnapshotSize`
-so a legal KV snapshot always fits a legal Raft one.
+`membership` (Milestone 10, version bumped to 2) is
+`EncodeMembership(StableMembership(cfg))` — the stable voter set as of
+this boundary; see [docs/membership.md](membership.md) §8 for why it
+must always be Stable (never a Joint config) and how a version 1 file
+(no membership section, `ConfigurationPresent=false`) falls back to a
+node's own bootstrap configuration instead of being treated as
+corruption. A missing file is `(nil, nil)` from `Load` — "no snapshot
+yet," not an error. `Data` is opaque to this package (it's whatever
+`kv.Snapshot` produced); the 64 MiB bound here is kept in sync with
+`kv.MaxSnapshotSize` so a legal KV snapshot always fits a legal Raft one.
 
 The on-disk `Log` format grew a version 2 header (`baseIndex(8B) +
 baseTerm(8B)` after the existing magic+version) to carry the boundary.
@@ -171,8 +178,14 @@ per RPC, never one giant frame:
 ```
 InstallSnapshotRequest:  term(8B) leaderID(8B) lastIncludedIndex(8B)
   lastIncludedTerm(8B) offset(8B) done(1B) dataLength(4B) data(NB)
+  configLength(8B) config(NB)
 InstallSnapshotResponse: term(8B) success(1B) nextOffset(8B)
 ```
+
+`config` (Milestone 10) is the same `EncodeMembership(StableMembership(cfg))`
+encoding as the persisted snapshot file's own membership section, sent on
+every chunk (not only the final one); the follower installs it once the
+transfer completes — see [docs/membership.md](membership.md) §8.
 
 `dataLength` is validated against `maxSnapshotChunkSize` before
 allocation. A follower accumulates chunks in memory
