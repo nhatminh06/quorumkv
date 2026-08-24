@@ -184,6 +184,19 @@ type Node struct {
 	membership           Membership
 	baseConfiguration    Configuration
 	hasBaseConfiguration bool
+	// membershipEntryIndex is the log index of the Configuration entry
+	// that produced the current n.membership (0 if membership is still
+	// just baseConfiguration, with no entry ever walked into it).
+	// pendingStableIndex is the log index of an appended-but-not-yet-
+	// committed final Stable entry following the current Joint
+	// membership, or 0 if none — see rebuildMembershipLocked and
+	// maybeCompleteMembershipTransitionLocked (config_change.go).
+	// membershipChanged is pinged (non-blocking, buffered 1) every time a
+	// rebuild produces a possibly-different membership, so AddVoter/
+	// RemoveVoter can block on it instead of polling.
+	membershipEntryIndex LogIndex
+	pendingStableIndex   LogIndex
+	membershipChanged    chan struct{}
 }
 
 // NewNode loads persistent state, the Raft log, the durably recorded
@@ -264,6 +277,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		timeoutFunc:         randomElectionTimeout,
 		heartbeatInterval:   defaultHeartbeatInterval,
 		resetCh:             make(chan struct{}, 1),
+		membershipChanged:   make(chan struct{}, 1),
 		bgCtx:               bgCtx,
 		bgCancel:            bgCancel,
 		persistent:          state,
@@ -367,6 +381,7 @@ func (n *Node) rebuildMembershipLocked() {
 		base = n.baseConfiguration
 	}
 	effective := StableMembership(base)
+	var entryIndex, pendingStableIndex LogIndex
 
 	for idx := n.log.BaseIndex() + 1; idx <= n.log.LastIndex(); idx++ {
 		e, ok := n.log.Entry(idx)
@@ -380,15 +395,28 @@ func (n *Node) rebuildMembershipLocked() {
 		switch m.Mode {
 		case ModeJoint:
 			effective = m
+			entryIndex = idx
+			pendingStableIndex = 0
 		case ModeStable:
 			if idx <= n.commitIndex {
 				effective = m
+				entryIndex = idx
+				pendingStableIndex = 0
+			} else {
+				// An uncommitted final Stable entry — leave effective as
+				// the Joint state that preceded it, but remember this so a
+				// leader doesn't append a second completing entry.
+				pendingStableIndex = idx
 			}
-			// Else: an uncommitted final Stable entry — leave effective as
-			// the Joint state that preceded it.
 		}
 	}
 	n.membership = effective
+	n.membershipEntryIndex = entryIndex
+	n.pendingStableIndex = pendingStableIndex
+	select {
+	case n.membershipChanged <- struct{}{}:
+	default:
+	}
 }
 
 // resolveTargetsLocked returns the address every other effective voter
@@ -605,6 +633,13 @@ func (n *Node) becomeLeaderLocked() {
 	n.leaderCancel = cancel
 	n.bgWG.Add(1)
 	go n.heartbeatLoop(leaderCtx)
+
+	// A newly elected leader may be taking over mid-transition (the prior
+	// leader died after a Joint entry committed but before appending the
+	// completing Stable entry, or after appending it but before it
+	// committed): resume/finalize automatically rather than leaving the
+	// cluster stuck in Joint.
+	n.maybeCompleteMembershipTransitionLocked()
 }
 
 // resetTimer requests that Run restart its election timeout. It is
@@ -1012,8 +1047,25 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 			// A previously-appended-but-uncommitted final Stable
 			// configuration entry may now be covered by N.
 			n.rebuildMembershipLocked()
+			n.maybeCompleteMembershipTransitionLocked()
+			n.stepDownIfNoLongerVoterLocked()
 			return
 		}
+	}
+}
+
+// stepDownIfNoLongerVoterLocked converts a Leader to a passive Follower
+// once its own committed final Stable configuration entry excludes it —
+// self-removal (see RemoveVoter) is allowed to complete with this leader
+// still leading right up until that point, but the moment the removal is
+// truly final it must stop heartbeating/leading rather than continuing to
+// act as leader of a cluster it is no longer a member of. This does not
+// require a higher term first: membership, not term, is what disqualifies
+// it. Must be called with n.mu held.
+func (n *Node) stepDownIfNoLongerVoterLocked() {
+	if n.role == Leader && !n.membership.IsVoter(n.id) {
+		n.stepToFollowerLocked()
+		n.leaderID = nil
 	}
 }
 

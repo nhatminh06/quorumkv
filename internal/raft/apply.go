@@ -137,6 +137,12 @@ func (n *Node) applyLoop() {
 // (error), or lastApplied has reached its index (success). Must be called
 // with n.mu held.
 func (n *Node) notifyWaitersLocked() {
+	// lastApplied may have just crossed membershipEntryIndex — wake any
+	// AddVoter/RemoveVoter caller waiting on that (see config_change.go).
+	select {
+	case n.membershipChanged <- struct{}{}:
+	default:
+	}
 	remaining := n.waiters[:0]
 	for _, w := range n.waiters {
 		if err := n.checkEntryLocked(w.index, w.term); err != nil {
