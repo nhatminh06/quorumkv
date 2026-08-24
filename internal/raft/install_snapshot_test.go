@@ -6,10 +6,19 @@ import (
 	"testing"
 )
 
+func sampleInstallSnapshotConfiguration() Configuration {
+	c, err := NewConfiguration(map[NodeID]string{1: "A"})
+	if err != nil {
+		panic(err)
+	}
+	return c
+}
+
 func sampleInstallSnapshot() InstallSnapshotRequest {
 	return InstallSnapshotRequest{
 		Term: 7, LeaderID: 1, LastIncludedIndex: 100, LastIncludedTerm: 6,
 		Offset: 0, Data: []byte("abc"), Done: false,
+		Configuration: sampleInstallSnapshotConfiguration(),
 	}
 }
 
@@ -25,13 +34,16 @@ func TestInstallSnapshotEncodeDecodeRoundTrip(t *testing.T) {
 	}
 	if got.Term != req.Term || got.LeaderID != req.LeaderID || got.LastIncludedIndex != req.LastIncludedIndex ||
 		got.LastIncludedTerm != req.LastIncludedTerm || got.Offset != req.Offset || got.Done != req.Done ||
-		string(got.Data) != string(req.Data) {
+		string(got.Data) != string(req.Data) || !got.Configuration.Equal(req.Configuration) {
 		t.Fatalf("got %+v, want %+v", got, req)
 	}
 }
 
 func TestInstallSnapshotZeroLengthFinalChunkRoundTrip(t *testing.T) {
-	req := InstallSnapshotRequest{Term: 1, LeaderID: 1, LastIncludedIndex: 5, LastIncludedTerm: 1, Offset: 10, Done: true}
+	req := InstallSnapshotRequest{
+		Term: 1, LeaderID: 1, LastIncludedIndex: 5, LastIncludedTerm: 1, Offset: 10, Done: true,
+		Configuration: sampleInstallSnapshotConfiguration(),
+	}
 	buf, err := EncodeInstallSnapshot(req)
 	if err != nil {
 		t.Fatalf("EncodeInstallSnapshot: %v", err)
@@ -47,7 +59,11 @@ func TestInstallSnapshotZeroLengthFinalChunkRoundTrip(t *testing.T) {
 
 // TestInstallSnapshotKnownByteVector independently derives the expected
 // wire bytes for term=7, leaderID=1, lastIncludedIndex=100,
-// lastIncludedTerm=6, offset=0, data="abc", done=false.
+// lastIncludedTerm=6, offset=0, data="abc", done=false, configuration=
+// Stable{1:"A"}. The trailing configuration section is
+// EncodeMembership(StableMembership({1:"A"})): version(1)=1,
+// mode(1)=Stable(1), voterCount(4)=1, nodeID(8)=1, addrLen(2)=1, addr="A"
+// — 17 bytes total, prefixed by its own 8-byte length.
 func TestInstallSnapshotKnownByteVector(t *testing.T) {
 	got, err := EncodeInstallSnapshot(sampleInstallSnapshot())
 	if err != nil {
@@ -62,6 +78,13 @@ func TestInstallSnapshotKnownByteVector(t *testing.T) {
 		0,          // done = false
 		0, 0, 0, 3, // data length
 		'a', 'b', 'c',
+		0, 0, 0, 0, 0, 0, 0, 17, // configuration length = 17
+		0x01,       // membership version
+		0x01,       // mode = Stable
+		0, 0, 0, 1, // voterCount = 1
+		0, 0, 0, 0, 0, 0, 0, 1, // nodeID = 1
+		0, 1, // addrLen = 1
+		'A',
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("bytes:\n got  % x\n want % x", got, want)

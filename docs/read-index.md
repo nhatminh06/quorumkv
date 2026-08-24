@@ -61,8 +61,9 @@ compacted-away boundary.
 
 If the check above fails, `ensureCurrentTermCommitted` establishes the
 barrier itself: it appends a **reserved empty-command** Raft log entry
-(`LogEntry{Term: currentTerm, Command: nil}`), replicates it through the
-ordinary AppendEntries path, and waits for it to commit and apply.
+(`LogEntry{Term: currentTerm, Kind: EntryNoop, Command: nil}`),
+replicates it through the ordinary AppendEntries path, and waits for it
+to commit and apply.
 
 An empty command is safe to reserve this way because
 `kv.EncodeCommand`'s wire format always emits at least its fixed header
@@ -70,13 +71,15 @@ An empty command is safe to reserve this way because
 command is never zero bytes. `Node.Propose` therefore rejects an empty
 command outright (`ErrReservedCommand`); only the internal barrier path
 (`proposeLocked` called from inside `ensureCurrentTermCommitted`) may
-construct one. The apply loop recognizes a zero-length committed command
-and advances `lastApplied` **without** ever invoking `ApplyFunc` — the
-no-op carries no application meaning and must never reach the KV decoder.
-This behaves identically on restart replay (the same apply-loop code
-path) and is compatible with snapshot compaction (a snapshot boundary can
-legally sit on a no-op entry; the KV snapshot simply has nothing to say
-about it).
+construct one. The apply loop classifies by `Kind` (Milestone 10; before
+that, by `len(Command)==0` — see [docs/membership.md](membership.md) §3
+for why an explicit field replaced that inference) and advances
+`lastApplied` for any non-`EntryApplication` entry **without** ever
+invoking `ApplyFunc` — the no-op carries no application meaning and must
+never reach the KV decoder. This behaves identically on restart replay
+(the same apply-loop code path) and is compatible with snapshot
+compaction (a snapshot boundary can legally sit on a no-op entry; the KV
+snapshot simply has nothing to say about it).
 
 Concurrent first reads in a new term single-flight onto one barrier:
 `Node.pendingBarrier`, guarded by the same `Node.mu` used everywhere else
@@ -137,10 +140,15 @@ identically) but processes the responses itself.
 ## 7. Quorum counting
 
 `ReadIndex` counts exactly as `StartElection`/commit-advancement do:
-`majority = floor(clusterSize/2) + 1` of the *configured* peer set (an
-unreachable node does not shrink the denominator). The leader counts
-itself once, immediately, with no network I/O — a single-node cluster's
-`ReadIndex` never sends an RPC. Each peer's response counts at most once
+`Membership.HasQuorum` on an `acked` set built from real responses (an
+unreachable node does not shrink the denominator) — a plain majority of
+the current Stable configuration outside a transition, or a majority of
+*both* Old and New simultaneously during a Milestone 10 Joint transition
+(see [docs/membership.md](membership.md) §5; a majority of Old alone is
+provably insufficient — `TestJointReadIndexRequiresBothMajorities`). The
+leader counts itself once, immediately, with no network I/O — a
+single-node cluster's `ReadIndex` never sends an RPC. Each peer's
+response counts at most once
 per read (a `seen` map keyed by peer ID); a response only counts if its
 `Term` equals the term the read was started in and its `ReadContext`
 matches this specific probe's — a stale term, an old read's leftover

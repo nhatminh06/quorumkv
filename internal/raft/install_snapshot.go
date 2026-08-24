@@ -9,6 +9,11 @@ import (
 // snapshot may exceed the transport's 1 MiB frame limit, so it is always
 // sent as a sequence of chunks at increasing offsets, the last one
 // marked Done.
+//
+// Configuration is the snapshot's stable membership as of its boundary,
+// included on every chunk (not only the final one) so the receiver has it
+// available regardless of which chunk it ends up needing it from; it is
+// otherwise unused until Done, when the receiver installs it.
 type InstallSnapshotRequest struct {
 	Term              Term
 	LeaderID          NodeID
@@ -17,6 +22,7 @@ type InstallSnapshotRequest struct {
 	Offset            uint64
 	Data              []byte
 	Done              bool
+	Configuration     Configuration
 }
 
 // InstallSnapshotResponse acknowledges one chunk. NextOffset tells the
@@ -48,7 +54,11 @@ func EncodeInstallSnapshot(req InstallSnapshotRequest) ([]byte, error) {
 	if len(req.Data) > maxSnapshotChunkSize {
 		return nil, fmt.Errorf("raft: snapshot chunk length %d exceeds max %d", len(req.Data), maxSnapshotChunkSize)
 	}
-	buf := make([]byte, installSnapshotFixedSize+len(req.Data))
+	configBytes, err := EncodeMembership(StableMembership(req.Configuration))
+	if err != nil {
+		return nil, fmt.Errorf("raft: encoding InstallSnapshot configuration: %w", err)
+	}
+	buf := make([]byte, installSnapshotFixedSize+len(req.Data)+8+len(configBytes))
 	off := 0
 	binary.BigEndian.PutUint64(buf[off:], uint64(req.Term))
 	off += 8
@@ -66,7 +76,10 @@ func EncodeInstallSnapshot(req InstallSnapshotRequest) ([]byte, error) {
 	off++
 	binary.BigEndian.PutUint32(buf[off:], uint32(len(req.Data)))
 	off += 4
-	copy(buf[off:], req.Data)
+	off += copy(buf[off:], req.Data)
+	binary.BigEndian.PutUint64(buf[off:], uint64(len(configBytes)))
+	off += 8
+	copy(buf[off:], configBytes)
 	return buf, nil
 }
 
@@ -98,11 +111,30 @@ func DecodeInstallSnapshot(b []byte) (InstallSnapshotRequest, error) {
 	if dataLen > maxSnapshotChunkSize {
 		return InstallSnapshotRequest{}, fmt.Errorf("%w: chunk length %d exceeds max %d", ErrMalformedRPC, dataLen, maxSnapshotChunkSize)
 	}
-	if off+int(dataLen) != len(b) {
+	if off+int(dataLen)+8 > len(b) {
 		return InstallSnapshotRequest{}, fmt.Errorf("%w: length mismatch", ErrMalformedRPC)
 	}
 	data := make([]byte, dataLen)
-	copy(data, b[off:])
+	copy(data, b[off:off+int(dataLen)])
+	off += int(dataLen)
+
+	configLen := binary.BigEndian.Uint64(b[off:])
+	off += 8
+	if uint64(len(b)-off) < configLen {
+		return InstallSnapshotRequest{}, fmt.Errorf("%w: truncated configuration", ErrMalformedRPC)
+	}
+	configEnd := off + int(configLen)
+	m, err := DecodeMembership(b[off:configEnd])
+	if err != nil {
+		return InstallSnapshotRequest{}, fmt.Errorf("%w: configuration: %v", ErrMalformedRPC, err)
+	}
+	if m.Mode != ModeStable {
+		return InstallSnapshotRequest{}, fmt.Errorf("%w: configuration must be Stable, got %v", ErrMalformedRPC, m.Mode)
+	}
+	off = configEnd
+	if off != len(b) {
+		return InstallSnapshotRequest{}, fmt.Errorf("%w: trailing bytes after InstallSnapshot", ErrMalformedRPC)
+	}
 
 	return InstallSnapshotRequest{
 		Term:              term,
@@ -112,6 +144,7 @@ func DecodeInstallSnapshot(b []byte) (InstallSnapshotRequest, error) {
 		Offset:            offset,
 		Data:              data,
 		Done:              doneByte == 1,
+		Configuration:     m.Stable,
 	}, nil
 }
 

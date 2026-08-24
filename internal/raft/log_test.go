@@ -142,16 +142,17 @@ func TestEntriesFromCopiesOwnership(t *testing.T) {
 }
 
 // TestKnownLogByteVector independently derives the expected on-disk bytes
-// for a single entry (term=5, command="abc") rather than round-tripping
-// Append->reopen. The checksum was computed with the standard hash/crc32
-// Castagnoli table outside this package.
+// for a single entry (term=5, kind=EntryApplication, command="abc")
+// rather than round-tripping Append->reopen. The checksum was computed
+// with the standard hash/crc32 Castagnoli table outside this package (a
+// standalone script, not this package's own encoder).
 func TestKnownLogByteVector(t *testing.T) {
 	path := tempLogPath(t)
 	l, err := OpenLog(path)
 	if err != nil {
 		t.Fatalf("OpenLog: %v", err)
 	}
-	if err := l.Append([]LogEntry{{Term: 5, Command: []byte("abc")}}); err != nil {
+	if err := l.Append([]LogEntry{{Term: 5, Kind: EntryApplication, Command: []byte("abc")}}); err != nil {
 		t.Fatalf("Append: %v", err)
 	}
 
@@ -162,14 +163,15 @@ func TestKnownLogByteVector(t *testing.T) {
 
 	want := []byte{
 		'R', 'L', 'G', '1', // magic
-		0x02,                   // version
+		0x03,                   // version
 		0, 0, 0, 0, 0, 0, 0, 0, // baseIndex = 0 (never compacted)
 		0, 0, 0, 0, 0, 0, 0, 0, // baseTerm = 0
-		0x00, 0x00, 0x00, 0x13, // record length = 19
+		0x00, 0x00, 0x00, 0x14, // record length = 20
 		0, 0, 0, 0, 0, 0, 0, 5, // term = 5
+		0x00,       // kind = EntryApplication (0)
 		0, 0, 0, 3, // command length = 3
 		'a', 'b', 'c', // command
-		0x0f, 0x22, 0x3e, 0xae, // CRC32C(term|commandLength|command)
+		0x5c, 0x8c, 0x9b, 0x65, // CRC32C(term|kind|commandLength|command)
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("log bytes:\n got  % x\n want % x", got, want)
@@ -301,7 +303,7 @@ func TestLogV1FileStillLoads(t *testing.T) {
 		t.Fatalf("Entry(1) = %+v, ok=%v, want {5 abc}, true", e, ok)
 	}
 
-	// A subsequent mutation silently upgrades the file to v2.
+	// A subsequent mutation silently upgrades the file to v3.
 	if err := l.Append([]LogEntry{{Term: 5, Command: []byte("d")}}); err != nil {
 		t.Fatalf("Append: %v", err)
 	}
@@ -309,8 +311,8 @@ func TestLogV1FileStillLoads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	if data[4] != logFileVersion2 {
-		t.Fatalf("version after rewrite = %d, want %d", data[4], logFileVersion2)
+	if data[4] != logFileVersion3 {
+		t.Fatalf("version after rewrite = %d, want %d", data[4], logFileVersion3)
 	}
 }
 

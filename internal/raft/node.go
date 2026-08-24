@@ -92,7 +92,8 @@ type Node struct {
 	log                 *Log
 	commitStore         *CommitStore
 	snapshotStore       *SnapshotStore
-	peers               map[NodeID]string // NodeID -> address, fixed for this milestone
+	peers               map[NodeID]string // NodeID -> address, excluding self
+	selfAddr            string            // this node's own dialable address, for Configuration entries other nodes need to resolve it by
 	send                sender
 	sendAppend          appendSender
 	sendInstallSnapshot installSnapshotSender
@@ -166,6 +167,36 @@ type Node struct {
 	// one no-op rather than each appending their own.
 	readContextCounter uint64
 	pendingBarrier     *pendingBarrier
+
+	// membership is this node's effective configuration, always rebuilt
+	// (never incrementally patched) from baseConfiguration plus every
+	// EntryConfiguration entry surviving in the log — see
+	// rebuildMembershipLocked. baseConfiguration is the stable
+	// configuration as of the log's current BaseIndex: the most recent
+	// snapshot's stored Configuration (or, for a legacy snapshot with no
+	// stored Configuration, this node's own bootstrap configuration) if
+	// one has ever been loaded/created/installed, or the bootstrap
+	// configuration itself if not. Once any real Configuration entry
+	// exists at or after BaseIndex+1, it is found by the rebuild walk and
+	// wins over baseConfiguration regardless of what SetPeers/SetSelfAddr
+	// are called with afterward — so persisted configuration history is
+	// authoritative forever without needing a separate sticky flag.
+	membership           Membership
+	baseConfiguration    Configuration
+	hasBaseConfiguration bool
+	// membershipEntryIndex is the log index of the Configuration entry
+	// that produced the current n.membership (0 if membership is still
+	// just baseConfiguration, with no entry ever walked into it).
+	// pendingStableIndex is the log index of an appended-but-not-yet-
+	// committed final Stable entry following the current Joint
+	// membership, or 0 if none — see rebuildMembershipLocked and
+	// maybeCompleteMembershipTransitionLocked (config_change.go).
+	// membershipChanged is pinged (non-blocking, buffered 1) every time a
+	// rebuild produces a possibly-different membership, so AddVoter/
+	// RemoveVoter can block on it instead of polling.
+	membershipEntryIndex LogIndex
+	pendingStableIndex   LogIndex
+	membershipChanged    chan struct{}
 }
 
 // NewNode loads persistent state, the Raft log, the durably recorded
@@ -246,6 +277,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		timeoutFunc:         randomElectionTimeout,
 		heartbeatInterval:   defaultHeartbeatInterval,
 		resetCh:             make(chan struct{}, 1),
+		membershipChanged:   make(chan struct{}, 1),
 		bgCtx:               bgCtx,
 		bgCancel:            bgCancel,
 		persistent:          state,
@@ -265,6 +297,17 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		n.lastApplied = snap.LastIncludedIndex
 	}
 	n.mu.Lock()
+	if snap != nil {
+		if snap.ConfigurationPresent {
+			n.baseConfiguration = snap.Configuration
+		} else {
+			// Legacy (pre-Milestone-10) snapshot: fall back to this node's
+			// own bootstrap configuration as the historical stable config.
+			n.baseConfiguration = n.bootstrapConfigurationLocked()
+		}
+		n.hasBaseConfiguration = true
+	}
+	n.rebuildMembershipLocked()
 	n.kickApplyLocked()
 	n.mu.Unlock()
 	return n, nil
@@ -292,6 +335,135 @@ func (n *Node) SetPeers(peers map[NodeID]string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.peers = peers
+	n.rebuildMembershipLocked()
+}
+
+// SetSelfAddr records this node's own dialable address. It exists for
+// initial cluster bootstrap, alongside SetPeers, so this node's bootstrap
+// Configuration (used until any real membership change is ever applied)
+// has a real address for itself — needed so a newly-added future peer,
+// or a snapshot's stored stable configuration, can resolve it. Before
+// this is ever called, a non-empty placeholder is used; since Targets
+// always excludes self, correctness of replication/election/quorum never
+// depends on this value being real, only its later use in a Configuration
+// handed to another node does.
+func (n *Node) SetSelfAddr(addr string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.selfAddr = addr
+	n.rebuildMembershipLocked()
+}
+
+// rebuildMembershipLocked recomputes n.membership from scratch: starting
+// at baseConfiguration (the most recent snapshot's stored stable config,
+// or this node's bootstrap configuration if none exists yet), walk every
+// surviving log entry from BaseIndex+1 onward and apply each
+// EntryConfiguration entry found in order:
+//
+//   - A Joint entry activates immediately, before it ever commits — a
+//     node's effective membership is derived from its own local log, not
+//     from a globally agreed "committed" source (see docs/membership.md).
+//   - A Stable entry (completing a transition) activates only once it is
+//     itself committed (index <= n.commitIndex); until then, effective
+//     membership deliberately stays at whatever Joint state preceded it,
+//     so quorum still requires both old and new majorities right up to
+//     the moment the transition is truly final. This is a conservative
+//     choice the spec calls out explicitly, not an oversight.
+//
+// Because this always re-derives from persisted history rather than
+// patching in place, it is safe to call after anything that can change
+// what that history means: log truncation (conflict repair), a newly
+// appended/committed entry, or a snapshot install boundary change. Must
+// be called with n.mu held.
+func (n *Node) rebuildMembershipLocked() {
+	base := n.bootstrapConfigurationLocked()
+	if n.hasBaseConfiguration {
+		base = n.baseConfiguration
+	}
+	effective := StableMembership(base)
+	var entryIndex, pendingStableIndex LogIndex
+
+	for idx := n.log.BaseIndex() + 1; idx <= n.log.LastIndex(); idx++ {
+		e, ok := n.log.Entry(idx)
+		if !ok || e.Kind != EntryConfiguration {
+			continue
+		}
+		m, err := DecodeMembership(e.Command)
+		if err != nil {
+			continue // defensive: this package's own encoder never produces this
+		}
+		switch m.Mode {
+		case ModeJoint:
+			effective = m
+			entryIndex = idx
+			pendingStableIndex = 0
+		case ModeStable:
+			if idx <= n.commitIndex {
+				effective = m
+				entryIndex = idx
+				pendingStableIndex = 0
+			} else {
+				// An uncommitted final Stable entry — leave effective as
+				// the Joint state that preceded it, but remember this so a
+				// leader doesn't append a second completing entry.
+				pendingStableIndex = idx
+			}
+		}
+	}
+	n.membership = effective
+	n.membershipEntryIndex = entryIndex
+	n.pendingStableIndex = pendingStableIndex
+	select {
+	case n.membershipChanged <- struct{}{}:
+	default:
+	}
+}
+
+// resolveTargetsLocked returns the address every other effective voter
+// should be dialed at: the ID set comes from n.membership.Targets (so
+// joint-quorum-aware targeting, including a newly added not-yet-committed
+// peer, is always correct), but the address for any ID this node
+// currently has an entry for in n.peers wins over whatever address the
+// (possibly stale, snapshot/log-derived) Membership itself has recorded —
+// n.peers is this node's own freshest operational knowledge (kept current
+// by SetPeers) and must not regress to a historical address just because
+// a Configuration entry or snapshot boundary happens to embed one. A peer
+// this node has never been separately told about via SetPeers (e.g. a
+// brand-new joiner known only through a just-replicated Configuration
+// entry) falls back to the Membership's own address. Must be called with
+// n.mu held.
+func (n *Node) resolveTargetsLocked() map[NodeID]string {
+	targets := n.membership.Targets(n.id)
+	for id := range targets {
+		if addr, ok := n.peers[id]; ok {
+			targets[id] = addr
+		}
+	}
+	return targets
+}
+
+// bootstrapConfigurationLocked builds the Configuration this node starts
+// with when no persisted membership-change history exists: itself plus
+// every currently known peer. Must be called with n.mu held.
+func (n *Node) bootstrapConfigurationLocked() Configuration {
+	selfAddr := n.selfAddr
+	if selfAddr == "" {
+		selfAddr = fmt.Sprintf("unresolved-self-%d", n.id)
+	}
+	voters := make(map[NodeID]string, len(n.peers)+1)
+	voters[n.id] = selfAddr
+	for id, addr := range n.peers {
+		voters[id] = addr
+	}
+	cfg, err := NewConfiguration(voters)
+	if err != nil {
+		// peers/selfAddr are always validated non-empty by NewConfiguration
+		// itself at every call site that supplies real addresses; an empty
+		// peers map still yields a valid single-voter (self-only)
+		// Configuration, so this should be unreachable.
+		panic(fmt.Sprintf("raft: invalid bootstrap configuration: %v", err))
+	}
+	return cfg
 }
 
 // SetVoteSend and SetAppendSend replace the functions this node uses to
@@ -449,10 +621,11 @@ func (n *Node) becomeLeaderLocked() {
 	self := n.id
 	n.leaderID = &self
 	last := n.log.LastIndex()
-	n.nextIndex = make(map[NodeID]LogIndex, len(n.peers))
-	n.matchIndex = make(map[NodeID]LogIndex, len(n.peers))
-	n.snapshotSending = make(map[NodeID]bool, len(n.peers))
-	for id := range n.peers {
+	targets := n.membership.Targets(n.id)
+	n.nextIndex = make(map[NodeID]LogIndex, len(targets))
+	n.matchIndex = make(map[NodeID]LogIndex, len(targets))
+	n.snapshotSending = make(map[NodeID]bool, len(targets))
+	for id := range targets {
 		n.nextIndex[id] = last + 1
 		n.matchIndex[id] = 0
 	}
@@ -460,6 +633,13 @@ func (n *Node) becomeLeaderLocked() {
 	n.leaderCancel = cancel
 	n.bgWG.Add(1)
 	go n.heartbeatLoop(leaderCtx)
+
+	// A newly elected leader may be taking over mid-transition (the prior
+	// leader died after a Joint entry committed but before appending the
+	// completing Stable entry, or after appending it but before it
+	// committed): resume/finalize automatically rather than leaving the
+	// cluster stuck in Joint.
+	n.maybeCompleteMembershipTransitionLocked()
 }
 
 // resetTimer requests that Run restart its election timeout. It is
@@ -493,7 +673,7 @@ func (n *Node) HandleRequestVote(req RequestVoteRequest) (RequestVoteResponse, e
 	}
 
 	grant := false
-	if n.persistent.VotedFor == nil || *n.persistent.VotedFor == req.CandidateID {
+	if n.membership.IsVoter(n.id) && (n.persistent.VotedFor == nil || *n.persistent.VotedFor == req.CandidateID) {
 		lastIndex, lastTerm := n.lastLogInfo()
 		if LogUpToDate(req.LastLogTerm, req.LastLogIndex, lastTerm, lastIndex) {
 			grant = true
@@ -533,6 +713,12 @@ func (n *Node) StartElection(ctx context.Context) error {
 		n.mu.Unlock()
 		return nil
 	}
+	if !n.membership.IsVoter(n.id) {
+		// A node that is not an effective voter (e.g. removed, or not yet
+		// activated as a new joiner) must not campaign.
+		n.mu.Unlock()
+		return nil
+	}
 
 	prev := n.persistent
 	newTerm := prev.CurrentTerm + 1
@@ -548,17 +734,13 @@ func (n *Node) StartElection(ctx context.Context) error {
 	n.votes = map[NodeID]bool{n.id: true}
 	lastIndex, lastTerm := n.lastLogInfo()
 
-	clusterSize := len(n.peers) + 1
-	if len(n.votes) >= Majority(clusterSize) {
+	if n.membership.HasQuorum(n.votes) {
 		n.becomeLeaderLocked()
 		n.mu.Unlock()
 		return nil
 	}
 
-	peers := make(map[NodeID]string, len(n.peers))
-	for id, addr := range n.peers {
-		peers[id] = addr
-	}
+	peers := n.resolveTargetsLocked()
 	n.mu.Unlock()
 
 	req := RequestVoteRequest{
@@ -607,7 +789,7 @@ func (n *Node) applyVoteResponse(electionTerm Term, from NodeID, resp RequestVot
 	}
 	n.votes[from] = true
 
-	if len(n.votes) >= Majority(len(n.peers)+1) {
+	if n.membership.HasQuorum(n.votes) {
 		n.becomeLeaderLocked()
 	}
 }
@@ -673,6 +855,12 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 			// waiting on; re-check them now rather than leaving them
 			// blocked until their ctx times out.
 			n.notifyWaitersLocked()
+			// The truncated-away suffix may have carried an uncommitted
+			// Configuration entry (this follower's effective membership
+			// must revert to whatever preceded it), and/or the newly
+			// appended suffix may carry one (which must activate
+			// immediately) — either way, re-derive from scratch.
+			n.rebuildMembershipLocked()
 		}
 		// If conflictAt stays 0, every incoming entry already matched the
 		// local log — an idempotent retransmission — so no write happens.
@@ -692,6 +880,9 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 			if err := n.commitStore.Save(newCommit); err == nil {
 				n.commitIndex = newCommit
 				n.kickApplyLocked()
+				// A previously-appended-but-uncommitted final Stable
+				// configuration entry may now be covered by newCommit.
+				n.rebuildMembershipLocked()
 			}
 		}
 	}
@@ -729,9 +920,10 @@ func (n *Node) replicateToAllPeers(ctx context.Context) {
 	leaderCommit := n.commitIndex
 	baseIndex := n.log.BaseIndex()
 
-	reqs := make([]replicationRequest, 0, len(n.peers))
+	targets := n.resolveTargetsLocked()
+	reqs := make([]replicationRequest, 0, len(targets))
 	var snapshotPeers []replicationRequest // reused only for id/addr
-	for id, addr := range n.peers {
+	for id, addr := range targets {
 		next := n.nextIndex[id]
 		if next < 1 {
 			next = 1
@@ -833,13 +1025,13 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 		if !ok || term != n.persistent.CurrentTerm {
 			continue
 		}
-		count := 1 // self
-		for id := range n.peers {
-			if n.matchIndex[id] >= N {
-				count++
+		acked := map[NodeID]bool{n.id: true}
+		for id, match := range n.matchIndex {
+			if match >= N {
+				acked[id] = true
 			}
 		}
-		if count >= Majority(len(n.peers)+1) {
+		if n.membership.HasQuorum(acked) {
 			// N is already logically committed cluster-wide (a majority
 			// has it) regardless of what happens next. But this node must
 			// not treat that as *durably recorded* — and so must not let
@@ -852,8 +1044,28 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 			}
 			n.commitIndex = N
 			n.kickApplyLocked()
+			// A previously-appended-but-uncommitted final Stable
+			// configuration entry may now be covered by N.
+			n.rebuildMembershipLocked()
+			n.maybeCompleteMembershipTransitionLocked()
+			n.stepDownIfNoLongerVoterLocked()
 			return
 		}
+	}
+}
+
+// stepDownIfNoLongerVoterLocked converts a Leader to a passive Follower
+// once its own committed final Stable configuration entry excludes it —
+// self-removal (see RemoveVoter) is allowed to complete with this leader
+// still leading right up until that point, but the moment the removal is
+// truly final it must stop heartbeating/leading rather than continuing to
+// act as leader of a cluster it is no longer a member of. This does not
+// require a higher term first: membership, not term, is what disqualifies
+// it. Must be called with n.mu held.
+func (n *Node) stepDownIfNoLongerVoterLocked() {
+	if n.role == Leader && !n.membership.IsVoter(n.id) {
+		n.stepToFollowerLocked()
+		n.leaderID = nil
 	}
 }
 

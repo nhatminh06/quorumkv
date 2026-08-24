@@ -8,6 +8,15 @@ import (
 	"quorumkv/internal/transport"
 )
 
+// ErrMembershipChangeInProgress is returned by CreateSnapshot while a
+// joint-consensus membership transition is active. A snapshot must
+// preserve a single Stable membership at its boundary (see Snapshot.
+// Configuration); rather than support a joint-config snapshot, this
+// milestone simply refuses to snapshot until the transition finishes —
+// an acceptable limitation since membership changes are short and
+// serialized one at a time (see docs/membership.md).
+var ErrMembershipChangeInProgress = errors.New("raft: a membership change is already in progress")
+
 // SnapshotFunc asks the application for a deterministic serialization of
 // its entire current state, called by CreateSnapshot. It runs with
 // applyMu held (not Node's own lock), so it never races with ApplyFunc —
@@ -52,6 +61,7 @@ type incomingSnapshot struct {
 	lastIncludedIndex LogIndex
 	lastIncludedTerm  Term
 	data              []byte
+	configuration     Configuration
 }
 
 // CreateSnapshot serializes the application's current state at this
@@ -71,6 +81,10 @@ func (n *Node) CreateSnapshot() error {
 		n.mu.Unlock()
 		return errors.New("raft: no snapshot function configured")
 	}
+	if n.membership.Mode == ModeJoint {
+		n.mu.Unlock()
+		return ErrMembershipChangeInProgress
+	}
 	index := n.lastApplied
 	if index == 0 {
 		n.mu.Unlock()
@@ -85,6 +99,7 @@ func (n *Node) CreateSnapshot() error {
 		n.mu.Unlock()
 		return fmt.Errorf("raft: cannot determine term at index %d", index)
 	}
+	cfg := n.membership.Stable
 	fn := n.snapshotFn
 	n.mu.Unlock()
 
@@ -101,10 +116,23 @@ func (n *Node) CreateSnapshot() error {
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if err := n.snapshotStore.Save(Snapshot{LastIncludedIndex: index, LastIncludedTerm: term, Data: data}); err != nil {
+	if n.membership.Mode == ModeJoint {
+		// A membership change started while fn() ran unlocked; the stable
+		// configuration captured above may already be superseded.
+		return ErrMembershipChangeInProgress
+	}
+	if err := n.snapshotStore.Save(Snapshot{LastIncludedIndex: index, LastIncludedTerm: term, Data: data, Configuration: cfg}); err != nil {
 		return err
 	}
-	return n.log.Compact(index, term)
+	if err := n.log.Compact(index, term); err != nil {
+		return err
+	}
+	// The log's boundary just moved past index: any Configuration entries
+	// at or before it are now gone from the log, so this snapshot's own
+	// Configuration becomes the new base a future rebuild starts from.
+	n.baseConfiguration = cfg
+	n.hasBaseConfiguration = true
+	return nil
 }
 
 // HandleInstallSnapshot implements the Raft InstallSnapshot RPC handler.
@@ -164,6 +192,7 @@ func (n *Node) HandleInstallSnapshot(req InstallSnapshotRequest) (InstallSnapsho
 		return InstallSnapshotResponse{}, fmt.Errorf("raft: incoming snapshot exceeds max size %d", maxSnapshotPayloadSize)
 	}
 	n.incoming.data = append(n.incoming.data, req.Data...)
+	n.incoming.configuration = req.Configuration
 
 	if !req.Done {
 		next := uint64(len(n.incoming.data))
@@ -171,7 +200,10 @@ func (n *Node) HandleInstallSnapshot(req InstallSnapshotRequest) (InstallSnapsho
 		return InstallSnapshotResponse{Term: n.persistent.CurrentTerm, Success: true, NextOffset: next}, nil
 	}
 
-	snap := Snapshot{LastIncludedIndex: n.incoming.lastIncludedIndex, LastIncludedTerm: n.incoming.lastIncludedTerm, Data: n.incoming.data}
+	snap := Snapshot{
+		LastIncludedIndex: n.incoming.lastIncludedIndex, LastIncludedTerm: n.incoming.lastIncludedTerm,
+		Data: n.incoming.data, Configuration: n.incoming.configuration,
+	}
 	n.incoming = nil // transfer session is over either way
 
 	// Stale or already-applied snapshot: never regress. Acknowledge
@@ -213,6 +245,12 @@ func (n *Node) installSnapshot(snap Snapshot) error {
 		}
 		n.commitIndex = snap.LastIncludedIndex
 	}
+	// The log's boundary just moved: any Configuration entries before it
+	// are gone, so this snapshot's own Configuration becomes the new base
+	// effective membership must be rebuilt from.
+	n.baseConfiguration = snap.Configuration
+	n.hasBaseConfiguration = true
+	n.rebuildMembershipLocked()
 	restoreFn := n.restoreFn
 	n.mu.Unlock()
 
@@ -250,11 +288,18 @@ func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, add
 		return
 	}
 	leaderID := n.id
+	fallbackCfg := n.membership.Stable
 	n.mu.Unlock()
 
 	snap, err := n.snapshotStore.Load()
 	if err != nil || snap == nil {
 		return
+	}
+	if !snap.ConfigurationPresent {
+		// A legacy (pre-Milestone-10) snapshot has no stored membership —
+		// fall back to this leader's own bootstrap/configured membership
+		// as the historical stable config (see docs/membership.md).
+		snap.Configuration = fallbackCfg
 	}
 
 	var offset uint64
@@ -268,6 +313,7 @@ func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, add
 			Term: term, LeaderID: leaderID,
 			LastIncludedIndex: snap.LastIncludedIndex, LastIncludedTerm: snap.LastIncludedTerm,
 			Offset: offset, Data: snap.Data[offset:end], Done: done,
+			Configuration: snap.Configuration,
 		}
 		resp, err := n.sendInstallSnapshot(ctx, addr, req)
 		if err != nil {

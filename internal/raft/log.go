@@ -8,12 +8,55 @@ import (
 	"os"
 )
 
+// EntryKind distinguishes what a LogEntry actually is, since Milestone 10
+// introduced a third kind (configuration) and it is no longer safe to
+// infer meaning purely from Command's byte content. EntryApplication is
+// deliberately the zero value: every LogEntry{...} literal anywhere in
+// this codebase (an enormous, pre-existing test surface) that never
+// mentions Kind continues to mean exactly what it always meant — an
+// ordinary application command — with no mechanical rewrite required.
+type EntryKind uint8
+
+const (
+	// EntryApplication is an ordinary opaque application command, handed
+	// to ApplyFunc once committed. The zero value — see the type doc.
+	EntryApplication EntryKind = iota
+	// EntryNoop is Raft's internal current-term commit barrier (see
+	// docs/read-index.md): committed and advances lastApplied, but never
+	// reaches ApplyFunc. Command is conventionally empty for a
+	// newly-written EntryNoop, but Kind — not Command's length — is what
+	// decides this for any entry written under the current (version 3)
+	// log format; only legacy-format decoding still infers Noop from an
+	// empty Command (see decodeLogFile).
+	EntryNoop
+	// EntryConfiguration carries a deterministically encoded Membership
+	// (see membership_codec.go) describing a joint or stable
+	// configuration change (docs/membership.md). Never reaches
+	// ApplyFunc; advances lastApplied and updates Node's effective
+	// membership once committed.
+	EntryConfiguration
+)
+
+func (k EntryKind) String() string {
+	switch k {
+	case EntryApplication:
+		return "Application"
+	case EntryNoop:
+		return "Noop"
+	case EntryConfiguration:
+		return "Configuration"
+	default:
+		return "Unknown"
+	}
+}
+
 // LogEntry is one entry in a node's replicated Raft log: the term it was
-// created in, and an opaque application command. The log storage layer
-// never interprets Command — that's the state machine's job, once one is
-// wired up to committed entries.
+// created in, its kind, and an opaque payload. The log storage layer
+// never interprets Command — that's the application/Node layer's job,
+// once committed entries are applied.
 type LogEntry struct {
 	Term    Term
+	Kind    EntryKind
 	Command []byte
 }
 
@@ -34,29 +77,41 @@ type LogEntry struct {
 var logFileMagic = [4]byte{'R', 'L', 'G', '1'}
 
 // logFileVersion1 is the pre-Milestone-7 format: no base index/term
-// fields, always equivalent to baseIndex=0, baseTerm=0. Still readable so
-// existing repositories load correctly; a subsequent rewrite silently
-// upgrades the file to version 2.
+// fields, always equivalent to baseIndex=0, baseTerm=0. logFileVersion2
+// (Milestone 7) added those fields but has no per-entry Kind byte —
+// every entry decodes as EntryNoop if Command is empty, EntryApplication
+// otherwise (the only two kinds that existed before Milestone 10).
+// logFileVersion3 (Milestone 10) adds an explicit per-entry Kind byte,
+// needed once EntryConfiguration exists (a configuration entry's payload
+// can't be told apart from an application command by content alone).
+// All three versions remain readable so existing repositories load
+// correctly; a subsequent rewrite always upgrades the file to the
+// current version.
 const (
 	logFileVersion1 = 1
 	logFileVersion2 = 2
+	logFileVersion3 = 3
 )
 
-const currentLogFileVersion = logFileVersion2
+const currentLogFileVersion = logFileVersion3
 
 // maxCommandSize bounds a single log entry's command, comfortably below
 // both an AppendEntries batch and the transport's 1 MiB frame limit.
 const maxCommandSize = 256 * 1024 // 256 KiB
 
-// Per-entry on-disk record: term(8) + commandLength(4) + command + checksum(4).
+// Per-entry on-disk record (version 3): term(8) + kind(1) +
+// commandLength(4) + command + checksum(4). Versions 1/2 have no kind
+// byte — see decodeLogFile.
 const (
-	logEntryHeaderSize  = 8 + 4
-	logChecksumSize     = 4
-	logLengthPrefixSize = 4
-	maxLogRecordSize    = logEntryHeaderSize + maxCommandSize + logChecksumSize
+	logEntryHeaderSizeV2 = 8 + 4     // term + commandLength (versions 1/2)
+	logEntryHeaderSizeV3 = 8 + 1 + 4 // term + kind + commandLength (version 3+)
+	logChecksumSize      = 4
+	logLengthPrefixSize  = 4
+	maxLogRecordSize     = logEntryHeaderSizeV3 + maxCommandSize + logChecksumSize
 
 	logV1HeaderSize = 4 + 1         // magic + version
 	logV2HeaderSize = 4 + 1 + 8 + 8 // magic + version + baseIndex + baseTerm
+	logV3HeaderSize = logV2HeaderSize
 )
 
 // ErrCorruptLog indicates the log file exists but failed validation. The
@@ -109,9 +164,11 @@ func decodeLogFile(data []byte) (baseIndex LogIndex, baseTerm Term, entries []Lo
 	}
 
 	var pos int
+	legacy := false // versions 1/2: no per-entry Kind byte on disk
 	switch data[4] {
 	case logFileVersion1:
 		pos = logV1HeaderSize
+		legacy = true
 	case logFileVersion2:
 		if len(data) < logV2HeaderSize {
 			return 0, 0, nil, fmt.Errorf("%w: truncated header", ErrCorruptLog)
@@ -119,8 +176,21 @@ func decodeLogFile(data []byte) (baseIndex LogIndex, baseTerm Term, entries []Lo
 		baseIndex = LogIndex(binary.BigEndian.Uint64(data[5:13]))
 		baseTerm = Term(binary.BigEndian.Uint64(data[13:21]))
 		pos = logV2HeaderSize
+		legacy = true
+	case logFileVersion3:
+		if len(data) < logV3HeaderSize {
+			return 0, 0, nil, fmt.Errorf("%w: truncated header", ErrCorruptLog)
+		}
+		baseIndex = LogIndex(binary.BigEndian.Uint64(data[5:13]))
+		baseTerm = Term(binary.BigEndian.Uint64(data[13:21]))
+		pos = logV3HeaderSize
 	default:
 		return 0, 0, nil, fmt.Errorf("%w: unsupported version %d", ErrCorruptLog, data[4])
+	}
+
+	entryHeaderSize := logEntryHeaderSizeV3
+	if legacy {
+		entryHeaderSize = logEntryHeaderSizeV2
 	}
 
 	for pos < len(data) {
@@ -129,7 +199,7 @@ func decodeLogFile(data []byte) (baseIndex LogIndex, baseTerm Term, entries []Lo
 		}
 		recLen := binary.BigEndian.Uint32(data[pos : pos+logLengthPrefixSize])
 		pos += logLengthPrefixSize
-		if recLen < logEntryHeaderSize+logChecksumSize || recLen > maxLogRecordSize {
+		if recLen < uint32(entryHeaderSize)+logChecksumSize || recLen > maxLogRecordSize {
 			return 0, 0, nil, fmt.Errorf("%w: declared record length %d out of bounds", ErrCorruptLog, recLen)
 		}
 		if pos+int(recLen) > len(data) {
@@ -139,20 +209,41 @@ func decodeLogFile(data []byte) (baseIndex LogIndex, baseTerm Term, entries []Lo
 		pos += int(recLen)
 
 		term := Term(binary.BigEndian.Uint64(body[0:8]))
-		cmdLen := binary.BigEndian.Uint32(body[8:12])
-		wantRecLen := uint32(logEntryHeaderSize) + cmdLen + logChecksumSize
+		var kind EntryKind
+		var cmdLen uint32
+		if legacy {
+			cmdLen = binary.BigEndian.Uint32(body[8:12])
+		} else {
+			kind = EntryKind(body[8])
+			cmdLen = binary.BigEndian.Uint32(body[9:13])
+		}
+		wantRecLen := uint32(entryHeaderSize) + cmdLen + logChecksumSize
 		if wantRecLen != recLen {
 			return 0, 0, nil, fmt.Errorf("%w: inconsistent record length", ErrCorruptLog)
 		}
-		checksumStart := logEntryHeaderSize + int(cmdLen)
-		command := body[logEntryHeaderSize:checksumStart]
+		checksumStart := entryHeaderSize + int(cmdLen)
+		command := body[entryHeaderSize:checksumStart]
 		wantChecksum := binary.BigEndian.Uint32(body[checksumStart : checksumStart+logChecksumSize])
 		gotChecksum := crc32.Checksum(body[:checksumStart], crc32cTable)
 		if gotChecksum != wantChecksum {
 			return 0, 0, nil, fmt.Errorf("%w: checksum mismatch", ErrCorruptLog)
 		}
 
-		entries = append(entries, LogEntry{Term: term, Command: cloneBytes(command)})
+		if legacy {
+			// Versions 1/2 predate EntryKind entirely: the only two
+			// kinds that existed then were an ordinary application
+			// command and Milestone 8's reserved-empty-command no-op —
+			// exactly the same rule apply.go used to use directly.
+			if cmdLen == 0 {
+				kind = EntryNoop
+			} else {
+				kind = EntryApplication
+			}
+		} else if kind != EntryApplication && kind != EntryNoop && kind != EntryConfiguration {
+			return 0, 0, nil, fmt.Errorf("%w: unknown entry kind %d", ErrCorruptLog, kind)
+		}
+
+		entries = append(entries, LogEntry{Term: term, Kind: kind, Command: cloneBytes(command)})
 	}
 	return baseIndex, baseTerm, entries, nil
 }
@@ -171,11 +262,12 @@ func encodeLogFile(baseIndex LogIndex, baseTerm Term, entries []LogEntry) ([]byt
 		if len(e.Command) > maxCommandSize {
 			return nil, fmt.Errorf("raft: command length %d exceeds max %d", len(e.Command), maxCommandSize)
 		}
-		body := make([]byte, logEntryHeaderSize+len(e.Command)+logChecksumSize)
+		body := make([]byte, logEntryHeaderSizeV3+len(e.Command)+logChecksumSize)
 		binary.BigEndian.PutUint64(body[0:8], uint64(e.Term))
-		binary.BigEndian.PutUint32(body[8:12], uint32(len(e.Command)))
-		copy(body[logEntryHeaderSize:], e.Command)
-		checksumStart := logEntryHeaderSize + len(e.Command)
+		body[8] = byte(e.Kind)
+		binary.BigEndian.PutUint32(body[9:13], uint32(len(e.Command)))
+		copy(body[logEntryHeaderSizeV3:], e.Command)
+		checksumStart := logEntryHeaderSizeV3 + len(e.Command)
 		checksum := crc32.Checksum(body[:checksumStart], crc32cTable)
 		binary.BigEndian.PutUint32(body[checksumStart:], checksum)
 
@@ -261,7 +353,7 @@ func (l *Log) EntriesFrom(from LogIndex) []LogEntry {
 func cloneEntries(entries []LogEntry) []LogEntry {
 	out := make([]LogEntry, len(entries))
 	for i, e := range entries {
-		out[i] = LogEntry{Term: e.Term, Command: cloneBytes(e.Command)}
+		out[i] = LogEntry{Term: e.Term, Kind: e.Kind, Command: cloneBytes(e.Command)}
 	}
 	return out
 }

@@ -58,11 +58,11 @@ const maxEntriesPerAppend = 64
 const appendEntriesFixedSize = 8*6 + 4
 
 // perEntryHeaderSize is the wire size of one entry's header within an
-// AppendEntries payload: term(8) + commandLength(4). The command bytes
-// follow inline; there is no per-entry checksum here because the
-// enclosing transport.Message frame already carries a CRC32C over the
-// whole payload.
-const perEntryHeaderSize = 8 + 4
+// AppendEntries payload: term(8) + kind(1) + commandLength(4). The
+// command bytes follow inline; there is no per-entry checksum here
+// because the enclosing transport.Message frame already carries a
+// CRC32C over the whole payload.
+const perEntryHeaderSize = 8 + 1 + 4
 
 // EncodeAppendEntries produces the exact wire bytes for req.
 func EncodeAppendEntries(req AppendEntriesRequest) ([]byte, error) {
@@ -96,6 +96,8 @@ func EncodeAppendEntries(req AppendEntriesRequest) ([]byte, error) {
 	for _, e := range req.Entries {
 		binary.BigEndian.PutUint64(buf[off:], uint64(e.Term))
 		off += 8
+		buf[off] = byte(e.Kind)
+		off++
 		binary.BigEndian.PutUint32(buf[off:], uint32(len(e.Command)))
 		off += 4
 		off += copy(buf[off:], e.Command)
@@ -138,6 +140,13 @@ func DecodeAppendEntries(b []byte) (AppendEntriesRequest, error) {
 		}
 		entryTerm := Term(binary.BigEndian.Uint64(b[off:]))
 		off += 8
+		kind := EntryKind(b[off])
+		off++
+		switch kind {
+		case EntryApplication, EntryNoop, EntryConfiguration:
+		default:
+			return AppendEntriesRequest{}, fmt.Errorf("%w: unknown entry kind %d", ErrMalformedRPC, kind)
+		}
 		cmdLen := binary.BigEndian.Uint32(b[off:])
 		off += 4
 		if cmdLen > maxCommandSize {
@@ -149,7 +158,7 @@ func DecodeAppendEntries(b []byte) (AppendEntriesRequest, error) {
 		command := make([]byte, cmdLen)
 		copy(command, b[off:off+int(cmdLen)])
 		off += int(cmdLen)
-		entries = append(entries, LogEntry{Term: entryTerm, Command: command})
+		entries = append(entries, LogEntry{Term: entryTerm, Kind: kind, Command: command})
 	}
 	if off != len(b) {
 		return AppendEntriesRequest{}, fmt.Errorf("%w: trailing bytes after AppendEntries", ErrMalformedRPC)

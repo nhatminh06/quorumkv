@@ -51,8 +51,8 @@ func TestAppendEntriesEmptyEntriesRoundTrip(t *testing.T) {
 
 // TestAppendEntriesKnownByteVector independently derives the expected
 // wire bytes for term=4, leaderId=1, prevLogIndex=2, prevLogTerm=3,
-// entries=[{term=4,command="x"}], leaderCommit=1, readContext=0 (ordinary
-// replication — not a ReadIndex probe).
+// entries=[{term=4,kind=EntryApplication,command="x"}], leaderCommit=1,
+// readContext=0 (ordinary replication — not a ReadIndex probe).
 func TestAppendEntriesKnownByteVector(t *testing.T) {
 	got, err := EncodeAppendEntries(sampleAppendEntries())
 	if err != nil {
@@ -68,6 +68,7 @@ func TestAppendEntriesKnownByteVector(t *testing.T) {
 		0, 0, 0, 0, 0, 0, 0, 0, // readContext = 0
 		0, 0, 0, 1, // entryCount = 1
 		0, 0, 0, 0, 0, 0, 0, 4, // entry term
+		0x00,       // entry kind = EntryApplication
 		0, 0, 0, 1, // entry command length
 		'x', // command
 	}
@@ -141,12 +142,28 @@ func TestDecodeAppendEntriesCommandLengthTooLarge(t *testing.T) {
 		t.Fatalf("EncodeAppendEntries: %v", err)
 	}
 	// The entry's command-length field is the 4 bytes right after its
-	// 8-byte term, at the start of the (only) entry.
-	cmdLenOff := appendEntriesFixedSize + 8
+	// 8-byte term and 1-byte kind, at the start of the (only) entry.
+	cmdLenOff := appendEntriesFixedSize + 8 + 1
 	buf[cmdLenOff] = 0xFF
 	buf[cmdLenOff+1] = 0xFF
 	buf[cmdLenOff+2] = 0xFF
 	buf[cmdLenOff+3] = 0xFF
+	_, err = DecodeAppendEntries(buf)
+	if !errors.Is(err, ErrMalformedRPC) {
+		t.Fatalf("err = %v, want ErrMalformedRPC", err)
+	}
+}
+
+func TestDecodeAppendEntriesUnknownEntryKindRejected(t *testing.T) {
+	req := AppendEntriesRequest{Term: 1, LeaderID: 1, Entries: []LogEntry{{Term: 1, Command: []byte("x")}}}
+	buf, err := EncodeAppendEntries(req)
+	if err != nil {
+		t.Fatalf("EncodeAppendEntries: %v", err)
+	}
+	// The entry's kind field is the 1 byte right after its 8-byte term,
+	// at the start of the (only) entry.
+	kindOff := appendEntriesFixedSize + 8
+	buf[kindOff] = 0xFF
 	_, err = DecodeAppendEntries(buf)
 	if !errors.Is(err, ErrMalformedRPC) {
 		t.Fatalf("err = %v, want ErrMalformedRPC", err)

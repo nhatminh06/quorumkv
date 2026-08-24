@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"hash/crc32"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -340,7 +342,10 @@ func TestRestartFinishesInterruptedCompaction(t *testing.T) {
 	// Persist the snapshot directly (bypassing CreateSnapshot's compact
 	// step) to model the crash window.
 	store := NewSnapshotStore(filepath.Join(dir, "snapshot"))
-	if err := store.Save(Snapshot{LastIncludedIndex: i1, LastIncludedTerm: term, Data: encodeCmd("alpha")}); err != nil {
+	n.mu.Lock()
+	cfg := n.membership.Stable
+	n.mu.Unlock()
+	if err := store.Save(Snapshot{LastIncludedIndex: i1, LastIncludedTerm: term, Data: encodeCmd("alpha"), Configuration: cfg}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	n.Close()
@@ -652,5 +657,72 @@ func TestSetInstallSnapshotSend(t *testing.T) {
 	}
 	if !called {
 		t.Fatalf("SetInstallSnapshotSend's replacement was not invoked")
+	}
+}
+
+// writeLegacyV1SnapshotFile hand-encodes a version-1 (pre-Milestone-10)
+// snapshot file — no membership metadata at all, not merely an empty
+// one — matching exactly what a real pre-M10 on-disk snapshot looked
+// like, so NewNode's legacy-fallback path is exercised against a
+// realistic fixture rather than one this package's own (always-v2) Save
+// could ever produce.
+func writeLegacyV1SnapshotFile(t *testing.T, path string, lastIncludedIndex LogIndex, lastIncludedTerm Term, data []byte) {
+	t.Helper()
+	body := make([]byte, 1+8+8+8+len(data))
+	body[0] = 1 // version
+	binary.BigEndian.PutUint64(body[1:9], uint64(lastIncludedIndex))
+	binary.BigEndian.PutUint64(body[9:17], uint64(lastIncludedTerm))
+	binary.BigEndian.PutUint64(body[17:25], uint64(len(data)))
+	copy(body[25:], data)
+	checksum := crc32.Checksum(body, crc32cTable)
+
+	buf := make([]byte, 4+len(body)+4)
+	copy(buf[0:4], []byte{'S', 'N', 'P', '1'})
+	copy(buf[4:], body)
+	binary.BigEndian.PutUint32(buf[4+len(body):], checksum)
+	if err := os.WriteFile(path, buf, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
+
+// TestNewNodeFallsBackToBootstrapConfigForLegacySnapshot is the mandatory
+// legacy-snapshot-compatibility scenario at the Node level (see
+// TestSnapshotStoreLegacyV1FileStillLoads for the SnapshotStore-level
+// proof): a Node started against a pre-Milestone-10 snapshot (no
+// membership metadata) must not treat that as corruption, and must fall
+// back to its own bootstrap configuration as the historical stable
+// config rather than leaving membership unusable.
+func TestNewNodeFallsBackToBootstrapConfigForLegacySnapshot(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(filepath.Join(dir, "state"))
+	log, err := OpenLog(filepath.Join(dir, "log"))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if err := log.Append([]LogEntry{{Term: 1, Kind: EntryApplication, Command: encodeCmd("only")}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	commitStore := NewCommitStore(filepath.Join(dir, "commit"))
+	if err := commitStore.Save(1); err != nil {
+		t.Fatalf("commitStore.Save: %v", err)
+	}
+	snapPath := filepath.Join(dir, "snapshot")
+	writeLegacyV1SnapshotFile(t, snapPath, 1, 1, []byte("legacy-app-state"))
+
+	peers := map[NodeID]string{2: "B", 3: "C"}
+	n, err := NewNode(1, store, log, commitStore, NewSnapshotStore(snapPath), peers, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewNode: %v", err)
+	}
+	defer n.Close()
+
+	status := n.MembershipStatus()
+	if status.Mode != ModeStable {
+		t.Fatalf("Mode = %v, want ModeStable", status.Mode)
+	}
+	for _, id := range []NodeID{1, 2, 3} {
+		if !status.Stable.Has(id) {
+			t.Fatalf("fallback bootstrap configuration missing voter %d: %+v", id, status.Stable)
+		}
 	}
 }
