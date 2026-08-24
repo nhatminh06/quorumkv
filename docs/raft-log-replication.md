@@ -56,7 +56,7 @@ Both payloads travel inside a `transport.Message`, whose frame already
 carries a CRC32C over the whole payload, so neither RPC encoding
 duplicates that checksum. All integers big-endian.
 
-`AppendEntriesRequest` — fixed header (44 bytes) + entries:
+`AppendEntriesRequest` — fixed header (52 bytes) + entries:
 
 ```
 term          8B
@@ -64,6 +64,7 @@ leaderID      8B
 prevLogIndex  8B
 prevLogTerm   8B
 leaderCommit  8B
+readContext   8B  (since Milestone 8; 0 for ordinary replication/heartbeat)
 entryCount    4B
 [entries]     each: term(8B) + commandLength(4B) + command(NB)
 ```
@@ -74,17 +75,27 @@ heartbeat RPC. `entryCount` is validated against `maxEntriesPerAppend`
 per-entry allocation, so a corrupt or hostile peer cannot force an
 oversized allocation by declaring a huge count or length.
 
-`AppendEntriesResponse` — 17 bytes:
+`AppendEntriesResponse` — 25 bytes:
 
 ```
 term        8B
 success     1B  (0 or 1)
 matchIndex  8B  meaningful only when success == true
+readContext 8B  (since Milestone 8; always echoes the request's)
 ```
 
 This milestone uses simple `nextIndex--` backtracking on failure rather
 than a conflict-term hint, so a failure response's `matchIndex` is unused
 (sent as 0).
+
+`readContext` (since Milestone 8) correlates a ReadIndex quorum probe —
+an otherwise-ordinary, entries-free AppendEntries — with its response.
+Critically, the response echoes it **even when `Success` is false** due
+to a `prevLogIndex`/`prevLogTerm` mismatch: a same-term response from a
+live peer proves current-term leadership regardless of whether that
+peer's log happens to be caught up, so a log-replication failure must
+not be confused with a ReadIndex quorum failure. See
+[docs/read-index.md](read-index.md) for the full mechanism.
 
 ## Replication batch size
 

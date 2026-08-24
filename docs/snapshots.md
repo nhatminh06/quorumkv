@@ -255,5 +255,10 @@ client-facing snapshot/compact API; no generic pluggable storage engine
 (the KV state machine's `Snapshot`/`Restore` are specific to
 `internal/kv`); no distributed snapshot coordination between nodes (each
 node decides independently when to call `CreateSnapshot`); no membership
-changes; no ReadIndex/linearizable reads; no request deduplication — all
-unchanged from prior milestones' documented scope.
+changes; no request deduplication — all unchanged from prior milestones'
+documented scope. As of Milestone 8, ReadIndex/quorum-confirmed
+linearizable GET exists (see [docs/read-index.md](read-index.md)) and is
+correctly snapshot-boundary aware: a current-term commit barrier that
+gets compacted into a snapshot's `lastIncludedTerm`/`lastIncludedIndex`
+still satisfies ReadIndex's current-term-committed check without
+requiring the physical log entry to still exist.
