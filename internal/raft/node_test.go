@@ -9,16 +9,22 @@ import (
 
 func newTestNode(t *testing.T, id NodeID, initial PersistentState, peers map[NodeID]string) *Node {
 	t.Helper()
-	store := NewStore(filepath.Join(t.TempDir(), "state"))
+	dir := t.TempDir()
+	store := NewStore(filepath.Join(dir, "state"))
 	if initial != (PersistentState{}) {
 		if err := store.Save(initial); err != nil {
 			t.Fatalf("Save initial state: %v", err)
 		}
 	}
-	n, err := NewNode(id, store, peers)
+	log, err := OpenLog(filepath.Join(dir, "log"))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	n, err := NewNode(id, store, log, peers)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
+	t.Cleanup(n.Close)
 	return n
 }
 
@@ -29,6 +35,17 @@ func brokenStore(t *testing.T) *Store {
 	// A store whose directory does not exist: os.CreateTemp inside Save
 	// fails deterministically, without needing a mock interface.
 	return NewStore(filepath.Join(t.TempDir(), "missing-dir", "state"))
+}
+
+// brokenLog always fails Append/TruncateAndAppend, simulating a disk
+// write failure, the same way brokenStore does for Store.
+func brokenLog(t *testing.T) *Log {
+	t.Helper()
+	l, err := OpenLog(filepath.Join(t.TempDir(), "missing-dir", "log"))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	return l
 }
 
 func mustVoter(id NodeID) *NodeID { return &id }
@@ -151,8 +168,17 @@ func TestHandleRequestVoteLeaderStepsDownOnHigherTerm(t *testing.T) {
 	}
 }
 
+func workingLog(t *testing.T) *Log {
+	t.Helper()
+	l, err := OpenLog(filepath.Join(t.TempDir(), "log"))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	return l
+}
+
 func TestHandleRequestVoteGrantFailsIfPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, brokenStore(t), nil)
+	n, err := NewNode(1, brokenStore(t), workingLog(t), nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -170,7 +196,7 @@ func TestHandleRequestVoteGrantFailsIfPersistenceFails(t *testing.T) {
 }
 
 func TestStartElectionFailsIfPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, brokenStore(t), map[NodeID]string{2: "peer-b"})
+	n, err := NewNode(1, brokenStore(t), workingLog(t), map[NodeID]string{2: "peer-b"})
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}

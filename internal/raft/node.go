@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -12,11 +13,18 @@ import (
 
 // Default election timeout range. Randomization within this range is
 // what keeps followers from all timing out together; the exact bounds
-// are not load-bearing for correctness.
+// are not load-bearing for correctness. defaultHeartbeatInterval is kept
+// well below minElectionTimeout so a healthy leader's heartbeats reliably
+// beat a follower's election timeout.
 const (
-	minElectionTimeout = 150 * time.Millisecond
-	maxElectionTimeout = 300 * time.Millisecond
+	minElectionTimeout       = 150 * time.Millisecond
+	maxElectionTimeout       = 300 * time.Millisecond
+	defaultHeartbeatInterval = 50 * time.Millisecond
 )
+
+// ErrNotLeader is returned by Propose when this node is not currently
+// Leader.
+var ErrNotLeader = errors.New("raft: not leader")
 
 func randomElectionTimeout() time.Duration {
 	span := maxElectionTimeout - minElectionTimeout
@@ -43,47 +51,103 @@ func sendOverTransport(ctx context.Context, addr string, req RequestVoteRequest)
 	return DecodeRequestVoteResponse(resp.Payload)
 }
 
-// Node is a single Raft participant's election state: persistent
-// term/vote, volatile role, and in-progress vote counting. It does not
-// implement AppendEntries, heartbeats, or log replication — see
-// docs/raft-election.md.
+// appendSender issues an AppendEntries RPC to addr and returns the
+// decoded response, mirroring sender's real-transport/fake-network
+// substitutability.
+type appendSender func(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error)
+
+func sendAppendOverTransport(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
+	payload, err := EncodeAppendEntries(req)
+	if err != nil {
+		return AppendEntriesResponse{}, err
+	}
+	msg := transport.NewMessage(transport.MessageAppendEntries, payload)
+	resp, err := transport.Send(ctx, addr, msg)
+	if err != nil {
+		return AppendEntriesResponse{}, err
+	}
+	if resp.Type != transport.MessageAppendEntriesResponse {
+		return AppendEntriesResponse{}, fmt.Errorf("raft: unexpected response message type %d", resp.Type)
+	}
+	return DecodeAppendEntriesResponse(resp.Payload)
+}
+
+// Node is a single Raft participant: persistent term/vote/log, volatile
+// role, in-progress vote counting, and (while Leader) replication state.
+// See docs/raft-election.md and docs/raft-log-replication.md.
 //
 // A single mutex protects all of Node's state. Network I/O (RequestVote
-// RPCs sent to peers) never happens while that mutex is held: StartElection
-// snapshots what it needs, unlocks, performs I/O, and re-locks only to
-// apply each response.
+// and AppendEntries RPCs sent to peers) never happens while that mutex is
+// held: StartElection and replicateToAllPeers each snapshot what they
+// need, unlock, perform I/O, and re-lock only to apply each response.
 type Node struct {
-	id    NodeID
-	store *Store
-	peers map[NodeID]string // NodeID -> address, fixed for this milestone
-	send  sender
+	id         NodeID
+	store      *Store
+	log        *Log
+	peers      map[NodeID]string // NodeID -> address, fixed for this milestone
+	send       sender
+	sendAppend appendSender
 
-	timeoutFunc func() time.Duration
-	resetCh     chan struct{}
+	timeoutFunc       func() time.Duration
+	heartbeatInterval time.Duration
+	resetCh           chan struct{}
+
+	// bgCtx/bgCancel bound this Node's own background work (heartbeat
+	// loops), independent of whatever short-lived ctx a particular
+	// StartElection/HandleRequestVote/HandleAppendEntries call happens to
+	// receive. Close cancels it.
+	bgCtx    context.Context
+	bgCancel context.CancelFunc
 
 	mu         sync.Mutex
 	persistent PersistentState
 	role       Role
 	votes      map[NodeID]bool // valid only while role == Candidate
+
+	// Leader-only volatile replication state; re-initialized every time
+	// this node becomes Leader and never persisted.
+	nextIndex  map[NodeID]LogIndex
+	matchIndex map[NodeID]LogIndex
+	// leaderCancel stops this leadership term's heartbeat loop; nil
+	// unless role == Leader.
+	leaderCancel context.CancelFunc
+
+	// commitIndex is volatile: Raft reconstructs it from scratch (starting
+	// at 0) after a restart rather than persisting it directly.
+	commitIndex LogIndex
 }
 
-// NewNode loads persistent state from store and constructs a Node that
-// starts, as every Raft node must on restart, as a Follower.
-func NewNode(id NodeID, store *Store, peers map[NodeID]string) (*Node, error) {
+// NewNode loads persistent state and the Raft log, and constructs a Node
+// that starts, as every Raft node must on restart, as a Follower.
+func NewNode(id NodeID, store *Store, log *Log, peers map[NodeID]string) (*Node, error) {
 	state, err := store.Load()
 	if err != nil {
 		return nil, err
 	}
+	bgCtx, bgCancel := context.WithCancel(context.Background())
 	return &Node{
-		id:          id,
-		store:       store,
-		peers:       peers,
-		send:        sendOverTransport,
-		timeoutFunc: randomElectionTimeout,
-		resetCh:     make(chan struct{}, 1),
-		persistent:  state,
-		role:        Follower,
+		id:                id,
+		store:             store,
+		log:               log,
+		peers:             peers,
+		send:              sendOverTransport,
+		sendAppend:        sendAppendOverTransport,
+		timeoutFunc:       randomElectionTimeout,
+		heartbeatInterval: defaultHeartbeatInterval,
+		resetCh:           make(chan struct{}, 1),
+		bgCtx:             bgCtx,
+		bgCancel:          bgCancel,
+		persistent:        state,
+		role:              Follower,
+		nextIndex:         make(map[NodeID]LogIndex),
+		matchIndex:        make(map[NodeID]LogIndex),
 	}, nil
+}
+
+// Close stops this node's background heartbeat/replication work. Safe to
+// call whether or not this node is currently Leader.
+func (n *Node) Close() {
+	n.bgCancel()
 }
 
 // Handler returns the transport.Handler that dispatches inbound Raft RPC
@@ -114,6 +178,16 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 			return transport.Message{}, err
 		}
 		return transport.NewMessage(transport.MessageRequestVoteResponse, EncodeRequestVoteResponse(resp)), nil
+	case transport.MessageAppendEntries:
+		req, err := DecodeAppendEntries(m.Payload)
+		if err != nil {
+			return transport.Message{}, err
+		}
+		resp, err := n.HandleAppendEntries(req)
+		if err != nil {
+			return transport.Message{}, err
+		}
+		return transport.NewMessage(transport.MessageAppendEntriesResponse, EncodeAppendEntriesResponse(resp)), nil
 	default:
 		return transport.Message{}, fmt.Errorf("raft: unexpected message type %d", m.Type)
 	}
@@ -145,11 +219,10 @@ func (n *Node) VotedFor() *NodeID {
 	return &v
 }
 
-// lastLogInfo returns this node's last log index/term. Until log
-// replication exists, every node behaves as though its log is empty.
-// Must be called with n.mu held.
+// lastLogInfo returns this node's last log index/term. Must be called
+// with n.mu held.
 func (n *Node) lastLogInfo() (LogIndex, Term) {
-	return 0, 0
+	return n.log.LastIndex(), n.log.LastTerm()
 }
 
 // stepDownLocked updates currentTerm to newTerm, clears votedFor, and
@@ -165,9 +238,41 @@ func (n *Node) stepDownLocked(newTerm Term) error {
 		return err
 	}
 	n.persistent = next
+	n.stepToFollowerLocked()
+	return nil
+}
+
+// stepToFollowerLocked converts a Candidate or Leader to Follower without
+// touching persistent term/vote state — used when valid same-term leader
+// contact proves another leader already exists for this term (Raft
+// requires stepping down here, but not a term change). It also stops this
+// node's own heartbeat loop, if it had one. Must be called with n.mu held.
+func (n *Node) stepToFollowerLocked() {
 	n.role = Follower
 	n.votes = nil
-	return nil
+	if n.leaderCancel != nil {
+		n.leaderCancel()
+		n.leaderCancel = nil
+	}
+}
+
+// becomeLeaderLocked transitions to Leader: initializes nextIndex/
+// matchIndex for every peer and starts this leadership term's heartbeat
+// loop, bound to n.bgCtx (not to whatever short-lived ctx triggered the
+// transition) so it keeps running until this node steps down or Close is
+// called. Must be called with n.mu held.
+func (n *Node) becomeLeaderLocked() {
+	n.role = Leader
+	last := n.log.LastIndex()
+	n.nextIndex = make(map[NodeID]LogIndex, len(n.peers))
+	n.matchIndex = make(map[NodeID]LogIndex, len(n.peers))
+	for id := range n.peers {
+		n.nextIndex[id] = last + 1
+		n.matchIndex[id] = 0
+	}
+	leaderCtx, cancel := context.WithCancel(n.bgCtx)
+	n.leaderCancel = cancel
+	go n.heartbeatLoop(leaderCtx)
 }
 
 // resetTimer requests that Run restart its election timeout. It is
@@ -257,7 +362,7 @@ func (n *Node) StartElection(ctx context.Context) error {
 
 	clusterSize := len(n.peers) + 1
 	if len(n.votes) >= Majority(clusterSize) {
-		n.role = Leader
+		n.becomeLeaderLocked()
 		n.mu.Unlock()
 		return nil
 	}
@@ -315,8 +420,266 @@ func (n *Node) applyVoteResponse(electionTerm Term, from NodeID, resp RequestVot
 	n.votes[from] = true
 
 	if len(n.votes) >= Majority(len(n.peers)+1) {
-		n.role = Leader
+		n.becomeLeaderLocked()
 	}
+}
+
+// HandleAppendEntries implements the Raft AppendEntries RPC handler,
+// including heartbeats (Entries == nil/empty). Order of operations:
+// reject stale terms; step down (persisting first) on a newer term, or
+// convert to Follower without a term change if a Candidate/Leader sees
+// valid same-term leader contact; reset the election timer for any
+// accepted current-term leader contact regardless of what the log
+// consistency check below finds; check prevLogIndex/prevLogTerm; then
+// repair/append entries, preserving any already-matching prefix and
+// persisting before reporting success.
+func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesResponse, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if req.Term < n.persistent.CurrentTerm {
+		return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: false}, nil
+	}
+	if req.Term > n.persistent.CurrentTerm {
+		if err := n.stepDownLocked(req.Term); err != nil {
+			return AppendEntriesResponse{}, err
+		}
+	} else if n.role != Follower {
+		// Same term, valid leader contact: another leader already exists
+		// for this term, so a Candidate or (in principle) a Leader must
+		// step down — without changing term/vote.
+		n.stepToFollowerLocked()
+	}
+
+	// This is valid contact from the current-term leader: reset the
+	// election timer even if the log consistency check below fails,
+	// since the sender is still that leader and a rejection here isn't a
+	// reason for this follower to start its own election.
+	n.resetTimer()
+
+	localPrevTerm, ok := n.log.Term(req.PrevLogIndex)
+	if !ok || localPrevTerm != req.PrevLogTerm {
+		return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: false}, nil
+	}
+
+	if len(req.Entries) > 0 {
+		conflictAt := LogIndex(0)
+		for i, e := range req.Entries {
+			idx := req.PrevLogIndex + LogIndex(i) + 1
+			localTerm, ok := n.log.Term(idx)
+			if !ok || localTerm != e.Term {
+				conflictAt = idx
+				break
+			}
+		}
+		if conflictAt != 0 {
+			newEntries := req.Entries[conflictAt-req.PrevLogIndex-1:]
+			if err := n.log.TruncateAndAppend(conflictAt, newEntries); err != nil {
+				return AppendEntriesResponse{}, err
+			}
+		}
+		// If conflictAt stays 0, every incoming entry already matched the
+		// local log — an idempotent retransmission — so no write happens.
+	}
+
+	lastNewIndex := req.PrevLogIndex + LogIndex(len(req.Entries))
+	if req.LeaderCommit > n.commitIndex {
+		newCommit := req.LeaderCommit
+		if last := n.log.LastIndex(); last < newCommit {
+			newCommit = last
+		}
+		if newCommit > n.commitIndex {
+			n.commitIndex = newCommit
+		}
+	}
+
+	return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: true, MatchIndex: lastNewIndex}, nil
+}
+
+// replicationRequest bundles one peer's outbound AppendEntries with the
+// addressing needed to send it, computed while the lock is held.
+type replicationRequest struct {
+	id   NodeID
+	addr string
+	req  AppendEntriesRequest
+}
+
+// replicateToAllPeers sends one round of AppendEntries (a heartbeat if a
+// peer has nothing new) to every peer concurrently. It is called both by
+// the periodic heartbeat loop and immediately after a successful Propose.
+func (n *Node) replicateToAllPeers(ctx context.Context) {
+	n.mu.Lock()
+	if n.role != Leader {
+		n.mu.Unlock()
+		return
+	}
+	term := n.persistent.CurrentTerm
+	leaderID := n.id
+	leaderCommit := n.commitIndex
+
+	reqs := make([]replicationRequest, 0, len(n.peers))
+	for id, addr := range n.peers {
+		next := n.nextIndex[id]
+		if next < 1 {
+			next = 1
+		}
+		prevIndex := next - 1
+		prevTerm, _ := n.log.Term(prevIndex)
+		entries := n.log.EntriesFrom(next)
+		if len(entries) > maxEntriesPerAppend {
+			entries = entries[:maxEntriesPerAppend]
+		}
+		reqs = append(reqs, replicationRequest{id: id, addr: addr, req: AppendEntriesRequest{
+			Term:         term,
+			LeaderID:     leaderID,
+			PrevLogIndex: prevIndex,
+			PrevLogTerm:  prevTerm,
+			Entries:      entries,
+			LeaderCommit: leaderCommit,
+		}})
+	}
+	n.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for _, r := range reqs {
+		wg.Add(1)
+		go func(r replicationRequest) {
+			defer wg.Done()
+			resp, err := n.sendAppend(ctx, r.addr, r.req)
+			if err != nil {
+				return
+			}
+			n.applyAppendEntriesResponse(term, r.id, r.req, resp)
+		}(r)
+	}
+	wg.Wait()
+}
+
+// applyAppendEntriesResponse validates an AppendEntries response against
+// current state before applying it: a higher term forces step-down; a
+// response for a term/role this node has already moved on from is stale
+// and ignored. On success, matchIndex/nextIndex are advanced but
+// matchIndex never regresses (guards against a stale-but-successful
+// older response). On failure, nextIndex backs off by one (never below
+// 1) for a retry on the next round.
+func (n *Node) applyAppendEntriesResponse(sentTerm Term, from NodeID, req AppendEntriesRequest, resp AppendEntriesResponse) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if resp.Term > n.persistent.CurrentTerm {
+		_ = n.stepDownLocked(resp.Term) // best-effort; on failure state is unchanged
+		return
+	}
+	if n.role != Leader || n.persistent.CurrentTerm != sentTerm {
+		return
+	}
+
+	if resp.Success {
+		newMatch := req.PrevLogIndex + LogIndex(len(req.Entries))
+		if newMatch > n.matchIndex[from] {
+			n.matchIndex[from] = newMatch
+			n.nextIndex[from] = newMatch + 1
+		}
+		n.maybeAdvanceCommitIndexLocked()
+		return
+	}
+	if n.nextIndex[from] > 1 {
+		n.nextIndex[from]--
+	}
+}
+
+// maybeAdvanceCommitIndexLocked implements Raft's commit rule: commitIndex
+// may advance to N only if a majority (including self) has matchIndex >=
+// N AND log[N].term == currentTerm. An entry from an older term is never
+// committed by majority replication alone — it can only become committed
+// as a side effect of committing a later current-term entry. Must be
+// called with n.mu held.
+func (n *Node) maybeAdvanceCommitIndexLocked() {
+	last := n.log.LastIndex()
+	for N := last; N > n.commitIndex; N-- {
+		term, ok := n.log.Term(N)
+		if !ok || term != n.persistent.CurrentTerm {
+			continue
+		}
+		count := 1 // self
+		for id := range n.peers {
+			if n.matchIndex[id] >= N {
+				count++
+			}
+		}
+		if count >= Majority(len(n.peers)+1) {
+			n.commitIndex = N
+			return
+		}
+	}
+}
+
+// heartbeatLoop sends AppendEntries to every peer immediately upon
+// becoming Leader, then every heartbeatInterval, until ctx is canceled
+// (step-down, term change, or Close). One heartbeatLoop runs per
+// leadership term; becomeLeaderLocked/stepToFollowerLocked/stepDownLocked
+// ensure the previous one is always stopped before a new one can start.
+func (n *Node) heartbeatLoop(ctx context.Context) {
+	n.replicateToAllPeers(ctx)
+	ticker := time.NewTicker(n.heartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n.replicateToAllPeers(ctx)
+		}
+	}
+}
+
+// Propose appends command as a new entry in the current term to this
+// node's local log, persisting it before returning, and kicks off
+// immediate replication to peers. It does not wait for replication or
+// commitment — poll CommitIndex/LogEntry to observe those.
+//
+// Propose fails with ErrNotLeader if this node is not currently Leader.
+// If local persistence fails, the log is left unchanged and the error is
+// returned; the entry is never treated as proposed.
+func (n *Node) Propose(command []byte) (LogIndex, error) {
+	n.mu.Lock()
+	if n.role != Leader {
+		n.mu.Unlock()
+		return 0, ErrNotLeader
+	}
+	entry := LogEntry{Term: n.persistent.CurrentTerm, Command: cloneBytes(command)}
+	if err := n.log.Append([]LogEntry{entry}); err != nil {
+		n.mu.Unlock()
+		return 0, err
+	}
+	index := n.log.LastIndex()
+	n.maybeAdvanceCommitIndexLocked() // handles the single-node-cluster case
+	n.mu.Unlock()
+
+	go n.replicateToAllPeers(n.bgCtx)
+	return index, nil
+}
+
+// CommitIndex returns the highest log index this node currently
+// considers committed.
+func (n *Node) CommitIndex() LogIndex {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.commitIndex
+}
+
+// LogEntry returns the entry at index, if any.
+func (n *Node) LogEntry(index LogIndex) (LogEntry, bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.log.Entry(index)
+}
+
+// LastLogIndex returns this node's last local log index.
+func (n *Node) LastLogIndex() LogIndex {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.log.LastIndex()
 }
 
 // Run drives this node's election timer until ctx is canceled: whenever
