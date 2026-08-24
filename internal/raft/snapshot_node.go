@@ -124,7 +124,15 @@ func (n *Node) CreateSnapshot() error {
 	if err := n.snapshotStore.Save(Snapshot{LastIncludedIndex: index, LastIncludedTerm: term, Data: data, Configuration: cfg}); err != nil {
 		return err
 	}
-	return n.log.Compact(index, term)
+	if err := n.log.Compact(index, term); err != nil {
+		return err
+	}
+	// The log's boundary just moved past index: any Configuration entries
+	// at or before it are now gone from the log, so this snapshot's own
+	// Configuration becomes the new base a future rebuild starts from.
+	n.baseConfiguration = cfg
+	n.hasBaseConfiguration = true
+	return nil
 }
 
 // HandleInstallSnapshot implements the Raft InstallSnapshot RPC handler.
@@ -237,6 +245,12 @@ func (n *Node) installSnapshot(snap Snapshot) error {
 		}
 		n.commitIndex = snap.LastIncludedIndex
 	}
+	// The log's boundary just moved: any Configuration entries before it
+	// are gone, so this snapshot's own Configuration becomes the new base
+	// effective membership must be rebuilt from.
+	n.baseConfiguration = snap.Configuration
+	n.hasBaseConfiguration = true
+	n.rebuildMembershipLocked()
 	restoreFn := n.restoreFn
 	n.mu.Unlock()
 

@@ -175,7 +175,7 @@ func (n *Node) ReadIndex(ctx context.Context) (LogIndex, error) {
 	leaderID := n.id
 	prevIndex, prevTerm := n.lastLogInfo()
 	leaderCommit := n.commitIndex
-	peers := n.membership.Targets(n.id)
+	peers := n.resolveTargetsLocked()
 	membership := n.membership
 	n.mu.Unlock()
 

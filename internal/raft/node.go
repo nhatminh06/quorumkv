@@ -168,14 +168,22 @@ type Node struct {
 	readContextCounter uint64
 	pendingBarrier     *pendingBarrier
 
-	// membership is this node's effective configuration — see
-	// membership.go. membershipFromLog is false until a Configuration log
-	// entry has ever been applied to it; while false, membership tracks
-	// peers/selfAddr directly (bootstrap). Once true, persisted
-	// configuration history is authoritative forever and SetPeers/
-	// SetSelfAddr no longer overwrite it.
-	membership        Membership
-	membershipFromLog bool
+	// membership is this node's effective configuration, always rebuilt
+	// (never incrementally patched) from baseConfiguration plus every
+	// EntryConfiguration entry surviving in the log — see
+	// rebuildMembershipLocked. baseConfiguration is the stable
+	// configuration as of the log's current BaseIndex: the most recent
+	// snapshot's stored Configuration (or, for a legacy snapshot with no
+	// stored Configuration, this node's own bootstrap configuration) if
+	// one has ever been loaded/created/installed, or the bootstrap
+	// configuration itself if not. Once any real Configuration entry
+	// exists at or after BaseIndex+1, it is found by the rebuild walk and
+	// wins over baseConfiguration regardless of what SetPeers/SetSelfAddr
+	// are called with afterward — so persisted configuration history is
+	// authoritative forever without needing a separate sticky flag.
+	membership           Membership
+	baseConfiguration    Configuration
+	hasBaseConfiguration bool
 }
 
 // NewNode loads persistent state, the Raft log, the durably recorded
@@ -275,7 +283,17 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		n.lastApplied = snap.LastIncludedIndex
 	}
 	n.mu.Lock()
-	n.recomputeMembershipLocked()
+	if snap != nil {
+		if snap.ConfigurationPresent {
+			n.baseConfiguration = snap.Configuration
+		} else {
+			// Legacy (pre-Milestone-10) snapshot: fall back to this node's
+			// own bootstrap configuration as the historical stable config.
+			n.baseConfiguration = n.bootstrapConfigurationLocked()
+		}
+		n.hasBaseConfiguration = true
+	}
+	n.rebuildMembershipLocked()
 	n.kickApplyLocked()
 	n.mu.Unlock()
 	return n, nil
@@ -303,7 +321,7 @@ func (n *Node) SetPeers(peers map[NodeID]string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.peers = peers
-	n.recomputeMembershipLocked()
+	n.rebuildMembershipLocked()
 }
 
 // SetSelfAddr records this node's own dialable address. It exists for
@@ -319,19 +337,81 @@ func (n *Node) SetSelfAddr(addr string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.selfAddr = addr
-	n.recomputeMembershipLocked()
+	n.rebuildMembershipLocked()
 }
 
-// recomputeMembershipLocked refreshes n.membership from n.peers/n.selfAddr
-// (the bootstrap configuration) unless persisted configuration-entry
-// history has ever been applied, in which case that history is
-// authoritative forever and bootstrap inputs must never overwrite it. Must
+// rebuildMembershipLocked recomputes n.membership from scratch: starting
+// at baseConfiguration (the most recent snapshot's stored stable config,
+// or this node's bootstrap configuration if none exists yet), walk every
+// surviving log entry from BaseIndex+1 onward and apply each
+// EntryConfiguration entry found in order:
+//
+//   - A Joint entry activates immediately, before it ever commits — a
+//     node's effective membership is derived from its own local log, not
+//     from a globally agreed "committed" source (see docs/membership.md).
+//   - A Stable entry (completing a transition) activates only once it is
+//     itself committed (index <= n.commitIndex); until then, effective
+//     membership deliberately stays at whatever Joint state preceded it,
+//     so quorum still requires both old and new majorities right up to
+//     the moment the transition is truly final. This is a conservative
+//     choice the spec calls out explicitly, not an oversight.
+//
+// Because this always re-derives from persisted history rather than
+// patching in place, it is safe to call after anything that can change
+// what that history means: log truncation (conflict repair), a newly
+// appended/committed entry, or a snapshot install boundary change. Must
 // be called with n.mu held.
-func (n *Node) recomputeMembershipLocked() {
-	if n.membershipFromLog {
-		return
+func (n *Node) rebuildMembershipLocked() {
+	base := n.bootstrapConfigurationLocked()
+	if n.hasBaseConfiguration {
+		base = n.baseConfiguration
 	}
-	n.membership = StableMembership(n.bootstrapConfigurationLocked())
+	effective := StableMembership(base)
+
+	for idx := n.log.BaseIndex() + 1; idx <= n.log.LastIndex(); idx++ {
+		e, ok := n.log.Entry(idx)
+		if !ok || e.Kind != EntryConfiguration {
+			continue
+		}
+		m, err := DecodeMembership(e.Command)
+		if err != nil {
+			continue // defensive: this package's own encoder never produces this
+		}
+		switch m.Mode {
+		case ModeJoint:
+			effective = m
+		case ModeStable:
+			if idx <= n.commitIndex {
+				effective = m
+			}
+			// Else: an uncommitted final Stable entry — leave effective as
+			// the Joint state that preceded it.
+		}
+	}
+	n.membership = effective
+}
+
+// resolveTargetsLocked returns the address every other effective voter
+// should be dialed at: the ID set comes from n.membership.Targets (so
+// joint-quorum-aware targeting, including a newly added not-yet-committed
+// peer, is always correct), but the address for any ID this node
+// currently has an entry for in n.peers wins over whatever address the
+// (possibly stale, snapshot/log-derived) Membership itself has recorded —
+// n.peers is this node's own freshest operational knowledge (kept current
+// by SetPeers) and must not regress to a historical address just because
+// a Configuration entry or snapshot boundary happens to embed one. A peer
+// this node has never been separately told about via SetPeers (e.g. a
+// brand-new joiner known only through a just-replicated Configuration
+// entry) falls back to the Membership's own address. Must be called with
+// n.mu held.
+func (n *Node) resolveTargetsLocked() map[NodeID]string {
+	targets := n.membership.Targets(n.id)
+	for id := range targets {
+		if addr, ok := n.peers[id]; ok {
+			targets[id] = addr
+		}
+	}
+	return targets
 }
 
 // bootstrapConfigurationLocked builds the Configuration this node starts
@@ -625,7 +705,7 @@ func (n *Node) StartElection(ctx context.Context) error {
 		return nil
 	}
 
-	peers := n.membership.Targets(n.id)
+	peers := n.resolveTargetsLocked()
 	n.mu.Unlock()
 
 	req := RequestVoteRequest{
@@ -740,6 +820,12 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 			// waiting on; re-check them now rather than leaving them
 			// blocked until their ctx times out.
 			n.notifyWaitersLocked()
+			// The truncated-away suffix may have carried an uncommitted
+			// Configuration entry (this follower's effective membership
+			// must revert to whatever preceded it), and/or the newly
+			// appended suffix may carry one (which must activate
+			// immediately) — either way, re-derive from scratch.
+			n.rebuildMembershipLocked()
 		}
 		// If conflictAt stays 0, every incoming entry already matched the
 		// local log — an idempotent retransmission — so no write happens.
@@ -759,6 +845,9 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 			if err := n.commitStore.Save(newCommit); err == nil {
 				n.commitIndex = newCommit
 				n.kickApplyLocked()
+				// A previously-appended-but-uncommitted final Stable
+				// configuration entry may now be covered by newCommit.
+				n.rebuildMembershipLocked()
 			}
 		}
 	}
@@ -796,7 +885,7 @@ func (n *Node) replicateToAllPeers(ctx context.Context) {
 	leaderCommit := n.commitIndex
 	baseIndex := n.log.BaseIndex()
 
-	targets := n.membership.Targets(n.id)
+	targets := n.resolveTargetsLocked()
 	reqs := make([]replicationRequest, 0, len(targets))
 	var snapshotPeers []replicationRequest // reused only for id/addr
 	for id, addr := range targets {
@@ -920,6 +1009,9 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 			}
 			n.commitIndex = N
 			n.kickApplyLocked()
+			// A previously-appended-but-uncommitted final Stable
+			// configuration entry may now be covered by N.
+			n.rebuildMembershipLocked()
 			return
 		}
 	}
