@@ -12,15 +12,30 @@ actually waits on this pipeline before acknowledging.
 
 `internal/kv.EncodeCommand`/`DecodeCommand` define the bytes a Raft log
 entry's `Command` field holds for a PUT or DELETE. GET is never encoded —
-it is a read, with nothing to replicate.
+it is a read, with nothing to replicate. Since Milestone 9 there are two
+shapes; `EncodeCommand` picks one automatically from whether `Command`
+carries a request identity:
 
 ```
-version      1B   = 1
-operation    1B   = PUT (1) or DELETE (2)
-keyLength    4B
-valueLength  4B
-key          N bytes
-value        M bytes
+version 1 (no request identity — every Milestone 1-8 command, and any
+Command built via NewPutCommand/NewDeleteCommand):
+  version      1B   = 1
+  operation    1B   = PUT (1) or DELETE (2)
+  keyLength    4B
+  valueLength  4B
+  key          N bytes
+  value        M bytes
+
+version 2 (request-identified — NewIdentifiedPutCommand/
+NewIdentifiedDeleteCommand, what the client protocol now always sends):
+  version      1B   = 2
+  operation    1B   = PUT (1) or DELETE (2)
+  clientID     16B
+  sequence     8B
+  keyLength    4B
+  valueLength  4B
+  key          N bytes
+  value        M bytes
 ```
 
 Big-endian. A DELETE must not carry a value (`valueLength` must be 0).
@@ -28,7 +43,11 @@ Bounds: `MaxKeySize` = 64 KiB, `MaxValueSize` = 200 KiB — comfortably
 under Raft's 256 KiB per-entry limit (`internal/raft`'s
 `maxCommandSize`) once this format's overhead is included, so an encoded
 command always fits one legal log entry. Declared lengths are validated
-before any allocation based on them.
+before any allocation based on them; a version-2 command's `clientID`/
+`sequence` are additionally validated non-zero. `DecodeCommand` reads
+both versions — an old committed log entry never becomes unreadable —
+see [docs/request-dedup.md](request-dedup.md) for the full request-
+identity/deduplication design this enables.
 
 Raft never imports `internal/kv` — it only knows commands as opaque
 bytes. The connection is a narrow callback:

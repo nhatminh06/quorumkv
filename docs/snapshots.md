@@ -50,21 +50,33 @@ are all boundary-aware:
 ## 3. KV state serialization (`internal/kv`)
 
 `StateMachine.Snapshot() ([]byte, error)` and `StateMachine.Restore(data
-[]byte) error` serialize/restore the entire key/value map deterministically:
+[]byte) error` serialize/restore the entire key/value map, and (since
+Milestone 9) the replicated request-dedup table, deterministically:
 
 ```
-version(1B) | entryCount(4B) | repeated{ keyLen(4B) valLen(4B) key valLen }
+version(1B) | kvEntryCount(4B) | repeated{ keyLen(4B) valLen(4B) key val }
+  | clientCount(4B) | repeated{ clientID(16B) lastSequence(8B) fingerprint(32B) result(1B) }
 ```
 
-Keys are sorted (`sort.Strings`) before encoding specifically because Go
-map iteration order is randomized — two snapshots of identical state must
-produce byte-identical output, proven by
-`TestSnapshotIsDeterministicRegardlessOfInsertionOrder`. Bounds
-(`MaxSnapshotEntries`, per-key/value size vs. `kv.MaxKeySize`/
-`MaxValueSize`) are checked before allocating anything, and `Restore` only
-replaces `m.state` after the entire input has decoded successfully — a
-malformed snapshot never partially mutates live state
-(`TestRestoreIsAtomicOnMalformedInput`).
+Keys are sorted (`sort.Strings`) and client records are sorted by
+`ClientID` before encoding — both specifically because Go map iteration
+order is randomized — so two snapshots of identical state must produce
+byte-identical output regardless of insertion order, proven by
+`TestSnapshotIsDeterministicRegardlessOfInsertionOrder` and
+`TestSnapshotClientRecordsSortedByClientID`. Version 1 (the original
+Milestone 7 shape, KV entries only) still decodes — with an empty dedup
+table — and `Snapshot` always produces version 2 going forward, the same
+pattern the command codec (§below, and
+[docs/request-dedup.md](request-dedup.md)) uses. Bounds
+(`MaxSnapshotEntries`/`MaxSnapshotClients`, per-key/value size vs.
+`kv.MaxKeySize`/`MaxValueSize`) are checked before allocating anything,
+and `Restore` only replaces state after the entire input has decoded
+successfully — a malformed snapshot never partially mutates live state
+(`TestRestoreIsAtomicOnMalformedInput`). See
+[docs/request-dedup.md](request-dedup.md) for why the dedup table must
+live inside the snapshot at all: without it, compaction would silently
+erase the ability to recognize a retried request whose original commit
+had already been compacted away.
 
 ## 4. Raft snapshot persistence (`internal/raft`)
 

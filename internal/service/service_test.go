@@ -12,8 +12,17 @@ import (
 	"quorumkv/internal/client"
 	"quorumkv/internal/clientproto"
 	"quorumkv/internal/raft"
+	"quorumkv/internal/reqid"
 	"quorumkv/internal/transport"
 )
+
+// testClientID returns a fixed, non-zero ClientID for tests that build a
+// clientproto.Request by hand (bypassing internal/client) and need a
+// valid request identity for PUT/DELETE.
+func testClientID() (id reqid.ClientID) {
+	id[0] = 0xAB
+	return id
+}
 
 type testNode struct {
 	id  raft.NodeID
@@ -38,7 +47,7 @@ func startCluster(t *testing.T, n int) []*testNode {
 		}
 		commitStore := raft.NewCommitStore(filepath.Join(dir, "commit"))
 		svc := New(nil)
-		node, err := raft.NewNode(id, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, nil, nil)
+		node, err := raft.NewNode(id, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, svc.Snapshot, svc.Restore)
 		if err != nil {
 			t.Fatalf("NewNode: %v", err)
 		}
@@ -53,7 +62,6 @@ func startCluster(t *testing.T, n int) []*testNode {
 		if err != nil {
 			t.Fatalf("Listen: %v", err)
 		}
-		t.Cleanup(func() { tr.Close() })
 		tn.tr = tr
 		peers[tn.id] = tr.Addr()
 	}
@@ -66,7 +74,15 @@ func startCluster(t *testing.T, n int) []*testNode {
 		}
 		rNodes[i].SetPeers(nodePeers)
 		tn.svc.peers = nodePeers
+		// t.Cleanup runs LIFO: register the node's own Close first and its
+		// transport's Close second, so the transport (registered last)
+		// stops accepting/dispatching inbound RPCs *before* the node
+		// begins closing — otherwise a still-open listener can dispatch a
+		// HandleAppendEntries call into a node that Close() is
+		// concurrently tearing down, a genuine (if narrow) data race.
 		t.Cleanup(rNodes[i].Close)
+		tr := tn.tr
+		t.Cleanup(func() { tr.Close() })
 	}
 	return nodes
 }
@@ -179,7 +195,7 @@ func TestFollowerReturnsNotLeaderWithHint(t *testing.T) {
 	// proposed anything.
 	before := nodes[0].svc.node.LastLogIndex()
 
-	req, _ := clientproto.EncodeRequest(clientproto.Request{Operation: clientproto.OpPut, Key: []byte("x"), Value: []byte("1")})
+	req, _ := clientproto.EncodeRequest(clientproto.Request{Operation: clientproto.OpPut, ClientID: testClientID(), Sequence: 1, Key: []byte("x"), Value: []byte("1")})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	respMsg, err := transport.Send(ctx, nodes[1].addr(), transport.NewMessage(transport.MessageClientRequest, req))
@@ -433,7 +449,7 @@ func TestRestartRebuildsKVStateFromCommittedPrefix(t *testing.T) {
 		}
 		commitStore := raft.NewCommitStore(commitPath)
 		svc := New(nil)
-		node, err := raft.NewNode(1, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, nil, nil)
+		node, err := raft.NewNode(1, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, svc.Snapshot, svc.Restore)
 		if err != nil {
 			t.Fatalf("NewNode: %v", err)
 		}
@@ -443,10 +459,11 @@ func TestRestartRebuildsKVStateFromCommittedPrefix(t *testing.T) {
 		if err := node.StartElection(context.Background()); err != nil {
 			t.Fatalf("StartElection: %v", err)
 		}
+		id := testClientID()
 		for _, r := range []clientproto.Request{
-			{Operation: clientproto.OpPut, Key: []byte("x"), Value: []byte("1")},
-			{Operation: clientproto.OpPut, Key: []byte("y"), Value: []byte("2")},
-			{Operation: clientproto.OpDelete, Key: []byte("x")},
+			{Operation: clientproto.OpPut, ClientID: id, Sequence: 1, Key: []byte("x"), Value: []byte("1")},
+			{Operation: clientproto.OpPut, ClientID: id, Sequence: 2, Key: []byte("y"), Value: []byte("2")},
+			{Operation: clientproto.OpDelete, ClientID: id, Sequence: 3, Key: []byte("x")},
 		} {
 			resp := svc.dispatch(context.Background(), r)
 			if resp.Status != clientproto.StatusOK {
@@ -463,7 +480,7 @@ func TestRestartRebuildsKVStateFromCommittedPrefix(t *testing.T) {
 	}
 	commitStore := raft.NewCommitStore(commitPath)
 	svc := New(nil)
-	node, err := raft.NewNode(1, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, nil, nil)
+	node, err := raft.NewNode(1, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, svc.Snapshot, svc.Restore)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -514,7 +531,7 @@ func TestApplyFailureClientNeverGetsOK(t *testing.T) {
 		t.Fatalf("StartElection: %v", err)
 	}
 
-	resp := svc.dispatch(context.Background(), clientproto.Request{Operation: clientproto.OpPut, Key: []byte("x"), Value: []byte("1")})
+	resp := svc.dispatch(context.Background(), clientproto.Request{Operation: clientproto.OpPut, ClientID: testClientID(), Sequence: 1, Key: []byte("x"), Value: []byte("1")})
 	if resp.Status == clientproto.StatusOK {
 		t.Fatalf("dispatch returned OK despite apply failure")
 	}

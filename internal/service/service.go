@@ -4,9 +4,17 @@
 // GET goes through raft.Node.ReadIndex (a quorum-confirmed ReadIndex
 // probe, establishing a current-term commit barrier first if needed) and
 // then WaitApplied on the returned index before reading local state — see
-// docs/read-index.md. This closes the previous milestone's stale-read
-// gap: a partitioned former leader that still believes it is Leader
-// cannot obtain read quorum, so it cannot return a stale successful GET.
+// docs/read-index.md.
+//
+// Since Milestone 9, PUT/DELETE carry a request identity (ClientID,
+// Sequence — see internal/reqid) that the replicated kv.StateMachine
+// deduplicates: a retried write that reaches Apply twice mutates state
+// at most once, and the leader answers a recognized retry with the
+// original cached result rather than proposing (and waiting on) a
+// redundant Raft entry. This is what makes it safe for
+// internal/client to automatically retry an ambiguous PUT/DELETE (a
+// transport failure, TIMEOUT, or NOT_LEADER redirect no longer means the
+// client must give up) — see docs/request-dedup.md.
 package service
 
 import (
@@ -19,6 +27,7 @@ import (
 	"quorumkv/internal/clientproto"
 	"quorumkv/internal/kv"
 	"quorumkv/internal/raft"
+	"quorumkv/internal/reqid"
 	"quorumkv/internal/transport"
 )
 
@@ -34,16 +43,50 @@ import (
 // server shutdown.
 const requestTimeout = 5 * time.Second
 
+// pendingKey identifies one in-flight identified write by request
+// identity — see pending below.
+type pendingKey struct {
+	id  reqid.ClientID
+	seq reqid.Sequence
+}
+
+// pendingWrite coalesces concurrent callers on this leader for the same
+// in-flight (ClientID, Sequence): the first caller proposes and waits;
+// any concurrent retry for the exact same request identity and
+// fingerprint waits on the same completion instead of appending a
+// second (harmless but redundant) Raft entry. This is leader-local,
+// volatile optimization state — never persisted, never authoritative
+// (see docs/request-dedup.md) — cleared once the write reaches a
+// terminal outcome, so it never grows unbounded.
+type pendingWrite struct {
+	fingerprint reqid.Fingerprint
+	done        chan struct{}
+	resp        clientproto.Response
+}
+
 // Service owns the KV state machine and dispatches the client protocol on
 // top of a raft.Node. kv.StateMachine is not safe for concurrent use, so
-// every access to it (the apply callback and GET) is serialized through
-// mu — a service-level lock distinct from raft.Node's own internal lock.
+// every access to it (the apply callback, dedup lookups, and GET) is
+// serialized through mu — a service-level lock distinct from raft.Node's
+// own internal lock.
 type Service struct {
 	node  *raft.Node
 	peers map[raft.NodeID]string // for resolving a leader hint to an address
 
 	mu sync.Mutex
 	sm *kv.StateMachine
+
+	// resMu/results let proposeIdentified learn the ApplyOutcome Apply
+	// produced for the specific index it proposed, without polling or
+	// re-deriving it: register a waiter for an index before/around
+	// WaitApplied, Apply delivers to it exactly once. See
+	// registerResultWaiter.
+	resMu   sync.Mutex
+	results map[raft.LogIndex]chan kv.ApplyOutcome
+
+	// pendMu/pending implement in-flight coalescing (see pendingWrite).
+	pendMu  sync.Mutex
+	pending map[pendingKey]*pendingWrite
 }
 
 // New constructs a Service. peers is used only to resolve a NOT_LEADER
@@ -55,10 +98,15 @@ type Service struct {
 // yet when the Service is constructed. Call Attach once the node exists:
 //
 //	svc := service.New(peers)
-//	node, err := raft.NewNode(id, store, log, commitStore, peers, svc.Apply)
+//	node, err := raft.NewNode(id, store, log, commitStore, snapshotStore, peers, svc.Apply, svc.Snapshot, svc.Restore)
 //	svc.Attach(node)
 func New(peers map[raft.NodeID]string) *Service {
-	return &Service{peers: peers, sm: kv.NewStateMachine()}
+	return &Service{
+		peers:   peers,
+		sm:      kv.NewStateMachine(),
+		results: make(map[raft.LogIndex]chan kv.ApplyOutcome),
+		pending: make(map[pendingKey]*pendingWrite),
+	}
 }
 
 // Attach completes construction by giving the Service the raft.Node it
@@ -68,9 +116,10 @@ func (s *Service) Attach(node *raft.Node) {
 }
 
 // Apply is a raft.ApplyFunc: decode the committed command and apply it to
-// the KV state machine. raft.Node calls this strictly in log order,
-// exactly once per index per process run, and never while holding its
-// own internal lock. Pass this to raft.NewNode's applyFunc parameter.
+// the KV state machine (including request dedup — see kv.StateMachine.
+// Apply). raft.Node calls this strictly in log order, exactly once per
+// index per process run, and never while holding its own internal lock.
+// Pass this to raft.NewNode's applyFunc parameter.
 //
 // A malformed committed command is a serious local failure, not a
 // skippable one — restart recovery must not trust disk merely because
@@ -84,9 +133,56 @@ func (s *Service) Apply(index raft.LogIndex, command []byte) error {
 		return fmt.Errorf("service: malformed committed command at index %d: %w", index, err)
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sm.Apply(cmd)
+	outcome := s.sm.Apply(cmd)
+	s.mu.Unlock()
+
+	s.resMu.Lock()
+	if ch, ok := s.results[index]; ok {
+		ch <- outcome
+		delete(s.results, index)
+	}
+	s.resMu.Unlock()
 	return nil
+}
+
+// Snapshot is a raft.SnapshotFunc: serialize the current KV+dedup state
+// (see kv.StateMachine.Snapshot). Pass to raft.NewNode's snapshotFn
+// parameter.
+func (s *Service) Snapshot() ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sm.Snapshot()
+}
+
+// Restore is a raft.RestoreFunc: replace KV+dedup state wholesale from a
+// snapshot (see kv.StateMachine.Restore). Pass to raft.NewNode's
+// restoreFn parameter.
+func (s *Service) Restore(data []byte) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.sm.Restore(data)
+}
+
+// registerResultWaiter records interest in index's eventual ApplyOutcome,
+// mirroring raft.Node's own applyWaiter pattern: register before/around
+// waiting so a fast Apply can never "complete before anyone was
+// listening." Callers must always eventually pair this with either a
+// successful read from the returned channel (which Apply also cleans up
+// after) or removeResultWaiter (see the call sites) — never both, never
+// neither, so map entries cannot accumulate for indexes that will never
+// be applied on this node (a superseded proposal, a timed-out caller).
+func (s *Service) registerResultWaiter(index raft.LogIndex) chan kv.ApplyOutcome {
+	ch := make(chan kv.ApplyOutcome, 1)
+	s.resMu.Lock()
+	s.results[index] = ch
+	s.resMu.Unlock()
+	return ch
+}
+
+func (s *Service) removeResultWaiter(index raft.LogIndex) {
+	s.resMu.Lock()
+	delete(s.results, index)
+	s.resMu.Unlock()
 }
 
 // Handler returns the transport.Handler that serves both this node's Raft
@@ -118,16 +214,18 @@ func (s *Service) respond(r clientproto.Response) (transport.Message, error) {
 }
 
 // dispatch rejects a follower's request before touching Raft at all —
-// followers never propose commands.
+// followers never propose commands, and never answer a write from local
+// state as if authoritative even if they happen to already have it
+// applied (see docs/request-dedup.md).
 func (s *Service) dispatch(ctx context.Context, req clientproto.Request) clientproto.Response {
 	if s.node.Role() != raft.Leader {
 		return s.notLeaderResponse()
 	}
 	switch req.Operation {
 	case clientproto.OpPut:
-		return s.put(ctx, req.Key, req.Value)
+		return s.write(ctx, kv.NewIdentifiedPutCommand(req.ClientID, req.Sequence, req.Key, req.Value))
 	case clientproto.OpDelete:
-		return s.delete(ctx, req.Key)
+		return s.write(ctx, kv.NewIdentifiedDeleteCommand(req.ClientID, req.Sequence, req.Key))
 	case clientproto.OpGet:
 		return s.get(ctx, req.Key)
 	default:
@@ -145,27 +243,109 @@ func (s *Service) notLeaderResponse() clientproto.Response {
 	return clientproto.Response{Status: clientproto.StatusNotLeader, LeaderHint: hint}
 }
 
-func (s *Service) put(ctx context.Context, key, value []byte) clientproto.Response {
-	cmd, err := kv.EncodeCommand(kv.NewPutCommand(key, value))
+// write implements the identified PUT/DELETE flow (see
+// docs/request-dedup.md item 35):
+//
+//	in-flight coalescing check
+//	     v
+//	local apply catch-up (WaitApplied to this node's own commitIndex —
+//	   never ReadIndex: write dedup is governed by Raft proposal/commit,
+//	   not quorum-confirmed reads)
+//	     v
+//	replicated dedup lookup: duplicate/stale/conflict short-circuit,
+//	   or unseen -> propose + wait + inspect the real apply outcome
+//
+// cmd's ClientID/Sequence are assumed already validated non-zero by
+// clientproto.DecodeRequest — dispatch only reaches here for PUT/DELETE,
+// which DecodeRequest already requires identity for.
+func (s *Service) write(ctx context.Context, cmd kv.Command) clientproto.Response {
+	key := pendingKey{id: cmd.ClientID, seq: cmd.Sequence}
+	fp := kv.Fingerprint(cmd)
+
+	if resp, ok := s.joinPending(ctx, key, fp); ok {
+		return resp
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, requestTimeout)
+	defer cancel()
+	if err := s.node.WaitApplied(waitCtx, s.node.CommitIndex(), 0); err != nil {
+		return s.readFailureResponse(err)
+	}
+
+	s.mu.Lock()
+	lookup := s.sm.LookupRequest(cmd.ClientID, cmd.Sequence, fp)
+	s.mu.Unlock()
+	switch lookup {
+	case kv.AppliedDuplicate:
+		return clientproto.Response{Status: clientproto.StatusOK}
+	case kv.RequestConflict:
+		return clientproto.Response{Status: clientproto.StatusRequestConflict}
+	case kv.StaleRequest:
+		return clientproto.Response{Status: clientproto.StatusStaleRequest}
+	}
+
+	pw := s.beginPending(key, fp)
+	resp := s.proposeAndWaitIdentified(waitCtx, cmd)
+	s.finishPending(key, pw, resp)
+	return resp
+}
+
+// joinPending checks for an in-flight write with the same request
+// identity: a matching fingerprint waits on its completion (coalescing,
+// per docs/request-dedup.md item 39); a mismatched one is an immediate
+// RequestConflict (item 40) without ever touching Raft.
+func (s *Service) joinPending(ctx context.Context, key pendingKey, fp reqid.Fingerprint) (clientproto.Response, bool) {
+	s.pendMu.Lock()
+	pw, ok := s.pending[key]
+	if !ok {
+		s.pendMu.Unlock()
+		return clientproto.Response{}, false
+	}
+	if pw.fingerprint != fp {
+		s.pendMu.Unlock()
+		return clientproto.Response{Status: clientproto.StatusRequestConflict}, true
+	}
+	s.pendMu.Unlock()
+
+	select {
+	case <-pw.done:
+		return pw.resp, true
+	case <-ctx.Done():
+		return clientproto.Response{Status: clientproto.StatusTimeout}, true
+	}
+}
+
+func (s *Service) beginPending(key pendingKey, fp reqid.Fingerprint) *pendingWrite {
+	pw := &pendingWrite{fingerprint: fp, done: make(chan struct{})}
+	s.pendMu.Lock()
+	s.pending[key] = pw
+	s.pendMu.Unlock()
+	return pw
+}
+
+func (s *Service) finishPending(key pendingKey, pw *pendingWrite, resp clientproto.Response) {
+	pw.resp = resp
+	close(pw.done)
+	s.pendMu.Lock()
+	if s.pending[key] == pw {
+		delete(s.pending, key)
+	}
+	s.pendMu.Unlock()
+}
+
+// proposeAndWaitIdentified encodes cmd, proposes it, waits for it to
+// commit and apply, and inspects the real ApplyOutcome (via a
+// registered result waiter — see registerResultWaiter) rather than
+// assuming success means AppliedNew: a duplicate or conflicting entry
+// can just as validly reach this exact code path (e.g. two proposals for
+// the same request racing across a failover) and must be reported
+// accurately, not treated as a fresh success.
+func (s *Service) proposeAndWaitIdentified(ctx context.Context, cmd kv.Command) clientproto.Response {
+	encoded, err := kv.EncodeCommand(cmd)
 	if err != nil {
 		return clientproto.Response{Status: clientproto.StatusBadRequest}
 	}
-	return s.proposeAndWait(ctx, cmd)
-}
-
-func (s *Service) delete(ctx context.Context, key []byte) clientproto.Response {
-	cmd, err := kv.EncodeCommand(kv.NewDeleteCommand(key))
-	if err != nil {
-		return clientproto.Response{Status: clientproto.StatusBadRequest}
-	}
-	return s.proposeAndWait(ctx, cmd)
-}
-
-// proposeAndWait implements the required write ordering: encode -> Propose
-// -> WaitApplied -> respond OK. It never returns OK before WaitApplied
-// confirms the entry was committed and applied.
-func (s *Service) proposeAndWait(ctx context.Context, encodedCmd []byte) clientproto.Response {
-	index, term, err := s.node.Propose(encodedCmd)
+	index, term, err := s.node.Propose(encoded)
 	if err != nil {
 		if errors.Is(err, raft.ErrNotLeader) {
 			return s.notLeaderResponse()
@@ -173,19 +353,27 @@ func (s *Service) proposeAndWait(ctx context.Context, encodedCmd []byte) clientp
 		return clientproto.Response{Status: clientproto.StatusInternalError}
 	}
 
-	waitCtx, cancel := context.WithTimeout(ctx, requestTimeout)
-	defer cancel()
-	if err := s.node.WaitApplied(waitCtx, index, term); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			// The write's outcome is uncertain here, not negative: the
-			// entry may still commit later if it was legitimately
-			// proposed. This response only means this node did not
-			// observe completion within the bound.
-			return clientproto.Response{Status: clientproto.StatusTimeout}
-		}
+	resCh := s.registerResultWaiter(index)
+	if err := s.node.WaitApplied(ctx, index, term); err != nil {
+		s.removeResultWaiter(index)
+		return s.readFailureResponse(err)
+	}
+	// WaitApplied succeeded, meaning lastApplied reached index for THIS
+	// exact (term-verified) entry — Apply already ran for it and already
+	// delivered to resCh before that became observable, so this receive
+	// is non-blocking.
+	outcome := <-resCh
+
+	switch outcome {
+	case kv.AppliedNew, kv.AppliedDuplicate:
+		return clientproto.Response{Status: clientproto.StatusOK}
+	case kv.RequestConflict:
+		return clientproto.Response{Status: clientproto.StatusRequestConflict}
+	case kv.StaleRequest:
+		return clientproto.Response{Status: clientproto.StatusStaleRequest}
+	default:
 		return clientproto.Response{Status: clientproto.StatusInternalError}
 	}
-	return clientproto.Response{Status: clientproto.StatusOK}
 }
 
 // get implements the quorum-confirmed linearizable read path: ReadIndex
@@ -195,7 +383,8 @@ func (s *Service) proposeAndWait(ctx context.Context, encodedCmd []byte) clientp
 // of the log has caught up to at least that index before consulting local
 // state. The read is linearized at the successful quorum confirmation
 // inside ReadIndex, not at this function's role check — see
-// docs/read-index.md.
+// docs/read-index.md. GET carries no request identity and is not
+// deduplicated (see docs/request-dedup.md item 124).
 func (s *Service) get(ctx context.Context, key []byte) clientproto.Response {
 	waitCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
@@ -221,7 +410,8 @@ func (s *Service) get(ctx context.Context, key []byte) clientproto.Response {
 // status. A node that actually stepped down (or was never leader) is
 // NOT_LEADER, with a hint if this node has one; any bounded quorum/context
 // failure is TIMEOUT — never a stale value, never NOT_FOUND standing in
-// for "could not confirm."
+// for "could not confirm." Despite the name, it is also used for the
+// PUT/DELETE apply-wait path, whose failures map identically.
 func (s *Service) readFailureResponse(err error) clientproto.Response {
 	if errors.Is(err, raft.ErrNotLeader) {
 		return s.notLeaderResponse()
