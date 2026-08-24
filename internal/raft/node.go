@@ -81,19 +81,20 @@ func sendAppendOverTransport(ctx context.Context, addr string, req AppendEntries
 // held: StartElection and replicateToAllPeers each snapshot what they
 // need, unlock, perform I/O, and re-lock only to apply each response.
 type Node struct {
-	id         NodeID
-	store      *Store
-	log        *Log
-	peers      map[NodeID]string // NodeID -> address, fixed for this milestone
-	send       sender
-	sendAppend appendSender
+	id          NodeID
+	store       *Store
+	log         *Log
+	commitStore *CommitStore
+	peers       map[NodeID]string // NodeID -> address, fixed for this milestone
+	send        sender
+	sendAppend  appendSender
 
 	timeoutFunc       func() time.Duration
 	heartbeatInterval time.Duration
 	resetCh           chan struct{}
 
-	// bgCtx/bgCancel bound this Node's own background work (heartbeat
-	// loops), independent of whatever short-lived ctx a particular
+	// bgCtx/bgCancel bound this Node's own background work (heartbeat and
+	// apply loops), independent of whatever short-lived ctx a particular
 	// StartElection/HandleRequestVote/HandleAppendEntries call happens to
 	// receive. Close cancels it.
 	bgCtx    context.Context
@@ -103,6 +104,12 @@ type Node struct {
 	persistent PersistentState
 	role       Role
 	votes      map[NodeID]bool // valid only while role == Candidate
+	// leaderID is this node's current belief about who leads the current
+	// term: itself once it becomes Leader, the sender of the last valid
+	// AppendEntries it accepted, or nil ("unknown") once it becomes
+	// Candidate or steps down to a higher term with no leader contact yet.
+	// Never persisted.
+	leaderID *NodeID
 
 	// Leader-only volatile replication state; re-initialized every time
 	// this node becomes Leader and never persisted.
@@ -112,23 +119,56 @@ type Node struct {
 	// unless role == Leader.
 	leaderCancel context.CancelFunc
 
-	// commitIndex is volatile: Raft reconstructs it from scratch (starting
-	// at 0) after a restart rather than persisting it directly.
+	// commitIndex is durably recorded via commitStore whenever it
+	// advances (persisted before becoming visible in memory), so restart
+	// knows exactly which prefix of the log is safe to replay.
 	commitIndex LogIndex
+
+	// Application pipeline: see apply.go. lastApplied/applying/applyErr/
+	// waiters are all volatile — reconstructed by replaying the log up to
+	// the restored commitIndex on every startup, never persisted directly.
+	applyFunc   ApplyFunc
+	lastApplied LogIndex
+	applying    bool
+	applyErr    error
+	waiters     []*applyWaiter
 }
 
-// NewNode loads persistent state and the Raft log, and constructs a Node
-// that starts, as every Raft node must on restart, as a Follower.
-func NewNode(id NodeID, store *Store, log *Log, peers map[NodeID]string) (*Node, error) {
+// NewNode loads persistent state, the Raft log, and the durably recorded
+// commitIndex, and constructs a Node that starts, as every Raft node must
+// on restart, as a Follower. It then begins (in the background) replaying
+// any committed-but-unapplied prefix of the log through applyFunc — call
+// WaitApplied(ctx, node's initial CommitIndex, 0) to block until that
+// replay completes if the caller needs the state machine ready before
+// serving anything. applyFunc may be nil, in which case committed entries
+// are counted as applied without any actual application work — useful for
+// tests that only exercise Raft itself.
+//
+// NewNode returns an error if the durably recorded commitIndex exceeds
+// the log's last index — a state that should never occur from this
+// package's own persistence ordering, and is treated as corruption rather
+// than silently clamped.
+func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, peers map[NodeID]string, applyFunc ApplyFunc) (*Node, error) {
 	state, err := store.Load()
 	if err != nil {
 		return nil, err
 	}
+	commitIndex, err := commitStore.Load()
+	if err != nil {
+		return nil, err
+	}
+	if commitIndex > log.LastIndex() {
+		return nil, fmt.Errorf("raft: persisted commitIndex %d exceeds log length %d", commitIndex, log.LastIndex())
+	}
+	if applyFunc == nil {
+		applyFunc = func(LogIndex, []byte) error { return nil }
+	}
 	bgCtx, bgCancel := context.WithCancel(context.Background())
-	return &Node{
+	n := &Node{
 		id:                id,
 		store:             store,
 		log:               log,
+		commitStore:       commitStore,
 		peers:             peers,
 		send:              sendOverTransport,
 		sendAppend:        sendAppendOverTransport,
@@ -141,7 +181,13 @@ func NewNode(id NodeID, store *Store, log *Log, peers map[NodeID]string) (*Node,
 		role:              Follower,
 		nextIndex:         make(map[NodeID]LogIndex),
 		matchIndex:        make(map[NodeID]LogIndex),
-	}, nil
+		commitIndex:       commitIndex,
+		applyFunc:         applyFunc,
+	}
+	n.mu.Lock()
+	n.kickApplyLocked()
+	n.mu.Unlock()
+	return n, nil
 }
 
 // Close stops this node's background heartbeat/replication work. Safe to
@@ -219,6 +265,21 @@ func (n *Node) VotedFor() *NodeID {
 	return &v
 }
 
+// LeaderHint returns this node's current belief about who leads the
+// current term, if known: itself if it is Leader, or the sender of the
+// last valid AppendEntries it accepted. ok is false if unknown (e.g. this
+// node is Candidate, or recently stepped up to a higher term with no
+// leader contact yet) — callers must not fabricate a destination in that
+// case.
+func (n *Node) LeaderHint() (id NodeID, ok bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.leaderID == nil {
+		return 0, false
+	}
+	return *n.leaderID, true
+}
+
 // lastLogInfo returns this node's last log index/term. Must be called
 // with n.mu held.
 func (n *Node) lastLogInfo() (LogIndex, Term) {
@@ -239,6 +300,7 @@ func (n *Node) stepDownLocked(newTerm Term) error {
 	}
 	n.persistent = next
 	n.stepToFollowerLocked()
+	n.leaderID = nil // a higher term alone doesn't tell us who leads it
 	return nil
 }
 
@@ -263,6 +325,8 @@ func (n *Node) stepToFollowerLocked() {
 // called. Must be called with n.mu held.
 func (n *Node) becomeLeaderLocked() {
 	n.role = Leader
+	self := n.id
+	n.leaderID = &self
 	last := n.log.LastIndex()
 	n.nextIndex = make(map[NodeID]LogIndex, len(n.peers))
 	n.matchIndex = make(map[NodeID]LogIndex, len(n.peers))
@@ -357,6 +421,7 @@ func (n *Node) StartElection(ctx context.Context) error {
 	}
 	n.persistent = next
 	n.role = Candidate
+	n.leaderID = nil // becoming a candidate means we no longer trust the old leader
 	n.votes = map[NodeID]bool{n.id: true}
 	lastIndex, lastTerm := n.lastLogInfo()
 
@@ -454,8 +519,11 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 	// This is valid contact from the current-term leader: reset the
 	// election timer even if the log consistency check below fails,
 	// since the sender is still that leader and a rejection here isn't a
-	// reason for this follower to start its own election.
+	// reason for this follower to start its own election. Track who it
+	// is, too.
 	n.resetTimer()
+	leader := req.LeaderID
+	n.leaderID = &leader
 
 	localPrevTerm, ok := n.log.Term(req.PrevLogIndex)
 	if !ok || localPrevTerm != req.PrevLogTerm {
@@ -477,6 +545,11 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 			if err := n.log.TruncateAndAppend(conflictAt, newEntries); err != nil {
 				return AppendEntriesResponse{}, err
 			}
+			// Truncation may have superseded an entry some waiter (e.g.
+			// this node's own now-abandoned leadership attempt) was
+			// waiting on; re-check them now rather than leaving them
+			// blocked until their ctx times out.
+			n.notifyWaitersLocked()
 		}
 		// If conflictAt stays 0, every incoming entry already matched the
 		// local log — an idempotent retransmission — so no write happens.
@@ -489,7 +562,14 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 			newCommit = last
 		}
 		if newCommit > n.commitIndex {
-			n.commitIndex = newCommit
+			// Persist before this follower's own recovery state treats
+			// newCommit as durable; if persistence fails, silently retry
+			// on the next AppendEntries/heartbeat rather than advancing
+			// an unrecorded commitIndex.
+			if err := n.commitStore.Save(newCommit); err == nil {
+				n.commitIndex = newCommit
+				n.kickApplyLocked()
+			}
 		}
 	}
 
@@ -608,7 +688,18 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 			}
 		}
 		if count >= Majority(len(n.peers)+1) {
+			// N is already logically committed cluster-wide (a majority
+			// has it) regardless of what happens next. But this node must
+			// not treat that as *durably recorded* — and so must not let
+			// application/client-visible success advance past it — until
+			// persisting the new commitIndex here succeeds. On failure,
+			// leave commitIndex unchanged and let the next trigger retry;
+			// do not claim N became uncommitted.
+			if err := n.commitStore.Save(N); err != nil {
+				return
+			}
 			n.commitIndex = N
+			n.kickApplyLocked()
 			return
 		}
 	}
@@ -635,29 +726,34 @@ func (n *Node) heartbeatLoop(ctx context.Context) {
 
 // Propose appends command as a new entry in the current term to this
 // node's local log, persisting it before returning, and kicks off
-// immediate replication to peers. It does not wait for replication or
-// commitment — poll CommitIndex/LogEntry to observe those.
+// immediate replication to peers. It does not wait for commitment or
+// application — pass the returned (index, term) to WaitApplied for that.
 //
 // Propose fails with ErrNotLeader if this node is not currently Leader.
 // If local persistence fails, the log is left unchanged and the error is
-// returned; the entry is never treated as proposed.
-func (n *Node) Propose(command []byte) (LogIndex, error) {
+// returned; the entry is never treated as proposed. The returned term is
+// the exact term the entry was created with (read atomically with the
+// append, avoiding a check-then-act race with CurrentTerm changing
+// between two separate calls), needed by WaitApplied to detect if this
+// entry is later superseded by conflict repair before ever committing.
+func (n *Node) Propose(command []byte) (LogIndex, Term, error) {
 	n.mu.Lock()
 	if n.role != Leader {
 		n.mu.Unlock()
-		return 0, ErrNotLeader
+		return 0, 0, ErrNotLeader
 	}
-	entry := LogEntry{Term: n.persistent.CurrentTerm, Command: cloneBytes(command)}
+	term := n.persistent.CurrentTerm
+	entry := LogEntry{Term: term, Command: cloneBytes(command)}
 	if err := n.log.Append([]LogEntry{entry}); err != nil {
 		n.mu.Unlock()
-		return 0, err
+		return 0, 0, err
 	}
 	index := n.log.LastIndex()
 	n.maybeAdvanceCommitIndexLocked() // handles the single-node-cluster case
 	n.mu.Unlock()
 
 	go n.replicateToAllPeers(n.bgCtx)
-	return index, nil
+	return index, term, nil
 }
 
 // CommitIndex returns the highest log index this node currently
