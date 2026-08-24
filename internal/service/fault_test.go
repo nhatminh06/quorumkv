@@ -254,11 +254,14 @@ func TestSurvivingMajorityRecoversValueAfterClientOK(t *testing.T) {
 	}
 }
 
-// TestClientRedirectsToNewLeaderAfterFailover is item 36: a client
-// holding a cached address for a now-dead former leader gets a transport
-// error on that first attempt (existing Milestone 5 semantics: no blind
-// retry across a transport failure); a fresh call against a known
-// surviving node then redirects/succeeds normally.
+// TestClientRedirectsToNewLeaderAfterFailover is item 36 (updated for
+// Milestone 9's safe-retry semantics — see item 55): a client seeded only
+// with a now-dead former leader's address can no longer succeed on its
+// own (it has no other address to fall back to, so it exhausts its ctx
+// retrying — proving it does NOT silently give up after one transport
+// failure, item 97's mandate, rather than the old immediate-failure
+// behavior); a fresh client seeded with a surviving node succeeds
+// normally.
 func TestClientRedirectsToNewLeaderAfterFailover(t *testing.T) {
 	nodes := startCluster(t, 3)
 	electLeader(t, nodes, 0)
@@ -275,18 +278,24 @@ func TestClientRedirectsToNewLeaderAfterFailover(t *testing.T) {
 	nodes[0].svc.node.Close()
 	electLeaderAmong(t, []*testNode{nodes[2]}, nodes, 1)
 
-	// The client still has A cached as leader; A is gone.
-	if err := c.Put(ctx, []byte("y"), []byte("2")); err == nil {
-		t.Fatalf("Put succeeded despite the cached leader being dead")
+	// The client is only seeded with A, which is gone: it retries (per
+	// Milestone 9) but has nowhere else to go, so it must still fail
+	// once its own bounded ctx expires — not hang forever, not succeed.
+	deadCtx, deadCancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer deadCancel()
+	if err := c.Put(deadCtx, []byte("y"), []byte("2")); err == nil {
+		t.Fatalf("Put succeeded despite the only seed being dead")
 	}
 
 	// A fresh client seeded with a surviving node succeeds normally
-	// (follows NOT_LEADER to B if needed).
+	// (follows NOT_LEADER to B if needed), with its own fresh ctx.
 	c2 := client.New(nodes[2].addr())
-	if err := c2.Put(ctx, []byte("y"), []byte("2")); err != nil {
+	putCtx, putCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer putCancel()
+	if err := c2.Put(putCtx, []byte("y"), []byte("2")); err != nil {
 		t.Fatalf("Put via surviving node: %v", err)
 	}
-	v, ok, err := c2.Get(ctx, []byte("y"))
+	v, ok, err := c2.Get(putCtx, []byte("y"))
 	if err != nil || !ok || string(v) != "2" {
 		t.Fatalf("Get(y) = %q, %v, %v; want 2, true, nil", v, ok, err)
 	}
