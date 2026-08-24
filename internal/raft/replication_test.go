@@ -235,7 +235,7 @@ func TestConflictRepairPersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenLog: %v", err)
 	}
-	n, err := NewNode(1, store, log, nil)
+	n, err := NewNode(1, store, log, workingCommitStore(t), nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestConflictRepairPersistsAcrossRestart(t *testing.T) {
 // --- Persistence-before-success ---
 
 func TestHandleAppendEntriesFailsIfLogPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, NewStore(tempStatePath(t)), brokenLog(t), nil)
+	n, err := NewNode(1, NewStore(tempStatePath(t)), brokenLog(t), workingCommitStore(t), nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestHandleAppendEntriesFailsIfLogPersistenceFails(t *testing.T) {
 }
 
 func TestHandleAppendEntriesHigherTermFailsIfStatePersistenceFails(t *testing.T) {
-	n, err := NewNode(1, brokenStore(t), workingLog(t), nil)
+	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestApplyAppendEntriesResponseStaleTermIgnored(t *testing.T) {
 
 func TestProposeFailsIfNotLeader(t *testing.T) {
 	n := newTestNode(t, 1, PersistentState{}, nil)
-	_, err := n.Propose([]byte("x"))
+	_, _, err := n.Propose([]byte("x"))
 	if !errors.Is(err, ErrNotLeader) {
 		t.Fatalf("err = %v, want ErrNotLeader", err)
 	}
@@ -427,7 +427,7 @@ func TestProposeAppendsCurrentTermEntry(t *testing.T) {
 	if err := n.StartElection(context.Background()); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
-	index, err := n.Propose([]byte("hello"))
+	index, _, err := n.Propose([]byte("hello"))
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -446,7 +446,7 @@ func TestProposeDoesNotAliasCallerSlice(t *testing.T) {
 		t.Fatalf("StartElection: %v", err)
 	}
 	cmd := []byte("hello")
-	if _, err := n.Propose(cmd); err != nil {
+	if _, _, err := n.Propose(cmd); err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
 	cmd[0] = 'H'
@@ -458,7 +458,7 @@ func TestProposeDoesNotAliasCallerSlice(t *testing.T) {
 }
 
 func TestProposeFailsIfLogPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, NewStore(tempStatePath(t)), brokenLog(t), nil)
+	n, err := NewNode(1, NewStore(tempStatePath(t)), brokenLog(t), workingCommitStore(t), nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestProposeFailsIfLogPersistenceFails(t *testing.T) {
 	n.mu.Unlock()
 	defer n.Close()
 
-	_, err = n.Propose([]byte("x"))
+	_, _, err = n.Propose([]byte("x"))
 	if err == nil {
 		t.Fatalf("Propose succeeded despite log persistence failure, want error")
 	}

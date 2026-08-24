@@ -20,7 +20,8 @@ func newTestNode(t *testing.T, id NodeID, initial PersistentState, peers map[Nod
 	if err != nil {
 		t.Fatalf("OpenLog: %v", err)
 	}
-	n, err := NewNode(id, store, log, peers)
+	commitStore := NewCommitStore(filepath.Join(dir, "commit"))
+	n, err := NewNode(id, store, log, commitStore, peers, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -46,6 +47,18 @@ func brokenLog(t *testing.T) *Log {
 		t.Fatalf("OpenLog: %v", err)
 	}
 	return l
+}
+
+// brokenCommitStore always fails Save, the same way brokenStore/brokenLog
+// simulate a disk write failure for their respective files.
+func brokenCommitStore(t *testing.T) *CommitStore {
+	t.Helper()
+	return NewCommitStore(filepath.Join(t.TempDir(), "missing-dir", "commit"))
+}
+
+func workingCommitStore(t *testing.T) *CommitStore {
+	t.Helper()
+	return NewCommitStore(filepath.Join(t.TempDir(), "commit"))
 }
 
 func mustVoter(id NodeID) *NodeID { return &id }
@@ -178,7 +191,7 @@ func workingLog(t *testing.T) *Log {
 }
 
 func TestHandleRequestVoteGrantFailsIfPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, brokenStore(t), workingLog(t), nil)
+	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -196,7 +209,7 @@ func TestHandleRequestVoteGrantFailsIfPersistenceFails(t *testing.T) {
 }
 
 func TestStartElectionFailsIfPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, brokenStore(t), workingLog(t), map[NodeID]string{2: "peer-b"})
+	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), map[NodeID]string{2: "peer-b"}, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}

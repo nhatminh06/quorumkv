@@ -57,7 +57,7 @@ func TestBasicLogReplicationThreeNodes(t *testing.T) {
 		t.Fatalf("a.Role() = %v, want Leader", a.Role())
 	}
 
-	index, err := a.Propose([]byte("alpha"))
+	index, _, err := a.Propose([]byte("alpha"))
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestMajorityWithOneFollowerDown(t *testing.T) {
 	}
 	net.setBlocked("C", true) // C becomes unavailable after the election
 
-	index, err := a.Propose([]byte("x"))
+	index, _, err := a.Propose([]byte("x"))
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestNoMajorityCommit(t *testing.T) {
 	net.setBlocked("B", true)
 	net.setBlocked("C", true) // leader is now isolated from both followers
 
-	index, err := a.Propose([]byte("lonely"))
+	index, _, err := a.Propose([]byte("lonely"))
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestElectionAfterReplicationStaleCandidateLoses(t *testing.T) {
 	if err := a.StartElection(ctx); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
-	index, err := a.Propose([]byte("committed-data"))
+	index, _, err := a.Propose([]byte("committed-data"))
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -284,7 +284,7 @@ func TestLeaderFailureUncommittedEntryNeverTreatedAsCommitted(t *testing.T) {
 	net.setBlocked("B", true)
 	net.setBlocked("C", true)
 
-	index, err := a.Propose([]byte("orphaned"))
+	index, _, err := a.Propose([]byte("orphaned"))
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestLeaderFailureCommittedEntryPreserved(t *testing.T) {
 	if err := a.StartElection(ctx); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
-	index, err := a.Propose([]byte("durable"))
+	index, _, err := a.Propose([]byte("durable"))
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestRealTCPReplication(t *testing.T) {
 		t.Fatalf("node2/node3 roles = %v/%v, want both Follower (heartbeats should prevent an election)", node2.Role(), node3.Role())
 	}
 
-	index, err := node1.Propose([]byte("payload"))
+	index, _, err := node1.Propose([]byte("payload"))
 	if err != nil {
 		t.Fatalf("Propose: %v", err)
 	}

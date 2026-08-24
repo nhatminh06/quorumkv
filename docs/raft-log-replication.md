@@ -212,6 +212,18 @@ to trigger the leadership transition, so it keeps running on its own
 schedule until this node steps down (`stepDownLocked`/
 `stepToFollowerLocked` cancel it) or `Node.Close` is called.
 
+## Committed entries feed application (since Milestone 5)
+
+`commitIndex` is now durably persisted (see
+[docs/state-machine.md](state-machine.md)) rather than purely volatile,
+specifically so restart knows which entries are safe to replay. Every
+commit-advancing site (`maybeAdvanceCommitIndexLocked` on the leader, the
+`leaderCommit` branch of `HandleAppendEntries` on a follower) persists the
+new value before updating `Node`'s in-memory `commitIndex`, then triggers
+`Node`'s apply loop. `internal/service.Service` wires a client PUT/DELETE
+to wait on that pipeline (`Propose` then `WaitApplied`) before
+acknowledging — see [docs/client-protocol.md](client-protocol.md).
+
 ## Known limitations
 
 - No AppendEntries conflict-term optimization: backtracking is simple
@@ -219,10 +231,6 @@ schedule until this node steps down (`stepDownLocked`/
 - No snapshots, no `InstallSnapshot`, no log compaction — the log grows
   unbounded within this milestone's scope.
 - No membership changes; the peer set is static.
-- `commitIndex` is volatile and reconstructed as 0 on every restart
-  (not persisted) — a restarted node's own view of what's committed
-  catches back up via AppendEntries `leaderCommit` from a current leader,
-  not from its own disk.
-- Committed entries are not yet applied to `internal/kv`'s state machine;
-  there is deliberately no `lastApplied` pipeline yet.
-- No external client protocol.
+- No quorum-confirmed linearizable reads (no ReadIndex yet) — see
+  docs/client-protocol.md's GET section.
+- No request deduplication / exactly-once write semantics.

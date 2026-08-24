@@ -77,7 +77,8 @@ func newFakeNode(t *testing.T, id NodeID, peers map[NodeID]string) *Node {
 	if err != nil {
 		t.Fatalf("OpenLog: %v", err)
 	}
-	n, err := NewNode(id, store, log, peers)
+	commitStore := NewCommitStore(filepath.Join(dir, "commit"))
+	n, err := NewNode(id, store, log, commitStore, peers, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
