@@ -38,7 +38,7 @@ func startCluster(t *testing.T, n int) []*testNode {
 		}
 		commitStore := raft.NewCommitStore(filepath.Join(dir, "commit"))
 		svc := New(nil)
-		node, err := raft.NewNode(id, store, log, commitStore, nil, svc.Apply)
+		node, err := raft.NewNode(id, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, nil, nil)
 		if err != nil {
 			t.Fatalf("NewNode: %v", err)
 		}
@@ -433,7 +433,7 @@ func TestRestartRebuildsKVStateFromCommittedPrefix(t *testing.T) {
 		}
 		commitStore := raft.NewCommitStore(commitPath)
 		svc := New(nil)
-		node, err := raft.NewNode(1, store, log, commitStore, nil, svc.Apply)
+		node, err := raft.NewNode(1, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, nil, nil)
 		if err != nil {
 			t.Fatalf("NewNode: %v", err)
 		}
@@ -463,7 +463,7 @@ func TestRestartRebuildsKVStateFromCommittedPrefix(t *testing.T) {
 	}
 	commitStore := raft.NewCommitStore(commitPath)
 	svc := New(nil)
-	node, err := raft.NewNode(1, store, log, commitStore, nil, svc.Apply)
+	node, err := raft.NewNode(1, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, svc.Apply, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestApplyFailureClientNeverGetsOK(t *testing.T) {
 	failing := func(index raft.LogIndex, cmd []byte) error {
 		return errors.New("injected apply failure")
 	}
-	node, err := raft.NewNode(1, store, log, commitStore, nil, failing)
+	node, err := raft.NewNode(1, store, log, commitStore, raft.NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, failing, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}

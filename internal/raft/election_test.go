@@ -69,6 +69,22 @@ func (f *fakeNetwork) sendAppend(_ context.Context, addr string, req AppendEntri
 	return peer.HandleAppendEntries(req)
 }
 
+// sendInstallSnapshot dispatches InstallSnapshot the same way sendAppend
+// dispatches AppendEntries.
+func (f *fakeNetwork) sendInstallSnapshot(_ context.Context, addr string, req InstallSnapshotRequest) (InstallSnapshotResponse, error) {
+	f.mu.Lock()
+	peer, ok := f.nodes[addr]
+	blocked := f.blocked[addr]
+	f.mu.Unlock()
+	if !ok {
+		return InstallSnapshotResponse{}, errors.New("fakeNetwork: unknown address " + addr)
+	}
+	if blocked {
+		return InstallSnapshotResponse{}, errors.New("fakeNetwork: " + addr + " unreachable")
+	}
+	return peer.HandleInstallSnapshot(req)
+}
+
 func newFakeNode(t *testing.T, id NodeID, peers map[NodeID]string) *Node {
 	t.Helper()
 	dir := t.TempDir()
@@ -78,7 +94,7 @@ func newFakeNode(t *testing.T, id NodeID, peers map[NodeID]string) *Node {
 		t.Fatalf("OpenLog: %v", err)
 	}
 	commitStore := NewCommitStore(filepath.Join(dir, "commit"))
-	n, err := NewNode(id, store, log, commitStore, peers, nil)
+	n, err := NewNode(id, store, log, commitStore, NewSnapshotStore(filepath.Join(dir, "snapshot")), peers, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}

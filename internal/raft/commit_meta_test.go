@@ -161,7 +161,7 @@ func TestCommitIndexExceedingLogLengthRejected(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 
-	_, err = NewNode(1, store, log, commitStore, nil, nil)
+	_, err = NewNode(1, store, log, commitStore, NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, nil, nil, nil)
 	if err == nil {
 		t.Fatalf("NewNode succeeded despite commitIndex exceeding log length, want error")
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 )
 
@@ -235,7 +236,7 @@ func TestConflictRepairPersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenLog: %v", err)
 	}
-	n, err := NewNode(1, store, log, workingCommitStore(t), nil, nil)
+	n, err := NewNode(1, store, log, workingCommitStore(t), NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -269,7 +270,7 @@ func TestConflictRepairPersistsAcrossRestart(t *testing.T) {
 // --- Persistence-before-success ---
 
 func TestHandleAppendEntriesFailsIfLogPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, NewStore(tempStatePath(t)), brokenLog(t), workingCommitStore(t), nil, nil)
+	n, err := NewNode(1, NewStore(tempStatePath(t)), brokenLog(t), workingCommitStore(t), NewSnapshotStore(filepath.Join(t.TempDir(), "snapshot")), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -283,7 +284,7 @@ func TestHandleAppendEntriesFailsIfLogPersistenceFails(t *testing.T) {
 }
 
 func TestHandleAppendEntriesHigherTermFailsIfStatePersistenceFails(t *testing.T) {
-	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), nil, nil)
+	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), NewSnapshotStore(filepath.Join(t.TempDir(), "snapshot")), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -458,7 +459,7 @@ func TestProposeDoesNotAliasCallerSlice(t *testing.T) {
 }
 
 func TestProposeFailsIfLogPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, NewStore(tempStatePath(t)), brokenLog(t), workingCommitStore(t), nil, nil)
+	n, err := NewNode(1, NewStore(tempStatePath(t)), brokenLog(t), workingCommitStore(t), NewSnapshotStore(filepath.Join(t.TempDir(), "snapshot")), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}

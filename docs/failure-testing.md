@@ -100,6 +100,7 @@ test and full `-race` repeats of the whole fault suite afterward.
 | 18 | Client PUT in flight; leader stopped before it can commit | Client gets a bounded error, never a false OK; no leaked waiter/goroutine | `TestClientReceivesNoFalseOKWhenLeaderCrashesMidWrite` |
 | 19 | Client receives OK; leader stopped immediately after | The surviving majority still has the value | `TestSurvivingMajorityRecoversValueAfterClientOK` |
 | 20 | Client's cached leader dies; retried against a known survivor | The stale-cache attempt returns a transport error (no blind retry, per Milestone 5); a fresh call against a live node succeeds | `TestClientRedirectsToNewLeaderAfterFailover` |
+| 21 | Follower stale beyond a leader's compacted log prefix (Milestone 7) | The leader detects the follower is behind its snapshot boundary and sends `InstallSnapshot` instead of a doomed AppendEntries; the follower installs it, resumes ordinary suffix catch-up, and the recovered state survives a real restart from disk over a fresh real-TCP connection | `TestSnapshotCatchUpEndToEndRealTCP` (`internal/raft`) |
 
 Every result above is from an actually-passing test at the time this
 document was written — see "Verification" in the PR description for the
@@ -117,8 +118,10 @@ that belongs to a dedicated ReadIndex/quorum-read milestone.
 
 ## Current limitations
 
-- No snapshots, `InstallSnapshot`, or log compaction — stale followers
-  always catch up via the full retained log.
+- Snapshots/`InstallSnapshot`/log compaction exist as of Milestone 7 (see
+  [docs/snapshots.md](snapshots.md)), but this milestone's fault coverage
+  above (scenarios 1–20) predates them and was not retroactively rerun
+  under snapshot-heavy conditions beyond scenario 21.
 - No ReadIndex / quorum-confirmed linearizable reads.
 - No request deduplication; Scenario 18 above is exactly why that
   matters for future work (a client that times out cannot safely

@@ -9,9 +9,10 @@ import (
 // ApplyFunc applies one committed log entry's command to the caller's
 // application state machine. Node calls it with entries strictly in log
 // order, exactly once each per running process, and never while holding
-// Node's internal state lock. Command is opaque to Raft — ApplyFunc (and
-// whatever it decodes Command with) is the only place that gives it
-// meaning.
+// Node's internal state lock (though it is serialized against
+// SnapshotFunc/RestoreFunc via an internal lock — see CreateSnapshot).
+// Command is opaque to Raft — ApplyFunc (and whatever it decodes Command
+// with) is the only place that gives it meaning.
 type ApplyFunc func(index LogIndex, command []byte) error
 
 // ErrNodeClosed is returned by WaitApplied when Node.Close is called
@@ -94,7 +95,13 @@ func (n *Node) applyLoop() {
 			return
 		}
 
+		// applyMu (not n.mu, the Raft state lock) serializes this call
+		// against CreateSnapshot's own application-state access, so a
+		// snapshot always captures state as of exactly the lastApplied
+		// index it claims — never mid-apply, never one command ahead.
+		n.applyMu.Lock()
 		err := fn(nextIndex, entry.Command)
+		n.applyMu.Unlock()
 
 		n.mu.Lock()
 		if err != nil {
