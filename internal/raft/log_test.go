@@ -162,7 +162,9 @@ func TestKnownLogByteVector(t *testing.T) {
 
 	want := []byte{
 		'R', 'L', 'G', '1', // magic
-		0x01,                   // version
+		0x02,                   // version
+		0, 0, 0, 0, 0, 0, 0, 0, // baseIndex = 0 (never compacted)
+		0, 0, 0, 0, 0, 0, 0, 0, // baseTerm = 0
 		0x00, 0x00, 0x00, 0x13, // record length = 19
 		0, 0, 0, 0, 0, 0, 0, 5, // term = 5
 		0, 0, 0, 3, // command length = 3
@@ -238,9 +240,11 @@ func TestLogTruncatedEntryRejected(t *testing.T) {
 func TestLogInvalidDeclaredLengthRejected(t *testing.T) {
 	full := validLogBytes(t)
 	corrupt := append([]byte(nil), full...)
-	// First record's length prefix (offset 5..9); corrupt it to something
-	// wildly inconsistent with the actual body that follows.
-	corrupt[5], corrupt[6], corrupt[7], corrupt[8] = 0, 0, 0, 200
+	// First record's length prefix, right after the v2 header (magic +
+	// version + baseIndex + baseTerm); corrupt it to something wildly
+	// inconsistent with the actual body that follows.
+	off := logV2HeaderSize
+	corrupt[off], corrupt[off+1], corrupt[off+2], corrupt[off+3] = 0, 0, 0, 200
 	path := tempLogPath(t)
 	writeRawLog(t, path, corrupt)
 
@@ -262,5 +266,188 @@ func TestLogOversizedCommandRejected(t *testing.T) {
 	}
 	if l.LastIndex() != 0 {
 		t.Fatalf("LastIndex() = %d, want 0 (append must not partially apply)", l.LastIndex())
+	}
+}
+
+// TestLogV1FileStillLoads proves a pre-Milestone-7 log file (version 1,
+// no baseIndex/baseTerm fields) still loads correctly, equivalent to
+// baseIndex=0, baseTerm=0 — existing repositories must not be
+// invalidated by the format upgrade.
+func TestLogV1FileStillLoads(t *testing.T) {
+	path := tempLogPath(t)
+	v1 := []byte{
+		'R', 'L', 'G', '1', // magic
+		0x01,                   // version 1
+		0x00, 0x00, 0x00, 0x13, // record length = 19
+		0, 0, 0, 0, 0, 0, 0, 5, // term = 5
+		0, 0, 0, 3, // command length = 3
+		'a', 'b', 'c', // command
+		0x0f, 0x22, 0x3e, 0xae, // CRC32C(term|commandLength|command)
+	}
+	writeRawLog(t, path, v1)
+
+	l, err := OpenLog(path)
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if l.BaseIndex() != 0 || l.BaseTerm() != 0 {
+		t.Fatalf("BaseIndex/BaseTerm = %d/%d, want 0/0", l.BaseIndex(), l.BaseTerm())
+	}
+	if l.LastIndex() != 1 {
+		t.Fatalf("LastIndex() = %d, want 1", l.LastIndex())
+	}
+	e, ok := l.Entry(1)
+	if !ok || e.Term != 5 || string(e.Command) != "abc" {
+		t.Fatalf("Entry(1) = %+v, ok=%v, want {5 abc}, true", e, ok)
+	}
+
+	// A subsequent mutation silently upgrades the file to v2.
+	if err := l.Append([]LogEntry{{Term: 5, Command: []byte("d")}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if data[4] != logFileVersion2 {
+		t.Fatalf("version after rewrite = %d, want %d", data[4], logFileVersion2)
+	}
+}
+
+func TestLogCompactRemovesCoveredPrefixKeepsSuffix(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	entries := make([]LogEntry, 10)
+	for i := range entries {
+		entries[i] = LogEntry{Term: 1, Command: []byte{byte('a' + i)}}
+	}
+	if err := l.Append(entries); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	if err := l.Compact(7, 1); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	if l.BaseIndex() != 7 || l.BaseTerm() != 1 {
+		t.Fatalf("BaseIndex/BaseTerm = %d/%d, want 7/1", l.BaseIndex(), l.BaseTerm())
+	}
+	if l.LastIndex() != 10 {
+		t.Fatalf("LastIndex() = %d, want 10 (unchanged by compaction)", l.LastIndex())
+	}
+	// Term at the boundary is answerable without a physical entry.
+	term, ok := l.Term(7)
+	if !ok || term != 1 {
+		t.Fatalf("Term(7) = %d, %v, want 1, true", term, ok)
+	}
+	// The command at the boundary itself is gone.
+	if _, ok := l.Entry(7); ok {
+		t.Fatalf("Entry(7) should be unavailable after compaction")
+	}
+	// Before the boundary is unavailable, not fabricated.
+	if _, ok := l.Term(6); ok {
+		t.Fatalf("Term(6) should be unavailable (compacted) after compaction")
+	}
+	// Retained suffix (8, 9, 10) is untouched.
+	for i := LogIndex(8); i <= 10; i++ {
+		e, ok := l.Entry(i)
+		want := string(rune('a' + int(i) - 1))
+		if !ok || e.Term != 1 || string(e.Command) != want {
+			t.Fatalf("Entry(%d) = %+v, ok=%v, want {1 %s}, true", i, e, ok, want)
+		}
+	}
+}
+
+func TestLogCompactPersistsAcrossReopen(t *testing.T) {
+	path := tempLogPath(t)
+	l, err := OpenLog(path)
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if err := l.Append([]LogEntry{
+		{Term: 1, Command: []byte("a")},
+		{Term: 1, Command: []byte("b")},
+		{Term: 2, Command: []byte("c")},
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := l.Compact(2, 1); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	reopened, err := OpenLog(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	if reopened.BaseIndex() != 2 || reopened.BaseTerm() != 1 {
+		t.Fatalf("BaseIndex/BaseTerm = %d/%d, want 2/1", reopened.BaseIndex(), reopened.BaseTerm())
+	}
+	if reopened.LastIndex() != 3 {
+		t.Fatalf("LastIndex() = %d, want 3", reopened.LastIndex())
+	}
+	e, ok := reopened.Entry(3)
+	if !ok || e.Term != 2 || string(e.Command) != "c" {
+		t.Fatalf("Entry(3) = %+v, ok=%v, want {2 c}, true", e, ok)
+	}
+}
+
+func TestLogCompactNeverRegresses(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if err := l.Append([]LogEntry{{Term: 1, Command: []byte("a")}, {Term: 1, Command: []byte("b")}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := l.Compact(2, 1); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	if err := l.Compact(1, 1); err != nil {
+		t.Fatalf("Compact (no-op): %v", err)
+	}
+	if l.BaseIndex() != 2 {
+		t.Fatalf("BaseIndex() = %d, want unchanged 2 (compaction must never regress)", l.BaseIndex())
+	}
+}
+
+func TestLogCompactBeyondLastIndexRejected(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if err := l.Append([]LogEntry{{Term: 1, Command: []byte("a")}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := l.Compact(5, 1); err == nil {
+		t.Fatalf("Compact succeeded beyond LastIndex(), want error")
+	}
+	if l.BaseIndex() != 0 {
+		t.Fatalf("BaseIndex() = %d, want unchanged 0 after rejected compaction", l.BaseIndex())
+	}
+}
+
+func TestLogEntriesFromAfterCompactionStartsAtBoundaryPlusOne(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if err := l.Append([]LogEntry{
+		{Term: 1, Command: []byte("a")},
+		{Term: 1, Command: []byte("b")},
+		{Term: 1, Command: []byte("c")},
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := l.Compact(2, 1); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+	got := l.EntriesFrom(1) // before/at boundary clamps to boundary+1
+	if len(got) != 1 || string(got[0].Command) != "c" {
+		t.Fatalf("EntriesFrom(1) = %+v, want just [c]", got)
+	}
+	if got := l.EntriesFrom(2); len(got) != 1 || string(got[0].Command) != "c" {
+		t.Fatalf("EntriesFrom(2) = %+v, want just [c]", got)
 	}
 }

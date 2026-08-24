@@ -20,13 +20,29 @@ type LogEntry struct {
 // Logical indexing follows Raft convention: index 0 is a sentinel meaning
 // "no entry" (the position before the first real entry), and real entries
 // start at index 1. This makes the empty-log convention already used by
-// RequestVote (lastLogIndex=0, lastLogTerm=0) fall out naturally: Term(0)
-// is defined to be 0. Log stores entries in a 0-based Go slice internally
-// (entries[i] is logical index i+1) and converts at the API boundary.
+// RequestVote (lastLogIndex=0, lastLogTerm=0) fall out naturally.
+//
+// Since Milestone 7, a Log may be compacted by a snapshot: baseIndex/
+// baseTerm ("the log's own boundary, before any suffix truncation") is
+// the (lastIncludedIndex, lastIncludedTerm) of the most recent
+// compaction — 0/0 if the log has never been compacted, which folds back
+// into the original index-0 sentinel case exactly. Log stores physical
+// entries 0-based internally; entries[i] is logical index baseIndex+i+1.
+// The command bytes for index baseIndex itself are never retained after
+// compaction — only its index/term remain, which is all Raft needs.
 
 var logFileMagic = [4]byte{'R', 'L', 'G', '1'}
 
-const logFileVersion = 1
+// logFileVersion1 is the pre-Milestone-7 format: no base index/term
+// fields, always equivalent to baseIndex=0, baseTerm=0. Still readable so
+// existing repositories load correctly; a subsequent rewrite silently
+// upgrades the file to version 2.
+const (
+	logFileVersion1 = 1
+	logFileVersion2 = 2
+)
+
+const currentLogFileVersion = logFileVersion2
 
 // maxCommandSize bounds a single log entry's command, comfortably below
 // both an AppendEntries batch and the transport's 1 MiB frame limit.
@@ -38,6 +54,9 @@ const (
 	logChecksumSize     = 4
 	logLengthPrefixSize = 4
 	maxLogRecordSize    = logEntryHeaderSize + maxCommandSize + logChecksumSize
+
+	logV1HeaderSize = 4 + 1         // magic + version
+	logV2HeaderSize = 4 + 1 + 8 + 8 // magic + version + baseIndex + baseTerm
 )
 
 // ErrCorruptLog indicates the log file exists but failed validation. The
@@ -50,16 +69,19 @@ const (
 var ErrCorruptLog = errors.New("raft: corrupt log")
 
 // Log is a node's persistent Raft log, rewritten atomically on every
-// mutation (Append or TruncateAndAppend). Log is not safe for concurrent
-// use; Node serializes access to it under its own mutex, the same
-// convention used for Store.
+// mutation (Append, TruncateAndAppend, or Compact). Log is not safe for
+// concurrent use; Node serializes access to it under its own mutex, the
+// same convention used for Store.
 type Log struct {
-	path    string
-	entries []LogEntry
+	path      string
+	baseIndex LogIndex
+	baseTerm  Term
+	entries   []LogEntry
 }
 
 // OpenLog loads the log at path. A missing file means a brand-new node's
-// empty log. An existing-but-invalid file returns ErrCorruptLog.
+// empty log (baseIndex 0, baseTerm 0, no entries). An existing-but-invalid
+// file returns ErrCorruptLog.
 func OpenLog(path string) (*Log, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -68,40 +90,50 @@ func OpenLog(path string) (*Log, error) {
 		}
 		return nil, err
 	}
-	entries, err := decodeLogFile(data)
+	baseIndex, baseTerm, entries, err := decodeLogFile(data)
 	if err != nil {
 		return nil, err
 	}
-	return &Log{path: path, entries: entries}, nil
+	return &Log{path: path, baseIndex: baseIndex, baseTerm: baseTerm, entries: entries}, nil
 }
 
-func decodeLogFile(data []byte) ([]LogEntry, error) {
+func decodeLogFile(data []byte) (baseIndex LogIndex, baseTerm Term, entries []LogEntry, err error) {
 	if len(data) == 0 {
-		return nil, nil
+		return 0, 0, nil, nil
 	}
 	if len(data) < 5 {
-		return nil, fmt.Errorf("%w: file too short", ErrCorruptLog)
+		return 0, 0, nil, fmt.Errorf("%w: file too short", ErrCorruptLog)
 	}
 	if [4]byte(data[0:4]) != logFileMagic {
-		return nil, fmt.Errorf("%w: invalid magic", ErrCorruptLog)
-	}
-	if data[4] != logFileVersion {
-		return nil, fmt.Errorf("%w: unsupported version %d", ErrCorruptLog, data[4])
+		return 0, 0, nil, fmt.Errorf("%w: invalid magic", ErrCorruptLog)
 	}
 
-	var entries []LogEntry
-	pos := 5
+	var pos int
+	switch data[4] {
+	case logFileVersion1:
+		pos = logV1HeaderSize
+	case logFileVersion2:
+		if len(data) < logV2HeaderSize {
+			return 0, 0, nil, fmt.Errorf("%w: truncated header", ErrCorruptLog)
+		}
+		baseIndex = LogIndex(binary.BigEndian.Uint64(data[5:13]))
+		baseTerm = Term(binary.BigEndian.Uint64(data[13:21]))
+		pos = logV2HeaderSize
+	default:
+		return 0, 0, nil, fmt.Errorf("%w: unsupported version %d", ErrCorruptLog, data[4])
+	}
+
 	for pos < len(data) {
 		if pos+logLengthPrefixSize > len(data) {
-			return nil, fmt.Errorf("%w: truncated record length", ErrCorruptLog)
+			return 0, 0, nil, fmt.Errorf("%w: truncated record length", ErrCorruptLog)
 		}
 		recLen := binary.BigEndian.Uint32(data[pos : pos+logLengthPrefixSize])
 		pos += logLengthPrefixSize
 		if recLen < logEntryHeaderSize+logChecksumSize || recLen > maxLogRecordSize {
-			return nil, fmt.Errorf("%w: declared record length %d out of bounds", ErrCorruptLog, recLen)
+			return 0, 0, nil, fmt.Errorf("%w: declared record length %d out of bounds", ErrCorruptLog, recLen)
 		}
 		if pos+int(recLen) > len(data) {
-			return nil, fmt.Errorf("%w: truncated record body", ErrCorruptLog)
+			return 0, 0, nil, fmt.Errorf("%w: truncated record body", ErrCorruptLog)
 		}
 		body := data[pos : pos+int(recLen)]
 		pos += int(recLen)
@@ -110,25 +142,30 @@ func decodeLogFile(data []byte) ([]LogEntry, error) {
 		cmdLen := binary.BigEndian.Uint32(body[8:12])
 		wantRecLen := uint32(logEntryHeaderSize) + cmdLen + logChecksumSize
 		if wantRecLen != recLen {
-			return nil, fmt.Errorf("%w: inconsistent record length", ErrCorruptLog)
+			return 0, 0, nil, fmt.Errorf("%w: inconsistent record length", ErrCorruptLog)
 		}
 		checksumStart := logEntryHeaderSize + int(cmdLen)
 		command := body[logEntryHeaderSize:checksumStart]
 		wantChecksum := binary.BigEndian.Uint32(body[checksumStart : checksumStart+logChecksumSize])
 		gotChecksum := crc32.Checksum(body[:checksumStart], crc32cTable)
 		if gotChecksum != wantChecksum {
-			return nil, fmt.Errorf("%w: checksum mismatch", ErrCorruptLog)
+			return 0, 0, nil, fmt.Errorf("%w: checksum mismatch", ErrCorruptLog)
 		}
 
 		entries = append(entries, LogEntry{Term: term, Command: cloneBytes(command)})
 	}
-	return entries, nil
+	return baseIndex, baseTerm, entries, nil
 }
 
-func encodeLogFile(entries []LogEntry) ([]byte, error) {
-	buf := make([]byte, 0, 5+len(entries)*32)
+func encodeLogFile(baseIndex LogIndex, baseTerm Term, entries []LogEntry) ([]byte, error) {
+	buf := make([]byte, 0, logV2HeaderSize+len(entries)*32)
 	buf = append(buf, logFileMagic[:]...)
-	buf = append(buf, logFileVersion)
+	buf = append(buf, currentLogFileVersion)
+	var idxBuf, termBuf [8]byte
+	binary.BigEndian.PutUint64(idxBuf[:], uint64(baseIndex))
+	binary.BigEndian.PutUint64(termBuf[:], uint64(baseTerm))
+	buf = append(buf, idxBuf[:]...)
+	buf = append(buf, termBuf[:]...)
 
 	for _, e := range entries {
 		if len(e.Command) > maxCommandSize {
@@ -151,56 +188,74 @@ func encodeLogFile(entries []LogEntry) ([]byte, error) {
 }
 
 func (l *Log) rewrite() error {
-	data, err := encodeLogFile(l.entries)
+	data, err := encodeLogFile(l.baseIndex, l.baseTerm, l.entries)
 	if err != nil {
 		return err
 	}
 	return atomicWriteFile(l.path, data)
 }
 
-// LastIndex returns the index of the last entry, or 0 if the log is empty.
+// BaseIndex returns the index of this log's compaction boundary
+// (lastIncludedIndex of the most recent snapshot), or 0 if the log has
+// never been compacted.
+func (l *Log) BaseIndex() LogIndex { return l.baseIndex }
+
+// BaseTerm returns the term of BaseIndex.
+func (l *Log) BaseTerm() Term { return l.baseTerm }
+
+// LastIndex returns the index of the last entry, or BaseIndex() if there
+// is no retained suffix.
 func (l *Log) LastIndex() LogIndex {
-	return LogIndex(len(l.entries))
+	return l.baseIndex + LogIndex(len(l.entries))
 }
 
-// LastTerm returns the term of the last entry, or 0 if the log is empty.
+// LastTerm returns the term of the last entry, or BaseTerm() if there is
+// no retained suffix.
 func (l *Log) LastTerm() Term {
 	if len(l.entries) == 0 {
-		return 0
+		return l.baseTerm
 	}
 	return l.entries[len(l.entries)-1].Term
 }
 
-// Term returns the term stored at index, or 0 for the sentinel index 0.
-// ok is false if index refers to an entry that doesn't exist.
+// Term returns the term stored at index. ok is false if index is outside
+// what this log can answer for: before the compaction boundary (its
+// history was discarded — "compacted/unavailable", not fabricated as 0),
+// or past the last retained entry. Term(BaseIndex()) always succeeds,
+// returning BaseTerm(), even though no physical entry backs it anymore.
 func (l *Log) Term(index LogIndex) (term Term, ok bool) {
-	if index == 0 {
-		return 0, true
+	if index == l.baseIndex {
+		return l.baseTerm, true
 	}
-	if index < 1 || int(index) > len(l.entries) {
+	if index < l.baseIndex || index > l.LastIndex() {
 		return 0, false
 	}
-	return l.entries[index-1].Term, true
+	return l.entries[index-l.baseIndex-1].Term, true
 }
 
-// Entry returns the entry at index. ok is false if it doesn't exist.
+// Entry returns the entry at index. ok is false if it doesn't exist or
+// index is at or before the compaction boundary — the command bytes at
+// BaseIndex() are not retained after compaction; only its index/term are
+// (via Term).
 func (l *Log) Entry(index LogIndex) (LogEntry, bool) {
-	if index < 1 || int(index) > len(l.entries) {
+	if index <= l.baseIndex || index > l.LastIndex() {
 		return LogEntry{}, false
 	}
-	return l.entries[index-1], true
+	return l.entries[index-l.baseIndex-1], true
 }
 
-// EntriesFrom returns a copy of every entry at index >= from (from < 1 is
-// treated as 1). Returns nil if from is past the end of the log.
+// EntriesFrom returns a copy of every entry at index >= from (from at or
+// before the compaction boundary is treated as BaseIndex()+1). Returns
+// nil if from is past the end of the log.
 func (l *Log) EntriesFrom(from LogIndex) []LogEntry {
-	if from < 1 {
-		from = 1
+	if from <= l.baseIndex {
+		from = l.baseIndex + 1
 	}
-	if int(from) > len(l.entries) {
+	physIdx := from - l.baseIndex - 1
+	if physIdx < 0 || int(physIdx) > len(l.entries) {
 		return nil
 	}
-	return cloneEntries(l.entries[from-1:])
+	return cloneEntries(l.entries[physIdx:])
 }
 
 func cloneEntries(entries []LogEntry) []LogEntry {
@@ -226,25 +281,90 @@ func (l *Log) Append(entries []LogEntry) error {
 	return nil
 }
 
-// TruncateAndAppend removes every entry at index >= fromIndex (fromIndex <
-// 1 is treated as 1), then appends entries starting at fromIndex,
-// persisting the result before returning. This is Raft's conflict-repair
-// primitive: passing an empty entries slice performs a pure truncation.
-// On failure the log is left exactly as it was.
+// TruncateAndAppend removes every entry at index >= fromIndex (fromIndex
+// at or before the compaction boundary is treated as BaseIndex()+1),
+// then appends entries starting at fromIndex, persisting the result
+// before returning. This is Raft's conflict-repair primitive: passing an
+// empty entries slice performs a pure truncation. On failure the log is
+// left exactly as it was.
 func (l *Log) TruncateAndAppend(fromIndex LogIndex, entries []LogEntry) error {
-	if fromIndex < 1 {
-		fromIndex = 1
+	if fromIndex <= l.baseIndex {
+		fromIndex = l.baseIndex + 1
 	}
 	prev := l.entries
+	physIdx := int(fromIndex - l.baseIndex - 1)
 	var kept []LogEntry
-	if int(fromIndex)-1 <= len(l.entries) {
-		kept = append([]LogEntry{}, l.entries[:fromIndex-1]...)
+	if physIdx <= len(l.entries) {
+		kept = append([]LogEntry{}, l.entries[:physIdx]...)
 	} else {
 		kept = append([]LogEntry{}, l.entries...)
 	}
 	l.entries = append(kept, cloneEntries(entries)...)
 	if err := l.rewrite(); err != nil {
 		l.entries = prev
+		return err
+	}
+	return nil
+}
+
+// Compact discards physical entries with index <= newBaseIndex, replacing
+// them with the snapshot boundary (newBaseIndex, newBaseTerm), and
+// persists the result. It is the caller's responsibility to have already
+// durably persisted a snapshot covering newBaseIndex before calling
+// Compact — this method only removes physical log records; it neither
+// creates nor validates a snapshot itself.
+//
+// Compact is a no-op if newBaseIndex <= the log's current base (it never
+// regresses the boundary or re-does redundant compaction) and fails if
+// newBaseIndex exceeds LastIndex() (an index that does not exist yet
+// cannot be compacted through).
+func (l *Log) Compact(newBaseIndex LogIndex, newBaseTerm Term) error {
+	if newBaseIndex <= l.baseIndex {
+		return nil
+	}
+	if newBaseIndex > l.LastIndex() {
+		return fmt.Errorf("raft: cannot compact through index %d beyond last index %d", newBaseIndex, l.LastIndex())
+	}
+	prevBaseIndex, prevBaseTerm, prevEntries := l.baseIndex, l.baseTerm, l.entries
+	keepFrom := int(newBaseIndex - l.baseIndex)
+	l.baseIndex = newBaseIndex
+	l.baseTerm = newBaseTerm
+	l.entries = append([]LogEntry{}, l.entries[keepFrom:]...)
+	if err := l.rewrite(); err != nil {
+		l.baseIndex, l.baseTerm, l.entries = prevBaseIndex, prevBaseTerm, prevEntries
+		return err
+	}
+	return nil
+}
+
+// InstallSnapshotBoundary resets the log's compaction boundary to
+// (newBaseIndex, newBaseTerm), used when installing a snapshot received
+// from a leader rather than compacting the node's own already-consistent
+// history. Unlike Compact — which only ever shrinks a prefix the log
+// already agrees with — this may need to discard the log's ENTIRE
+// retained suffix: if the local log doesn't reach newBaseIndex, or the
+// entry it has there has a different term, local history cannot be
+// trusted to lead into this snapshot and is discarded wholesale. If the
+// local log already has a matching entry at newBaseIndex, only the
+// prefix through it is discarded and the verified-consistent suffix
+// beyond it is retained (exactly like Compact). Never regresses an
+// already-equal-or-later boundary.
+func (l *Log) InstallSnapshotBoundary(newBaseIndex LogIndex, newBaseTerm Term) error {
+	if newBaseIndex <= l.baseIndex {
+		return nil
+	}
+	localTerm, matches := l.Term(newBaseIndex)
+	prevBaseIndex, prevBaseTerm, prevEntries := l.baseIndex, l.baseTerm, l.entries
+	if matches && localTerm == newBaseTerm {
+		keepFrom := int(newBaseIndex - l.baseIndex)
+		l.entries = append([]LogEntry{}, l.entries[keepFrom:]...)
+	} else {
+		l.entries = nil
+	}
+	l.baseIndex = newBaseIndex
+	l.baseTerm = newBaseTerm
+	if err := l.rewrite(); err != nil {
+		l.baseIndex, l.baseTerm, l.entries = prevBaseIndex, prevBaseTerm, prevEntries
 		return err
 	}
 	return nil
