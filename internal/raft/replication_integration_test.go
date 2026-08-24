@@ -22,6 +22,7 @@ func setupThreeNodeFakeCluster(t *testing.T) (a, b, c *Node, net *fakeNetwork) {
 	for _, n := range []*Node{a, b, c} {
 		n.send = net.send
 		n.sendAppend = net.sendAppend
+		n.sendInstallSnapshot = net.sendInstallSnapshot
 	}
 	net.register("A", a)
 	net.register("B", b)

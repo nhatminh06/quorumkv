@@ -21,7 +21,7 @@ func newTestNode(t *testing.T, id NodeID, initial PersistentState, peers map[Nod
 		t.Fatalf("OpenLog: %v", err)
 	}
 	commitStore := NewCommitStore(filepath.Join(dir, "commit"))
-	n, err := NewNode(id, store, log, commitStore, peers, nil)
+	n, err := NewNode(id, store, log, commitStore, NewSnapshotStore(filepath.Join(dir, "snapshot")), peers, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -191,7 +191,7 @@ func workingLog(t *testing.T) *Log {
 }
 
 func TestHandleRequestVoteGrantFailsIfPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), nil, nil)
+	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), NewSnapshotStore(filepath.Join(t.TempDir(), "snapshot")), nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestHandleRequestVoteGrantFailsIfPersistenceFails(t *testing.T) {
 }
 
 func TestStartElectionFailsIfPersistenceFails(t *testing.T) {
-	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), map[NodeID]string{2: "peer-b"}, nil)
+	n, err := NewNode(1, brokenStore(t), workingLog(t), workingCommitStore(t), NewSnapshotStore(filepath.Join(t.TempDir(), "snapshot")), map[NodeID]string{2: "peer-b"}, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}

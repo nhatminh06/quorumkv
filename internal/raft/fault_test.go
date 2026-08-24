@@ -179,7 +179,7 @@ func (c *faultCluster) start(id NodeID, applyFn ApplyFunc) *Node {
 		c.t.Fatalf("OpenLog(%d): %v", id, err)
 	}
 	commitStore := NewCommitStore(filepath.Join(dir, "commit"))
-	n, err := NewNode(id, store, log, commitStore, c.peersFor(id), applyFn)
+	n, err := NewNode(id, store, log, commitStore, NewSnapshotStore(filepath.Join(dir, "snapshot")), c.peersFor(id), applyFn, nil, nil)
 	if err != nil {
 		c.t.Fatalf("NewNode(%d): %v", id, err)
 	}

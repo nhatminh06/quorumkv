@@ -47,7 +47,7 @@ func TestRestartRebuildAppliesOnlyCommittedPrefix(t *testing.T) {
 		t.Fatalf("OpenLog: %v", err)
 	}
 	commitStore := NewCommitStore(commitPath)
-	n, err := NewNode(1, store, log2, commitStore, nil, rec.fn)
+	n, err := NewNode(1, store, log2, commitStore, NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, rec.fn, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestRestartRebuildKVStateViaOrderedApply(t *testing.T) {
 	}
 
 	store := NewStore(filepath.Join(dir, "state"))
-	n, err := NewNode(1, store, log, commitStore, nil, apply)
+	n, err := NewNode(1, store, log, commitStore, NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, apply, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestRestartApplyRecoveryFailsExplicitlyOnCorruptCommittedCommand(t *testing
 	}
 
 	store := NewStore(filepath.Join(dir, "state"))
-	n, err := NewNode(1, store, log, commitStore, nil, apply)
+	n, err := NewNode(1, store, log, commitStore, NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, apply, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}

@@ -70,7 +70,7 @@ func newNodeWithApply(t *testing.T, id NodeID, peers map[NodeID]string, fn Apply
 		t.Fatalf("OpenLog: %v", err)
 	}
 	commitStore := NewCommitStore(filepath.Join(dir, "commit"))
-	n, err := NewNode(id, store, log, commitStore, peers, fn)
+	n, err := NewNode(id, store, log, commitStore, NewSnapshotStore(filepath.Join(dir, "snapshot")), peers, fn, nil, nil)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
