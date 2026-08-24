@@ -81,13 +81,15 @@ func sendAppendOverTransport(ctx context.Context, addr string, req AppendEntries
 // held: StartElection and replicateToAllPeers each snapshot what they
 // need, unlock, perform I/O, and re-lock only to apply each response.
 type Node struct {
-	id          NodeID
-	store       *Store
-	log         *Log
-	commitStore *CommitStore
-	peers       map[NodeID]string // NodeID -> address, fixed for this milestone
-	send        sender
-	sendAppend  appendSender
+	id                  NodeID
+	store               *Store
+	log                 *Log
+	commitStore         *CommitStore
+	snapshotStore       *SnapshotStore
+	peers               map[NodeID]string // NodeID -> address, fixed for this milestone
+	send                sender
+	sendAppend          appendSender
+	sendInstallSnapshot installSnapshotSender
 
 	timeoutFunc       func() time.Duration
 	heartbeatInterval time.Duration
@@ -119,6 +121,9 @@ type Node struct {
 	// this node becomes Leader and never persisted.
 	nextIndex  map[NodeID]LogIndex
 	matchIndex map[NodeID]LogIndex
+	// snapshotSending guards against starting a second concurrent
+	// InstallSnapshot transfer to a peer while one is already in flight.
+	snapshotSending map[NodeID]bool
 	// leaderCancel stops this leadership term's heartbeat loop; nil
 	// unless role == Leader.
 	leaderCancel context.CancelFunc
@@ -131,28 +136,50 @@ type Node struct {
 	// Application pipeline: see apply.go. lastApplied/applying/applyErr/
 	// waiters are all volatile — reconstructed by replaying the log up to
 	// the restored commitIndex on every startup, never persisted directly.
+	// applyMu (distinct from mu, the Raft state lock) serializes ApplyFunc
+	// against SnapshotFunc/RestoreFunc so a snapshot always corresponds to
+	// exactly the lastApplied index it claims — see CreateSnapshot.
 	applyFunc   ApplyFunc
+	snapshotFn  SnapshotFunc
+	restoreFn   RestoreFunc
+	applyMu     sync.Mutex
 	lastApplied LogIndex
 	applying    bool
 	applyErr    error
 	waiters     []*applyWaiter
+
+	// incoming is this node's in-progress InstallSnapshot transfer
+	// session as a follower, if any (see snapshot_node.go).
+	incoming *incomingSnapshot
 }
 
-// NewNode loads persistent state, the Raft log, and the durably recorded
-// commitIndex, and constructs a Node that starts, as every Raft node must
-// on restart, as a Follower. It then begins (in the background) replaying
-// any committed-but-unapplied prefix of the log through applyFunc — call
+// NewNode loads persistent state, the Raft log, the durably recorded
+// commitIndex, and the canonical snapshot (if any), and constructs a
+// Node that starts, as every Raft node must on restart, as a Follower.
+//
+// If a snapshot exists, its state is restored (via restoreFn) and
+// lastApplied/commitIndex start from at least its lastIncludedIndex
+// before anything else happens — never regressing either. If the log was
+// not yet compacted through the snapshot's boundary (a crash between
+// Milestone 7's mandatory "persist snapshot, then compact log" ordering
+// left that step unfinished), NewNode finishes it here rather than
+// treating it as corruption: Log.Compact is idempotent and safe to
+// re-apply.
+//
+// NewNode then begins (in the background) replaying any
+// committed-but-unapplied prefix of the log through applyFunc — call
 // WaitApplied(ctx, node's initial CommitIndex, 0) to block until that
 // replay completes if the caller needs the state machine ready before
-// serving anything. applyFunc may be nil, in which case committed entries
-// are counted as applied without any actual application work — useful for
-// tests that only exercise Raft itself.
+// serving anything. applyFunc/snapshotFn/restoreFn may be nil: committed
+// entries are then counted as applied without any actual application
+// work, useful for tests that only exercise Raft itself. A nil
+// snapshotFn makes CreateSnapshot fail; a nil restoreFn is a no-op.
 //
-// NewNode returns an error if the durably recorded commitIndex exceeds
-// the log's last index — a state that should never occur from this
-// package's own persistence ordering, and is treated as corruption rather
-// than silently clamped.
-func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, peers map[NodeID]string, applyFunc ApplyFunc) (*Node, error) {
+// NewNode returns an error if the durably recorded commitIndex, or the
+// snapshot's lastIncludedIndex, exceeds the log's last index — states
+// that should never occur from this package's own persistence ordering,
+// and are treated as corruption rather than silently clamped.
+func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapshotStore *SnapshotStore, peers map[NodeID]string, applyFunc ApplyFunc, snapshotFn SnapshotFunc, restoreFn RestoreFunc) (*Node, error) {
 	state, err := store.Load()
 	if err != nil {
 		return nil, err
@@ -161,32 +188,66 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, peers 
 	if err != nil {
 		return nil, err
 	}
+	snap, err := snapshotStore.Load()
+	if err != nil {
+		return nil, err
+	}
+	if snap != nil {
+		if snap.LastIncludedIndex > log.LastIndex() {
+			return nil, fmt.Errorf("raft: snapshot index %d exceeds log length %d", snap.LastIncludedIndex, log.LastIndex())
+		}
+		if snap.LastIncludedIndex > log.BaseIndex() {
+			if err := log.Compact(snap.LastIncludedIndex, snap.LastIncludedTerm); err != nil {
+				return nil, err
+			}
+		}
+		if commitIndex < snap.LastIncludedIndex {
+			commitIndex = snap.LastIncludedIndex
+			if err := commitStore.Save(commitIndex); err != nil {
+				return nil, err
+			}
+		}
+	}
 	if commitIndex > log.LastIndex() {
 		return nil, fmt.Errorf("raft: persisted commitIndex %d exceeds log length %d", commitIndex, log.LastIndex())
 	}
 	if applyFunc == nil {
 		applyFunc = func(LogIndex, []byte) error { return nil }
 	}
+	if restoreFn == nil {
+		restoreFn = func([]byte) error { return nil }
+	}
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	n := &Node{
-		id:                id,
-		store:             store,
-		log:               log,
-		commitStore:       commitStore,
-		peers:             peers,
-		send:              sendOverTransport,
-		sendAppend:        sendAppendOverTransport,
-		timeoutFunc:       randomElectionTimeout,
-		heartbeatInterval: defaultHeartbeatInterval,
-		resetCh:           make(chan struct{}, 1),
-		bgCtx:             bgCtx,
-		bgCancel:          bgCancel,
-		persistent:        state,
-		role:              Follower,
-		nextIndex:         make(map[NodeID]LogIndex),
-		matchIndex:        make(map[NodeID]LogIndex),
-		commitIndex:       commitIndex,
-		applyFunc:         applyFunc,
+		id:                  id,
+		store:               store,
+		log:                 log,
+		commitStore:         commitStore,
+		snapshotStore:       snapshotStore,
+		peers:               peers,
+		send:                sendOverTransport,
+		sendAppend:          sendAppendOverTransport,
+		sendInstallSnapshot: sendInstallSnapshotOverTransport,
+		timeoutFunc:         randomElectionTimeout,
+		heartbeatInterval:   defaultHeartbeatInterval,
+		resetCh:             make(chan struct{}, 1),
+		bgCtx:               bgCtx,
+		bgCancel:            bgCancel,
+		persistent:          state,
+		role:                Follower,
+		nextIndex:           make(map[NodeID]LogIndex),
+		matchIndex:          make(map[NodeID]LogIndex),
+		snapshotSending:     make(map[NodeID]bool),
+		commitIndex:         commitIndex,
+		applyFunc:           applyFunc,
+		snapshotFn:          snapshotFn,
+		restoreFn:           restoreFn,
+	}
+	if snap != nil {
+		if err := restoreFn(snap.Data); err != nil {
+			return nil, fmt.Errorf("raft: restoring snapshot at startup: %w", err)
+		}
+		n.lastApplied = snap.LastIncludedIndex
 	}
 	n.mu.Lock()
 	n.kickApplyLocked()
@@ -238,6 +299,15 @@ func (n *Node) SetAppendSend(fn func(ctx context.Context, addr string, req Appen
 	n.sendAppend = fn
 }
 
+// SetInstallSnapshotSend replaces the function this node uses to send
+// InstallSnapshot RPCs, for the same deterministic fault-injection reasons
+// as SetVoteSend/SetAppendSend.
+func (n *Node) SetInstallSnapshotSend(fn func(ctx context.Context, addr string, req InstallSnapshotRequest) (InstallSnapshotResponse, error)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.sendInstallSnapshot = fn
+}
+
 func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.Message, error) {
 	switch m.Type {
 	case transport.MessageRequestVote:
@@ -260,6 +330,16 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 			return transport.Message{}, err
 		}
 		return transport.NewMessage(transport.MessageAppendEntriesResponse, EncodeAppendEntriesResponse(resp)), nil
+	case transport.MessageInstallSnapshot:
+		req, err := DecodeInstallSnapshot(m.Payload)
+		if err != nil {
+			return transport.Message{}, err
+		}
+		resp, err := n.HandleInstallSnapshot(req)
+		if err != nil {
+			return transport.Message{}, err
+		}
+		return transport.NewMessage(transport.MessageInstallSnapshotResponse, EncodeInstallSnapshotResponse(resp)), nil
 	default:
 		return transport.Message{}, fmt.Errorf("raft: unexpected message type %d", m.Type)
 	}
@@ -356,6 +436,7 @@ func (n *Node) becomeLeaderLocked() {
 	last := n.log.LastIndex()
 	n.nextIndex = make(map[NodeID]LogIndex, len(n.peers))
 	n.matchIndex = make(map[NodeID]LogIndex, len(n.peers))
+	n.snapshotSending = make(map[NodeID]bool, len(n.peers))
 	for id := range n.peers {
 		n.nextIndex[id] = last + 1
 		n.matchIndex[id] = 0
@@ -614,6 +695,14 @@ type replicationRequest struct {
 // replicateToAllPeers sends one round of AppendEntries (a heartbeat if a
 // peer has nothing new) to every peer concurrently. It is called both by
 // the periodic heartbeat loop and immediately after a successful Propose.
+//
+// A peer whose nextIndex has fallen at or behind the log's compacted base
+// (this leader no longer retains the entries that peer would need) is
+// diverted to InstallSnapshot instead: the transfer is started in the
+// background (it may take many rounds' worth of wall-clock time to send
+// all chunks) rather than joined into this round's AppendEntries wait, and
+// snapshotSending guards against starting a second concurrent transfer to
+// the same peer while one is already in flight.
 func (n *Node) replicateToAllPeers(ctx context.Context) {
 	n.mu.Lock()
 	if n.role != Leader {
@@ -623,12 +712,21 @@ func (n *Node) replicateToAllPeers(ctx context.Context) {
 	term := n.persistent.CurrentTerm
 	leaderID := n.id
 	leaderCommit := n.commitIndex
+	baseIndex := n.log.BaseIndex()
 
 	reqs := make([]replicationRequest, 0, len(n.peers))
+	var snapshotPeers []replicationRequest // reused only for id/addr
 	for id, addr := range n.peers {
 		next := n.nextIndex[id]
 		if next < 1 {
 			next = 1
+		}
+		if baseIndex > 0 && next <= baseIndex {
+			if !n.snapshotSending[id] {
+				n.snapshotSending[id] = true
+				snapshotPeers = append(snapshotPeers, replicationRequest{id: id, addr: addr})
+			}
+			continue
 		}
 		prevIndex := next - 1
 		prevTerm, _ := n.log.Term(prevIndex)
@@ -646,6 +744,18 @@ func (n *Node) replicateToAllPeers(ctx context.Context) {
 		}})
 	}
 	n.mu.Unlock()
+
+	for _, r := range snapshotPeers {
+		n.bgWG.Add(1)
+		go func(id NodeID, addr string) {
+			defer n.bgWG.Done()
+			// Bound to n.bgCtx, not the ctx this replication round was
+			// called with: a snapshot transfer spans many chunks and must
+			// keep running after this round's (possibly short-lived,
+			// e.g. Propose's) ctx has already returned.
+			n.sendSnapshotToPeer(n.bgCtx, term, id, addr)
+		}(r.id, r.addr)
+	}
 
 	var wg sync.WaitGroup
 	for _, r := range reqs {
