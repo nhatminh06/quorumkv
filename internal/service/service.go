@@ -1,13 +1,12 @@
 // Package service wires a raft.Node to a kv.StateMachine and serves the
 // client protocol (package clientproto): PUT/DELETE go through Raft
 // (Propose + WaitApplied) and only succeed once committed and applied;
-// GET is served leader-only from locally applied state.
-//
-// GET is deliberately narrower than PUT/DELETE: it is not replicated, and
-// it is not yet quorum-confirmed linearizable. A partitioned former
-// leader could in principle still believe it is Leader long enough to
-// answer a GET from stale local state; that gap is not closed until a
-// future milestone adds ReadIndex or an equivalent quorum-confirmed read.
+// GET goes through raft.Node.ReadIndex (a quorum-confirmed ReadIndex
+// probe, establishing a current-term commit barrier first if needed) and
+// then WaitApplied on the returned index before reading local state — see
+// docs/read-index.md. This closes the previous milestone's stale-read
+// gap: a partitioned former leader that still believes it is Leader
+// cannot obtain read quorum, so it cannot return a stale successful GET.
 package service
 
 import (
@@ -23,15 +22,17 @@ import (
 	"quorumkv/internal/transport"
 )
 
-// writeTimeout bounds how long this node waits for its own commit+apply
-// before giving up and reporting StatusTimeout, independent of whatever
-// deadline the remote client used for the transport round trip. It is
-// derived from the ctx transport.Handler is called with — which is the
-// serving Transport's own lifecycle context (canceled on that Transport's
-// Close), not something carrying the client's actual per-request
-// deadline — so this also bounds ordinary requests to a sane duration
-// rather than only reacting to server shutdown.
-const writeTimeout = 5 * time.Second
+// requestTimeout bounds how long this node waits for its own request
+// processing — commit+apply for PUT/DELETE, ReadIndex quorum
+// confirmation + WaitApplied for GET — before giving up and reporting
+// StatusTimeout, independent of whatever deadline the remote client used
+// for the transport round trip. It is derived from the ctx
+// transport.Handler is called with — which is the serving Transport's own
+// lifecycle context (canceled on that Transport's Close), not something
+// carrying the client's actual per-request deadline — so this also bounds
+// ordinary requests to a sane duration rather than only reacting to
+// server shutdown.
+const requestTimeout = 5 * time.Second
 
 // Service owns the KV state machine and dispatches the client protocol on
 // top of a raft.Node. kv.StateMachine is not safe for concurrent use, so
@@ -172,7 +173,7 @@ func (s *Service) proposeAndWait(ctx context.Context, encodedCmd []byte) clientp
 		return clientproto.Response{Status: clientproto.StatusInternalError}
 	}
 
-	waitCtx, cancel := context.WithTimeout(ctx, writeTimeout)
+	waitCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
 	if err := s.node.WaitApplied(waitCtx, index, term); err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
@@ -187,17 +188,24 @@ func (s *Service) proposeAndWait(ctx context.Context, encodedCmd []byte) clientp
 	return clientproto.Response{Status: clientproto.StatusOK}
 }
 
+// get implements the quorum-confirmed linearizable read path: ReadIndex
+// establishes (or reuses) a current-term commit barrier and confirms this
+// node still holds leadership over a quorum, returning a committed index
+// safe to read through; this node then waits until its own application
+// of the log has caught up to at least that index before consulting local
+// state. The read is linearized at the successful quorum confirmation
+// inside ReadIndex, not at this function's role check — see
+// docs/read-index.md.
 func (s *Service) get(ctx context.Context, key []byte) clientproto.Response {
-	waitCtx, cancel := context.WithTimeout(ctx, writeTimeout)
+	waitCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
-	// Make sure locally known committed entries are applied before
-	// reading — this is a leader-local guarantee, not a quorum-confirmed
-	// read: see the package doc comment.
-	if err := s.node.WaitApplied(waitCtx, s.node.CommitIndex(), 0); err != nil {
-		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			return clientproto.Response{Status: clientproto.StatusTimeout}
-		}
-		return clientproto.Response{Status: clientproto.StatusInternalError}
+
+	readIndex, err := s.node.ReadIndex(waitCtx)
+	if err != nil {
+		return s.readFailureResponse(err)
+	}
+	if err := s.node.WaitApplied(waitCtx, readIndex, 0); err != nil {
+		return s.readFailureResponse(err)
 	}
 
 	s.mu.Lock()
@@ -207,4 +215,20 @@ func (s *Service) get(ctx context.Context, key []byte) clientproto.Response {
 		return clientproto.Response{Status: clientproto.StatusNotFound}
 	}
 	return clientproto.Response{Status: clientproto.StatusOK, Value: v}
+}
+
+// readFailureResponse maps a ReadIndex/WaitApplied failure to a client
+// status. A node that actually stepped down (or was never leader) is
+// NOT_LEADER, with a hint if this node has one; any bounded quorum/context
+// failure is TIMEOUT — never a stale value, never NOT_FOUND standing in
+// for "could not confirm."
+func (s *Service) readFailureResponse(err error) clientproto.Response {
+	if errors.Is(err, raft.ErrNotLeader) {
+		return s.notLeaderResponse()
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
+		errors.Is(err, raft.ErrReadIndexUnavailable) || errors.Is(err, raft.ErrNodeClosed) {
+		return clientproto.Response{Status: clientproto.StatusTimeout}
+	}
+	return clientproto.Response{Status: clientproto.StatusInternalError}
 }

@@ -26,6 +26,12 @@ const (
 // Leader.
 var ErrNotLeader = errors.New("raft: not leader")
 
+// ErrReservedCommand is returned by Propose for an empty command: a
+// zero-length LogEntry.Command is reserved for Raft's own internal
+// current-term barrier no-op (see read_index.go) and may never be
+// manufactured by an application-level caller.
+var ErrReservedCommand = errors.New("raft: empty command is reserved for an internal Raft no-op")
+
 func randomElectionTimeout() time.Duration {
 	span := maxElectionTimeout - minElectionTimeout
 	return minElectionTimeout + time.Duration(rand.Int63n(int64(span)))
@@ -151,6 +157,15 @@ type Node struct {
 	// incoming is this node's in-progress InstallSnapshot transfer
 	// session as a follower, if any (see snapshot_node.go).
 	incoming *incomingSnapshot
+
+	// Read-path state (see read_index.go), all volatile and never
+	// persisted: readContextCounter generates unique ReadContext values
+	// for this process's active ReadIndex probes, and pendingBarrier
+	// tracks (at most one) in-flight current-term commit barrier per
+	// term so concurrent first reads in a new term single-flight onto
+	// one no-op rather than each appending their own.
+	readContextCounter uint64
+	pendingBarrier     *pendingBarrier
 }
 
 // NewNode loads persistent state, the Raft log, the durably recorded
@@ -611,7 +626,7 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 	defer n.mu.Unlock()
 
 	if req.Term < n.persistent.CurrentTerm {
-		return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: false}, nil
+		return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: false, ReadContext: req.ReadContext}, nil
 	}
 	if req.Term > n.persistent.CurrentTerm {
 		if err := n.stepDownLocked(req.Term); err != nil {
@@ -635,7 +650,7 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 
 	localPrevTerm, ok := n.log.Term(req.PrevLogIndex)
 	if !ok || localPrevTerm != req.PrevLogTerm {
-		return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: false}, nil
+		return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: false, ReadContext: req.ReadContext}, nil
 	}
 
 	if len(req.Entries) > 0 {
@@ -681,7 +696,7 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 		}
 	}
 
-	return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: true, MatchIndex: lastNewIndex}, nil
+	return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: true, MatchIndex: lastNewIndex, ReadContext: req.ReadContext}, nil
 }
 
 // replicationRequest bundles one peer's outbound AppendEntries with the
@@ -867,14 +882,30 @@ func (n *Node) heartbeatLoop(ctx context.Context) {
 // immediate replication to peers. It does not wait for commitment or
 // application — pass the returned (index, term) to WaitApplied for that.
 //
-// Propose fails with ErrNotLeader if this node is not currently Leader.
-// If local persistence fails, the log is left unchanged and the error is
-// returned; the entry is never treated as proposed. The returned term is
-// the exact term the entry was created with (read atomically with the
-// append, avoiding a check-then-act race with CurrentTerm changing
-// between two separate calls), needed by WaitApplied to detect if this
-// entry is later superseded by conflict repair before ever committing.
+// Propose fails with ErrNotLeader if this node is not currently Leader,
+// and with ErrReservedCommand if command is empty — a zero-length command
+// is reserved for Raft's own internal current-term barrier no-op (see
+// read_index.go) and can only be appended through that internal path,
+// never by an application-level caller. If local persistence fails, the
+// log is left unchanged and the error is returned; the entry is never
+// treated as proposed. The returned term is the exact term the entry was
+// created with (read atomically with the append, avoiding a
+// check-then-act race with CurrentTerm changing between two separate
+// calls), needed by WaitApplied to detect if this entry is later
+// superseded by conflict repair before ever committing.
 func (n *Node) Propose(command []byte) (LogIndex, Term, error) {
+	if len(command) == 0 {
+		return 0, 0, ErrReservedCommand
+	}
+	return n.proposeLocked(command)
+}
+
+// proposeLocked appends command (which may legally be empty only when
+// called internally, e.g. by ensureCurrentTermCommitted) as a new
+// current-term entry and kicks off replication. See Propose for the
+// externally-visible contract; this is the shared implementation both it
+// and the internal no-op barrier path use.
+func (n *Node) proposeLocked(command []byte) (LogIndex, Term, error) {
 	n.mu.Lock()
 	if n.role != Leader {
 		n.mu.Unlock()

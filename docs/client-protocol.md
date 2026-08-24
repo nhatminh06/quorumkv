@@ -85,21 +85,34 @@ touching Raft — it never proposes on a client's behalf.
 ```text
 verify this node's role is Leader
   ↓
-wait until lastApplied >= this node's own current commitIndex
+raft.Node.ReadIndex: quorum-confirm current-term leadership,
+  establishing a current-term commit barrier first if needed
+  ↓
+wait until lastApplied >= the returned readIndex
   ↓
 read the local KV state machine
   ↓
 respond OK + value, or NOT_FOUND
 ```
 
-GET is **not replicated** — it never becomes a Raft log entry. It is
-served only by the node's current leader role and only from applied
-state. **This is not yet quorum-confirmed linearizable**: a partitioned
-former leader could in principle still believe it is Leader long enough
-to answer a GET from stale local state, since a role check can be
-invalidated the instant after it's read. Closing that gap needs
-ReadIndex or an equivalent quorum-confirmed read, which is a later
-milestone. Do not read this project as claiming linearizable reads.
+GET is still **not replicated** — it never itself becomes a Raft log
+entry (the current-term barrier ReadIndex may need is an internal Raft
+no-op, not a client-visible command). As of Milestone 8, GET *is*
+quorum-confirmed: before reading local state, the leader must confirm
+(via a ReadIndex probe — an empty AppendEntries carrying a correlation
+`ReadContext`) that a majority, including itself, still recognizes it as
+leader in its current term. A partitioned former leader that still
+believes `Role == Leader` cannot obtain that quorum confirmation, so it
+cannot return a stale successful GET — see
+[docs/read-index.md](read-index.md) for the full mechanism, safety
+argument, and test evidence. GET failures in this situation surface as
+`TIMEOUT` or `NOT_LEADER`, never a stale `OK`.
+
+This closes the specific gap the previous milestone documented here. It
+is still not a formally verified linearizability proof, not lease-based,
+and does not depend on synchronized clocks — see
+[docs/read-index.md](read-index.md)'s limitations section for exactly
+what is and is not claimed.
 
 ## Leader tracking and redirect
 

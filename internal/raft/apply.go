@@ -95,6 +95,19 @@ func (n *Node) applyLoop() {
 			return
 		}
 
+		// A zero-length command is the reserved Raft-internal no-op (see
+		// Propose/ensureCurrentTermCommitted in read_index.go): it exists
+		// only to advance the log/commitIndex past a current-term barrier
+		// and carries no application meaning, so ApplyFunc must never see
+		// it — advance lastApplied directly instead.
+		if len(entry.Command) == 0 {
+			n.mu.Lock()
+			n.lastApplied = nextIndex
+			n.notifyWaitersLocked()
+			n.mu.Unlock()
+			continue
+		}
+
 		// applyMu (not n.mu, the Raft state lock) serializes this call
 		// against CreateSnapshot's own application-state access, so a
 		// snapshot always captures state as of exactly the lastApplied

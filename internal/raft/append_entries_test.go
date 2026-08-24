@@ -51,7 +51,8 @@ func TestAppendEntriesEmptyEntriesRoundTrip(t *testing.T) {
 
 // TestAppendEntriesKnownByteVector independently derives the expected
 // wire bytes for term=4, leaderId=1, prevLogIndex=2, prevLogTerm=3,
-// entries=[{term=4,command="x"}], leaderCommit=1.
+// entries=[{term=4,command="x"}], leaderCommit=1, readContext=0 (ordinary
+// replication — not a ReadIndex probe).
 func TestAppendEntriesKnownByteVector(t *testing.T) {
 	got, err := EncodeAppendEntries(sampleAppendEntries())
 	if err != nil {
@@ -64,6 +65,7 @@ func TestAppendEntriesKnownByteVector(t *testing.T) {
 		0, 0, 0, 0, 0, 0, 0, 2, // prevLogIndex
 		0, 0, 0, 0, 0, 0, 0, 3, // prevLogTerm
 		0, 0, 0, 0, 0, 0, 0, 1, // leaderCommit
+		0, 0, 0, 0, 0, 0, 0, 0, // readContext = 0
 		0, 0, 0, 1, // entryCount = 1
 		0, 0, 0, 0, 0, 0, 0, 4, // entry term
 		0, 0, 0, 1, // entry command length
@@ -71,6 +73,44 @@ func TestAppendEntriesKnownByteVector(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("bytes:\n got  % x\n want % x", got, want)
+	}
+}
+
+// TestAppendEntriesReadProbeKnownByteVector independently derives the
+// expected wire bytes for a ReadIndex probe: term=9, leaderId=2,
+// prevLogIndex=20, prevLogTerm=8, no entries, leaderCommit=20,
+// readContext=12345 — proving the field is encoded independently of the
+// ordinary (readContext=0) path above, not merely round-tripped through
+// the production encoder.
+func TestAppendEntriesReadProbeKnownByteVector(t *testing.T) {
+	req := AppendEntriesRequest{
+		Term: 9, LeaderID: 2, PrevLogIndex: 20, PrevLogTerm: 8,
+		LeaderCommit: 20, ReadContext: 12345,
+	}
+	got, err := EncodeAppendEntries(req)
+	if err != nil {
+		t.Fatalf("EncodeAppendEntries: %v", err)
+	}
+
+	want := []byte{
+		0, 0, 0, 0, 0, 0, 0, 9, // term
+		0, 0, 0, 0, 0, 0, 0, 2, // leaderID
+		0, 0, 0, 0, 0, 0, 0, 20, // prevLogIndex
+		0, 0, 0, 0, 0, 0, 0, 8, // prevLogTerm
+		0, 0, 0, 0, 0, 0, 0, 20, // leaderCommit
+		0, 0, 0, 0, 0, 0, 48, 57, // readContext = 12345 (0x3039)
+		0, 0, 0, 0, // entryCount = 0
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("bytes:\n got  % x\n want % x", got, want)
+	}
+
+	back, err := DecodeAppendEntries(got)
+	if err != nil {
+		t.Fatalf("DecodeAppendEntries: %v", err)
+	}
+	if back.ReadContext != 12345 {
+		t.Fatalf("ReadContext = %d, want 12345", back.ReadContext)
 	}
 }
 
@@ -158,7 +198,7 @@ func TestEncodeAppendEntriesRejectsOversizedCommand(t *testing.T) {
 
 func TestAppendEntriesResponseEncodeDecodeRoundTrip(t *testing.T) {
 	for _, success := range []bool{true, false} {
-		resp := AppendEntriesResponse{Term: 5, Success: success, MatchIndex: 9}
+		resp := AppendEntriesResponse{Term: 5, Success: success, MatchIndex: 9, ReadContext: 777}
 		got, err := DecodeAppendEntriesResponse(EncodeAppendEntriesResponse(resp))
 		if err != nil {
 			t.Fatalf("DecodeAppendEntriesResponse: %v", err)
@@ -166,6 +206,26 @@ func TestAppendEntriesResponseEncodeDecodeRoundTrip(t *testing.T) {
 		if got != resp {
 			t.Fatalf("got %+v, want %+v", got, resp)
 		}
+	}
+}
+
+// TestAppendEntriesResponseKnownByteVector independently derives the
+// expected wire bytes for term=5, success=false, matchIndex=0,
+// readContext=12345 — the shape a read-probe response takes when the
+// follower rejects the log-prefix check (Success=false) but still echoes
+// the ReadContext, which is what lets it count toward ReadIndex quorum
+// despite the replication failure (see docs/read-index.md).
+func TestAppendEntriesResponseKnownByteVector(t *testing.T) {
+	resp := AppendEntriesResponse{Term: 5, Success: false, MatchIndex: 0, ReadContext: 12345}
+	got := EncodeAppendEntriesResponse(resp)
+	want := []byte{
+		0, 0, 0, 0, 0, 0, 0, 5, // term
+		0,                      // success = false
+		0, 0, 0, 0, 0, 0, 0, 0, // matchIndex
+		0, 0, 0, 0, 0, 0, 48, 57, // readContext = 12345 (0x3039)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("bytes:\n got  % x\n want % x", got, want)
 	}
 }
 
