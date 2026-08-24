@@ -11,7 +11,9 @@ package transport
 // this package's own tests can exercise framing and request/response
 // delivery without depending on the raft package (transport must not
 // import raft). MessageRequestVote/MessageRequestVoteResponse carry the
-// Raft RequestVote RPC; their payload encoding lives in package raft.
+// Raft RequestVote RPC and MessageAppendEntries/
+// MessageAppendEntriesResponse carry the Raft AppendEntries RPC; their
+// payload encoding lives in package raft.
 type MessageType uint8
 
 const (
@@ -20,6 +22,8 @@ const (
 	MessageTest
 	MessageRequestVote
 	MessageRequestVoteResponse
+	MessageAppendEntries
+	MessageAppendEntriesResponse
 )
 
 // Message is a generic envelope transport carries between nodes.

@@ -52,13 +52,36 @@ func (f *fakeNetwork) send(_ context.Context, addr string, req RequestVoteReques
 	return peer.HandleRequestVote(req)
 }
 
+// sendAppend dispatches AppendEntries the same way send dispatches
+// RequestVote — directly to the peer's real HandleAppendEntries, in
+// process, honoring the same blocked-address simulation.
+func (f *fakeNetwork) sendAppend(_ context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
+	f.mu.Lock()
+	peer, ok := f.nodes[addr]
+	blocked := f.blocked[addr]
+	f.mu.Unlock()
+	if !ok {
+		return AppendEntriesResponse{}, errors.New("fakeNetwork: unknown address " + addr)
+	}
+	if blocked {
+		return AppendEntriesResponse{}, errors.New("fakeNetwork: " + addr + " unreachable")
+	}
+	return peer.HandleAppendEntries(req)
+}
+
 func newFakeNode(t *testing.T, id NodeID, peers map[NodeID]string) *Node {
 	t.Helper()
-	store := NewStore(filepath.Join(t.TempDir(), "state"))
-	n, err := NewNode(id, store, peers)
+	dir := t.TempDir()
+	store := NewStore(filepath.Join(dir, "state"))
+	log, err := OpenLog(filepath.Join(dir, "log"))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	n, err := NewNode(id, store, log, peers)
 	if err != nil {
 		t.Fatalf("NewNode: %v", err)
 	}
+	t.Cleanup(n.Close)
 	return n
 }
 

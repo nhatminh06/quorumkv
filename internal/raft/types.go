@@ -49,3 +49,12 @@ func (r Role) String() string {
 func Majority(clusterSize int) int {
 	return clusterSize/2 + 1
 }
+
+func cloneBytes(b []byte) []byte {
+	if b == nil {
+		return nil
+	}
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out
+}
