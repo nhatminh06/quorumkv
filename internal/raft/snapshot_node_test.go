@@ -340,7 +340,10 @@ func TestRestartFinishesInterruptedCompaction(t *testing.T) {
 	// Persist the snapshot directly (bypassing CreateSnapshot's compact
 	// step) to model the crash window.
 	store := NewSnapshotStore(filepath.Join(dir, "snapshot"))
-	if err := store.Save(Snapshot{LastIncludedIndex: i1, LastIncludedTerm: term, Data: encodeCmd("alpha")}); err != nil {
+	n.mu.Lock()
+	cfg := n.membership.Stable
+	n.mu.Unlock()
+	if err := store.Save(Snapshot{LastIncludedIndex: i1, LastIncludedTerm: term, Data: encodeCmd("alpha"), Configuration: cfg}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	n.Close()

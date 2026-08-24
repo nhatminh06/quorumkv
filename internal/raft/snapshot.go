@@ -14,15 +14,29 @@ import (
 // represents. lastIncludedIndex/lastIncludedTerm become part of the Raft
 // log's logical history even after the physical entries they cover are
 // compacted away (see Log's baseIndex/baseTerm).
+//
+// Configuration is the STABLE membership as of this boundary (never a
+// Joint one — CreateSnapshot refuses while a membership transition is in
+// progress, see ErrMembershipChangeInProgress). ConfigurationPresent is
+// false only for a version-1 (pre-Milestone-10) snapshot file, which
+// predates this field entirely; a Node loading such a snapshot falls back
+// to its own bootstrap configuration as the historical stable config
+// rather than treating the snapshot as corrupt.
 type Snapshot struct {
-	LastIncludedIndex LogIndex
-	LastIncludedTerm  Term
-	Data              []byte
+	LastIncludedIndex    LogIndex
+	LastIncludedTerm     Term
+	Data                 []byte
+	Configuration        Configuration
+	ConfigurationPresent bool
 }
 
 var snapshotFileMagic = [4]byte{'S', 'N', 'P', '1'}
 
-const snapshotFileVersion = 1
+const (
+	snapshotFileVersion1 = 1 // pre-Milestone-10: no membership metadata
+	snapshotFileVersion2 = 2 // Milestone-10: carries the stable Configuration at the boundary
+	snapshotFileVersion  = snapshotFileVersion2
+)
 
 // maxSnapshotPayloadSize bounds the application payload this package will
 // accept, matching kv.MaxSnapshotSize (raft does not import kv — the
@@ -72,14 +86,21 @@ func (s *SnapshotStore) Load() (*Snapshot, error) {
 // the same temp-file/fsync/rename/directory-fsync sequence as the rest of
 // this package's persistent files. It never publishes a partial file.
 //
-//	magic(4B "SNP1") | version(1B) | lastIncludedIndex(8B) | lastIncludedTerm(8B) | payloadLength(8B) | payload | checksum(4B CRC32C)
+//	magic(4B "SNP1") | version(1B) | lastIncludedIndex(8B) | lastIncludedTerm(8B) | payloadLength(8B) | payload | membershipLength(8B) | membership | checksum(4B CRC32C)
 //
-// The checksum covers version..payload (not magic, not itself).
+// membership is EncodeMembership(StableMembership(snap.Configuration));
+// Save always writes version 2 (ConfigurationPresent is a decode-side
+// concept for reading older files, not a choice a writer makes). The
+// checksum covers version..membership (not magic, not itself).
 func (s *SnapshotStore) Save(snap Snapshot) error {
 	if len(snap.Data) > maxSnapshotPayloadSize {
 		return fmt.Errorf("raft: snapshot payload %d exceeds max %d", len(snap.Data), maxSnapshotPayloadSize)
 	}
-	size := snapshotFixedHeaderSize + snapshotMetaSize + len(snap.Data) + snapshotChecksumSize
+	membershipBytes, err := EncodeMembership(StableMembership(snap.Configuration))
+	if err != nil {
+		return fmt.Errorf("raft: encoding snapshot membership: %w", err)
+	}
+	size := snapshotFixedHeaderSize + snapshotMetaSize + len(snap.Data) + 8 + len(membershipBytes) + snapshotChecksumSize
 	buf := make([]byte, size)
 	copy(buf[0:4], snapshotFileMagic[:])
 	buf[4] = snapshotFileVersion
@@ -91,6 +112,9 @@ func (s *SnapshotStore) Save(snap Snapshot) error {
 	binary.BigEndian.PutUint64(buf[off:off+8], uint64(len(snap.Data)))
 	off += 8
 	off += copy(buf[off:], snap.Data)
+	binary.BigEndian.PutUint64(buf[off:off+8], uint64(len(membershipBytes)))
+	off += 8
+	off += copy(buf[off:], membershipBytes)
 
 	checksum := crc32.Checksum(buf[4:off], crc32cTable)
 	binary.BigEndian.PutUint32(buf[off:off+snapshotChecksumSize], checksum)
@@ -105,8 +129,9 @@ func decodeSnapshotFile(data []byte) (*Snapshot, error) {
 	if [4]byte(data[0:4]) != snapshotFileMagic {
 		return nil, fmt.Errorf("%w: invalid magic", ErrCorruptSnapshot)
 	}
-	if data[4] != snapshotFileVersion {
-		return nil, fmt.Errorf("%w: unsupported version %d", ErrCorruptSnapshot, data[4])
+	version := data[4]
+	if version != snapshotFileVersion1 && version != snapshotFileVersion2 {
+		return nil, fmt.Errorf("%w: unsupported version %d", ErrCorruptSnapshot, version)
 	}
 	if len(data) < snapshotFixedHeaderSize+snapshotMetaSize {
 		return nil, fmt.Errorf("%w: truncated metadata", ErrCorruptSnapshot)
@@ -127,8 +152,33 @@ func decodeSnapshotFile(data []byte) (*Snapshot, error) {
 	}
 	payloadEnd := off + int(payloadLen)
 	payload := data[off:payloadEnd]
+	off = payloadEnd
 
-	checksumStart := payloadEnd
+	var cfg Configuration
+	present := false
+	if version == snapshotFileVersion2 {
+		if len(data)-off < 8 {
+			return nil, fmt.Errorf("%w: truncated membership length", ErrCorruptSnapshot)
+		}
+		membershipLen := binary.BigEndian.Uint64(data[off : off+8])
+		off += 8
+		if uint64(len(data)-off) < membershipLen {
+			return nil, fmt.Errorf("%w: truncated membership", ErrCorruptSnapshot)
+		}
+		membershipEnd := off + int(membershipLen)
+		m, err := DecodeMembership(data[off:membershipEnd])
+		if err != nil {
+			return nil, fmt.Errorf("%w: membership: %v", ErrCorruptSnapshot, err)
+		}
+		if m.Mode != ModeStable {
+			return nil, fmt.Errorf("%w: snapshot membership must be Stable, got %v", ErrCorruptSnapshot, m.Mode)
+		}
+		cfg = m.Stable
+		present = true
+		off = membershipEnd
+	}
+
+	checksumStart := off
 	if len(data) < checksumStart+snapshotChecksumSize {
 		return nil, fmt.Errorf("%w: truncated checksum", ErrCorruptSnapshot)
 	}
@@ -142,8 +192,10 @@ func decodeSnapshotFile(data []byte) (*Snapshot, error) {
 	}
 
 	return &Snapshot{
-		LastIncludedIndex: lastIndex,
-		LastIncludedTerm:  lastTerm,
-		Data:              cloneBytes(payload),
+		LastIncludedIndex:    lastIndex,
+		LastIncludedTerm:     lastTerm,
+		Data:                 cloneBytes(payload),
+		Configuration:        cfg,
+		ConfigurationPresent: present,
 	}, nil
 }
