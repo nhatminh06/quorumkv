@@ -6,16 +6,20 @@
 package transport
 
 // MessageType identifies the kind of payload a Message carries. It is a
-// transport-level tag only; this milestone defines placeholder types
-// sufficient to test framing and request/response delivery. Future Raft
-// RPC types (RequestVote, AppendEntries, ...) are added when that work
-// begins — transport treats their payloads as opaque bytes either way.
+// transport-level tag only — transport treats every payload as opaque
+// bytes regardless of type. MessagePing/MessagePong/MessageTest exist so
+// this package's own tests can exercise framing and request/response
+// delivery without depending on the raft package (transport must not
+// import raft). MessageRequestVote/MessageRequestVoteResponse carry the
+// Raft RequestVote RPC; their payload encoding lives in package raft.
 type MessageType uint8
 
 const (
 	MessagePing MessageType = iota + 1
 	MessagePong
 	MessageTest
+	MessageRequestVote
+	MessageRequestVoteResponse
 )
 
 // Message is a generic envelope transport carries between nodes.
