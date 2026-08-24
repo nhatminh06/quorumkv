@@ -224,12 +224,30 @@ new value before updating `Node`'s in-memory `commitIndex`, then triggers
 to wait on that pipeline (`Propose` then `WaitApplied`) before
 acknowledging — see [docs/client-protocol.md](client-protocol.md).
 
+## Logical base index and log compaction (since Milestone 7)
+
+`Log` no longer assumes its physical entry slice starts at logical index
+1. It tracks a `baseIndex`/`baseTerm` boundary; physical entry `entries[i]`
+is logical index `baseIndex + i + 1`. Before any compaction this is
+`(0, 0)`, identical to the sentinel this document already describes above
+— every invariant in this file (`Term(0) == (0, true)`, the AppendEntries
+prevLog sentinel check, conflict repair, the commit rule) is unchanged and
+still holds exactly as written; compaction only affects how far back
+physical history reaches, never the logical indexing scheme itself.
+
+Once compacted, `Term(index)` for `index < baseIndex` returns `(0,
+false)` — an explicit "unavailable," never a fabricated term — and a
+leader whose `nextIndex` for some peer has fallen to or below its
+`baseIndex` falls back from AppendEntries to the `InstallSnapshot` RPC for
+that peer instead of retrying a request it can no longer satisfy. Full
+detail, including the snapshot persistence format, the persist-before-
+compact safety ordering, and follower-side installation, is in
+[docs/snapshots.md](snapshots.md).
+
 ## Known limitations
 
 - No AppendEntries conflict-term optimization: backtracking is simple
   `nextIndex--`, one index per failed round.
-- No snapshots, no `InstallSnapshot`, no log compaction — the log grows
-  unbounded within this milestone's scope.
 - No membership changes; the peer set is static.
 - No quorum-confirmed linearizable reads (no ReadIndex yet) — see
   docs/client-protocol.md's GET section.

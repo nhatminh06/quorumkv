@@ -18,24 +18,27 @@ KV State Machine
 
 ## Current milestone
 
-QuorumKV now includes deterministic failure tests covering leader loss,
-majority/minority partitions, stale-follower catch-up, divergent-log
-repair, and persistent restart recovery — proving, with executable
-evidence rather than a formal proof, that the Raft implementation from
-earlier milestones behaves correctly under controlled node and network
-failures. A three-node test cluster was verified to: elect a replacement
-leader and preserve committed writes after a leader crash; continue
-committing writes with one node unavailable; refuse to commit on a leader
-isolated from the majority; repair a partitioned follower's divergent
-uncommitted suffix while leaving its matching prefix untouched; and
-rebuild term/vote/log/commitIndex/applied-KV state from disk after a
-restart. See [docs/failure-testing.md](docs/failure-testing.md) for the
-full scenario table and current limitations.
+QuorumKV now bounds Raft log growth with snapshots: a node can serialize
+its KV state and compact the log behind that boundary, and a leader whose
+compacted prefix has outrun a stale follower's `nextIndex` automatically
+falls back to a chunked `InstallSnapshot` RPC instead of an unsatisfiable
+AppendEntries retry loop. This was proven with a real three-node cluster
+over real TCP — not an in-process shortcut — where a follower taken
+offline, left behind while the leader committed more writes and compacted
+past it, and restarted from stale on-disk state, is brought back to full
+convergence via `InstallSnapshot` followed by ordinary AppendEntries
+catch-up; a second real-TCP test moves a snapshot spanning several 256 KiB
+chunks end to end. See [docs/snapshots.md](docs/snapshots.md) for the
+persistence formats, the persist-snapshot-before-compact-log safety
+ordering, and the full test list.
 
-This builds on: committed Raft entries applied to the KV state machine,
-a leader-aware binary PUT/GET/DELETE client API
+This builds on: deterministic failure tests covering leader loss,
+partitions, stale-follower catch-up, divergent-log repair, and persistent
+restart recovery ([docs/failure-testing.md](docs/failure-testing.md));
+committed Raft entries applied to the KV state machine, a leader-aware
+binary PUT/GET/DELETE client API
 ([docs/state-machine.md](docs/state-machine.md),
-[docs/client-protocol.md](docs/client-protocol.md)), and persistent Raft
+[docs/client-protocol.md](docs/client-protocol.md)); and persistent Raft
 election/log replication/heartbeats
 ([docs/raft-election.md](docs/raft-election.md),
 [docs/raft-log-replication.md](docs/raft-log-replication.md)), plus
@@ -46,7 +49,10 @@ the leader. GET is leader-only but quorum-confirmed linearizable reads
 are not yet implemented — an isolated former leader may briefly still
 believe it is Leader and serve a stale local GET before it learns of a
 higher term; this is a known, documented limitation, not a write-safety
-failure. There is no snapshotting, no membership changes, no request
+failure. Snapshotting is caller-triggered only (no automatic
+threshold/schedule policy, no client-facing snapshot API, no distributed
+snapshot coordination between nodes); this is not a general-purpose
+storage engine. There is no membership-change support, no request
 deduplication, and no exactly-once write claim.
 
 ## Layout
