@@ -1,0 +1,221 @@
+// Package clientproto defines the bounded binary wire protocol clients use
+// to send PUT/GET/DELETE requests to a QuorumKV node and receive
+// responses. It knows nothing about Raft or the KV state machine — it
+// only defines request/response bytes; package service decodes/dispatches
+// them. Payloads travel inside a transport.Message (MessageClientRequest/
+// MessageClientResponse), whose frame already carries a CRC32C over the
+// whole payload, so this format does not duplicate that checksum.
+//
+// There is no TLS and no authentication in this protocol.
+package clientproto
+
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+)
+
+const protocolVersion = 1
+
+// MaxKeySize/MaxValueSize bound a single request/response's key/value.
+// MaxValueSize matches kv.MaxValueSize so a PUT that fits the client
+// protocol always fits the resulting Raft log entry.
+const (
+	MaxKeySize   = 64 * 1024
+	MaxValueSize = 200 * 1024
+	// MaxLeaderHintSize bounds a NOT_LEADER response's leader address hint
+	// (a "host:port" string) — generous for any realistic address.
+	MaxLeaderHintSize = 256
+)
+
+// Operation identifies the requested KV operation.
+type Operation uint8
+
+const (
+	OpPut Operation = iota + 1
+	OpGet
+	OpDelete
+)
+
+// Status identifies the outcome of a request. Internal Go error strings
+// are never sent over the wire — only this small fixed set of codes.
+type Status uint8
+
+const (
+	StatusOK Status = iota + 1
+	StatusNotFound
+	StatusNotLeader
+	StatusTimeout
+	StatusInternalError
+	StatusBadRequest
+)
+
+// Request is a client PUT/GET/DELETE request.
+//
+//	PUT:    Key and Value both set.
+//	GET:    Key set, Value must be empty.
+//	DELETE: Key set, Value must be empty.
+type Request struct {
+	Operation Operation
+	Key       []byte
+	Value     []byte
+}
+
+// Response is a client request's result.
+//
+//	LeaderHint is only meaningful (and may be non-empty) when Status is
+//	StatusNotLeader; it is empty if this node does not currently know the
+//	leader.
+//	Value is only meaningful when Status is StatusOK for a GET.
+type Response struct {
+	Status     Status
+	LeaderHint []byte
+	Value      []byte
+}
+
+var (
+	ErrMalformedRequest  = errors.New("clientproto: malformed request")
+	ErrMalformedResponse = errors.New("clientproto: malformed response")
+)
+
+// requestFixedHeaderSize: version(1) + operation(1) + keyLength(4) +
+// valueLength(4).
+const requestFixedHeaderSize = 1 + 1 + 4 + 4
+
+// EncodeRequest produces the exact wire bytes for r. All integers
+// big-endian. GET/DELETE requests must not carry a value.
+func EncodeRequest(r Request) ([]byte, error) {
+	if len(r.Key) > MaxKeySize {
+		return nil, fmt.Errorf("clientproto: key length %d exceeds max %d", len(r.Key), MaxKeySize)
+	}
+	if len(r.Value) > MaxValueSize {
+		return nil, fmt.Errorf("clientproto: value length %d exceeds max %d", len(r.Value), MaxValueSize)
+	}
+	switch r.Operation {
+	case OpPut:
+	case OpGet, OpDelete:
+		if len(r.Value) != 0 {
+			return nil, fmt.Errorf("clientproto: operation %d must not carry a value", r.Operation)
+		}
+	default:
+		return nil, fmt.Errorf("clientproto: unknown operation %d", r.Operation)
+	}
+
+	buf := make([]byte, requestFixedHeaderSize+len(r.Key)+len(r.Value))
+	buf[0] = protocolVersion
+	buf[1] = byte(r.Operation)
+	binary.BigEndian.PutUint32(buf[2:6], uint32(len(r.Key)))
+	binary.BigEndian.PutUint32(buf[6:10], uint32(len(r.Value)))
+	off := requestFixedHeaderSize
+	off += copy(buf[off:], r.Key)
+	copy(buf[off:], r.Value)
+	return buf, nil
+}
+
+// DecodeRequest validates and decodes a request payload. Declared key and
+// value lengths are validated before any allocation based on them.
+func DecodeRequest(b []byte) (Request, error) {
+	if len(b) < requestFixedHeaderSize {
+		return Request{}, fmt.Errorf("%w: too short", ErrMalformedRequest)
+	}
+	if b[0] != protocolVersion {
+		return Request{}, fmt.Errorf("%w: unsupported version %d", ErrMalformedRequest, b[0])
+	}
+	op := Operation(b[1])
+	switch op {
+	case OpPut, OpGet, OpDelete:
+	default:
+		return Request{}, fmt.Errorf("%w: unknown operation %d", ErrMalformedRequest, op)
+	}
+	keyLen := binary.BigEndian.Uint32(b[2:6])
+	valLen := binary.BigEndian.Uint32(b[6:10])
+	if keyLen > MaxKeySize {
+		return Request{}, fmt.Errorf("%w: key length %d exceeds max %d", ErrMalformedRequest, keyLen, MaxKeySize)
+	}
+	if valLen > MaxValueSize {
+		return Request{}, fmt.Errorf("%w: value length %d exceeds max %d", ErrMalformedRequest, valLen, MaxValueSize)
+	}
+	if (op == OpGet || op == OpDelete) && valLen != 0 {
+		return Request{}, fmt.Errorf("%w: operation %d must not carry a value", ErrMalformedRequest, op)
+	}
+	want := requestFixedHeaderSize + int(keyLen) + int(valLen)
+	if len(b) != want {
+		return Request{}, fmt.Errorf("%w: length mismatch (declared %d, got %d bytes)", ErrMalformedRequest, want, len(b))
+	}
+
+	key := cloneBytes(b[requestFixedHeaderSize : requestFixedHeaderSize+int(keyLen)])
+	value := cloneBytes(b[requestFixedHeaderSize+int(keyLen):])
+	return Request{Operation: op, Key: key, Value: value}, nil
+}
+
+// responseFixedHeaderSize: version(1) + status(1) + leaderHintLength(2) +
+// valueLength(4).
+const responseFixedHeaderSize = 1 + 1 + 2 + 4
+
+// EncodeResponse produces the exact wire bytes for r.
+func EncodeResponse(r Response) ([]byte, error) {
+	if len(r.LeaderHint) > MaxLeaderHintSize {
+		return nil, fmt.Errorf("clientproto: leader hint length %d exceeds max %d", len(r.LeaderHint), MaxLeaderHintSize)
+	}
+	if len(r.Value) > MaxValueSize {
+		return nil, fmt.Errorf("clientproto: value length %d exceeds max %d", len(r.Value), MaxValueSize)
+	}
+	switch r.Status {
+	case StatusOK, StatusNotFound, StatusNotLeader, StatusTimeout, StatusInternalError, StatusBadRequest:
+	default:
+		return nil, fmt.Errorf("clientproto: unknown status %d", r.Status)
+	}
+
+	buf := make([]byte, responseFixedHeaderSize+len(r.LeaderHint)+len(r.Value))
+	buf[0] = protocolVersion
+	buf[1] = byte(r.Status)
+	binary.BigEndian.PutUint16(buf[2:4], uint16(len(r.LeaderHint)))
+	binary.BigEndian.PutUint32(buf[4:8], uint32(len(r.Value)))
+	off := responseFixedHeaderSize
+	off += copy(buf[off:], r.LeaderHint)
+	copy(buf[off:], r.Value)
+	return buf, nil
+}
+
+// DecodeResponse validates and decodes a response payload. Declared
+// leader-hint and value lengths are validated before any allocation based
+// on them.
+func DecodeResponse(b []byte) (Response, error) {
+	if len(b) < responseFixedHeaderSize {
+		return Response{}, fmt.Errorf("%w: too short", ErrMalformedResponse)
+	}
+	if b[0] != protocolVersion {
+		return Response{}, fmt.Errorf("%w: unsupported version %d", ErrMalformedResponse, b[0])
+	}
+	status := Status(b[1])
+	switch status {
+	case StatusOK, StatusNotFound, StatusNotLeader, StatusTimeout, StatusInternalError, StatusBadRequest:
+	default:
+		return Response{}, fmt.Errorf("%w: unknown status %d", ErrMalformedResponse, status)
+	}
+	hintLen := binary.BigEndian.Uint16(b[2:4])
+	if int(hintLen) > MaxLeaderHintSize {
+		return Response{}, fmt.Errorf("%w: leader hint length %d exceeds max %d", ErrMalformedResponse, hintLen, MaxLeaderHintSize)
+	}
+	valLen := binary.BigEndian.Uint32(b[4:8])
+	if valLen > MaxValueSize {
+		return Response{}, fmt.Errorf("%w: value length %d exceeds max %d", ErrMalformedResponse, valLen, MaxValueSize)
+	}
+	want := responseFixedHeaderSize + int(hintLen) + int(valLen)
+	if len(b) != want {
+		return Response{}, fmt.Errorf("%w: length mismatch (declared %d, got %d bytes)", ErrMalformedResponse, want, len(b))
+	}
+
+	hint := cloneBytes(b[responseFixedHeaderSize : responseFixedHeaderSize+int(hintLen)])
+	value := cloneBytes(b[responseFixedHeaderSize+int(hintLen):])
+	return Response{Status: status, LeaderHint: hint, Value: value}, nil
+}
+
+func cloneBytes(b []byte) []byte {
+	if len(b) == 0 {
+		return nil
+	}
+	out := make([]byte, len(b))
+	copy(out, b)
+	return out
+}

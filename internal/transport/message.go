@@ -10,10 +10,12 @@ package transport
 // bytes regardless of type. MessagePing/MessagePong/MessageTest exist so
 // this package's own tests can exercise framing and request/response
 // delivery without depending on the raft package (transport must not
-// import raft). MessageRequestVote/MessageRequestVoteResponse carry the
-// Raft RequestVote RPC and MessageAppendEntries/
-// MessageAppendEntriesResponse carry the Raft AppendEntries RPC; their
-// payload encoding lives in package raft.
+// import raft or the client protocol). MessageRequestVote/
+// MessageRequestVoteResponse carry the Raft RequestVote RPC and
+// MessageAppendEntries/MessageAppendEntriesResponse carry the Raft
+// AppendEntries RPC; their payload encoding lives in package raft.
+// MessageClientRequest/MessageClientResponse carry the client PUT/GET/
+// DELETE protocol; their payload encoding lives in package clientproto.
 type MessageType uint8
 
 const (
@@ -24,6 +26,8 @@ const (
 	MessageRequestVoteResponse
 	MessageAppendEntries
 	MessageAppendEntriesResponse
+	MessageClientRequest
+	MessageClientResponse
 )
 
 // Message is a generic envelope transport carries between nodes.
