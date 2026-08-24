@@ -166,3 +166,62 @@ func TestLeaderCrashAfterStableAppendedBeforeItCommits(t *testing.T) {
 		t.Fatalf("final Stable configuration = %+v, want exactly {2,3}", status.Stable)
 	}
 }
+
+// TestConflictRepairRevertsUncommittedJointEntry is the mandatory config
+// conflict-repair scenario: a leader appends a Joint entry (activating it
+// locally, before commit) but is partitioned away before it ever
+// replicates; a new leader elected without that entry replicates its own
+// (different) history over it once the partition heals. The old leader's
+// conflict-repair truncation must revert its effective membership back
+// to Stable — no stale Joint state left over from the entry it never
+// actually got to keep.
+func TestConflictRepairRevertsUncommittedJointEntry(t *testing.T) {
+	c := newFaultCluster(t, 3, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	a := c.node(1)
+	if err := a.StartElection(ctx); err != nil {
+		t.Fatalf("StartElection: %v", err)
+	}
+
+	c.net.partition(1, 2)
+	c.net.partition(1, 3)
+
+	// A appends a Joint entry locally — activating it immediately, per
+	// the local-log-derived rule — but the partition means it can never
+	// replicate or commit.
+	seedJointEntry(t, a, a.CurrentTerm(), cfg(1, 2, 3), cfg(1, 2, 3, 4))
+	if a.MembershipStatus().Mode != ModeJoint {
+		t.Fatalf("test bug: A's Joint entry did not activate locally")
+	}
+
+	// B and C can still reach each other; B wins a new, higher-term
+	// election without ever having seen A's Joint entry.
+	b, cc := c.node(2), c.node(3)
+	if err := b.StartElection(ctx); err != nil {
+		t.Fatalf("B StartElection: %v", err)
+	}
+	if b.Role() != Leader {
+		t.Fatalf("B did not become leader")
+	}
+	if _, _, err := b.Propose([]byte("after-partition")); err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+	if !waitFor(2*time.Second, func() bool { return cc.CommitIndex() >= b.CommitIndex() && b.CommitIndex() > 0 }) {
+		t.Fatalf("B's write never committed to C")
+	}
+
+	// Heal the partition: A receives B's higher-term AppendEntries,
+	// steps down, and conflict-repairs its log — discarding its own
+	// never-replicated Joint entry.
+	c.net.heal(1, 2)
+	c.net.heal(1, 3)
+
+	if !waitFor(2*time.Second, func() bool { return a.MembershipStatus().Mode == ModeStable }) {
+		t.Fatalf("A's membership never reverted to Stable after conflict repair: %+v", a.MembershipStatus())
+	}
+	status := a.MembershipStatus()
+	if status.Stable.Has(4) {
+		t.Fatalf("A's membership still reflects the discarded Joint entry's New side: %+v", status.Stable)
+	}
+}
