@@ -95,12 +95,14 @@ func (n *Node) applyLoop() {
 			return
 		}
 
-		// A zero-length command is the reserved Raft-internal no-op (see
-		// Propose/ensureCurrentTermCommitted in read_index.go): it exists
-		// only to advance the log/commitIndex past a current-term barrier
-		// and carries no application meaning, so ApplyFunc must never see
-		// it — advance lastApplied directly instead.
-		if len(entry.Command) == 0 {
+		// EntryNoop (see Propose/ensureCurrentTermCommitted in
+		// read_index.go) exists only to advance the log/commitIndex past a
+		// current-term barrier; EntryConfiguration carries membership
+		// changes, which Node derives from its local log directly (see
+		// membership.go), not through ApplyFunc. Neither carries
+		// application meaning, so ApplyFunc must never see them — advance
+		// lastApplied directly instead.
+		if entry.Kind != EntryApplication {
 			n.mu.Lock()
 			n.lastApplied = nextIndex
 			n.notifyWaitersLocked()

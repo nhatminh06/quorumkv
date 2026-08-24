@@ -87,7 +87,7 @@ func (n *Node) ensureCurrentTermCommitted(ctx context.Context) error {
 		pb = n.pendingBarrier
 		n.mu.Unlock()
 	} else {
-		entry := LogEntry{Term: term, Command: nil}
+		entry := LogEntry{Term: term, Kind: EntryNoop, Command: nil}
 		if err := n.log.Append([]LogEntry{entry}); err != nil {
 			n.mu.Unlock()
 			return err
