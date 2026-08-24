@@ -175,15 +175,12 @@ func (n *Node) ReadIndex(ctx context.Context) (LogIndex, error) {
 	leaderID := n.id
 	prevIndex, prevTerm := n.lastLogInfo()
 	leaderCommit := n.commitIndex
-	peers := make(map[NodeID]string, len(n.peers))
-	for id, addr := range n.peers {
-		peers[id] = addr
-	}
-	need := Majority(len(n.peers) + 1)
+	peers := n.membership.Targets(n.id)
+	membership := n.membership
 	n.mu.Unlock()
 
-	acked := 1 // self, counted immediately — no network I/O for a single-node cluster
-	if acked >= need {
+	acked := map[NodeID]bool{leaderID: true} // self, counted immediately — no network I/O for a single-node cluster
+	if membership.HasQuorum(acked) {
 		return n.finalizeReadIndex(term)
 	}
 
@@ -230,8 +227,8 @@ func (n *Node) ReadIndex(ctx context.Context) (LogIndex, error) {
 			if r.resp.Term != term || r.resp.ReadContext != readCtx {
 				continue // stale term, or a response to a different (older/newer) read
 			}
-			acked++
-			if acked >= need {
+			acked[r.id] = true
+			if membership.HasQuorum(acked) {
 				return n.finalizeReadIndex(term)
 			}
 		case <-ctx.Done():

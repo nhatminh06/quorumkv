@@ -92,7 +92,8 @@ type Node struct {
 	log                 *Log
 	commitStore         *CommitStore
 	snapshotStore       *SnapshotStore
-	peers               map[NodeID]string // NodeID -> address, fixed for this milestone
+	peers               map[NodeID]string // NodeID -> address, excluding self
+	selfAddr            string            // this node's own dialable address, for Configuration entries other nodes need to resolve it by
 	send                sender
 	sendAppend          appendSender
 	sendInstallSnapshot installSnapshotSender
@@ -166,6 +167,15 @@ type Node struct {
 	// one no-op rather than each appending their own.
 	readContextCounter uint64
 	pendingBarrier     *pendingBarrier
+
+	// membership is this node's effective configuration — see
+	// membership.go. membershipFromLog is false until a Configuration log
+	// entry has ever been applied to it; while false, membership tracks
+	// peers/selfAddr directly (bootstrap). Once true, persisted
+	// configuration history is authoritative forever and SetPeers/
+	// SetSelfAddr no longer overwrite it.
+	membership        Membership
+	membershipFromLog bool
 }
 
 // NewNode loads persistent state, the Raft log, the durably recorded
@@ -265,6 +275,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		n.lastApplied = snap.LastIncludedIndex
 	}
 	n.mu.Lock()
+	n.recomputeMembershipLocked()
 	n.kickApplyLocked()
 	n.mu.Unlock()
 	return n, nil
@@ -292,6 +303,59 @@ func (n *Node) SetPeers(peers map[NodeID]string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.peers = peers
+	n.recomputeMembershipLocked()
+}
+
+// SetSelfAddr records this node's own dialable address. It exists for
+// initial cluster bootstrap, alongside SetPeers, so this node's bootstrap
+// Configuration (used until any real membership change is ever applied)
+// has a real address for itself — needed so a newly-added future peer,
+// or a snapshot's stored stable configuration, can resolve it. Before
+// this is ever called, a non-empty placeholder is used; since Targets
+// always excludes self, correctness of replication/election/quorum never
+// depends on this value being real, only its later use in a Configuration
+// handed to another node does.
+func (n *Node) SetSelfAddr(addr string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.selfAddr = addr
+	n.recomputeMembershipLocked()
+}
+
+// recomputeMembershipLocked refreshes n.membership from n.peers/n.selfAddr
+// (the bootstrap configuration) unless persisted configuration-entry
+// history has ever been applied, in which case that history is
+// authoritative forever and bootstrap inputs must never overwrite it. Must
+// be called with n.mu held.
+func (n *Node) recomputeMembershipLocked() {
+	if n.membershipFromLog {
+		return
+	}
+	n.membership = StableMembership(n.bootstrapConfigurationLocked())
+}
+
+// bootstrapConfigurationLocked builds the Configuration this node starts
+// with when no persisted membership-change history exists: itself plus
+// every currently known peer. Must be called with n.mu held.
+func (n *Node) bootstrapConfigurationLocked() Configuration {
+	selfAddr := n.selfAddr
+	if selfAddr == "" {
+		selfAddr = fmt.Sprintf("unresolved-self-%d", n.id)
+	}
+	voters := make(map[NodeID]string, len(n.peers)+1)
+	voters[n.id] = selfAddr
+	for id, addr := range n.peers {
+		voters[id] = addr
+	}
+	cfg, err := NewConfiguration(voters)
+	if err != nil {
+		// peers/selfAddr are always validated non-empty by NewConfiguration
+		// itself at every call site that supplies real addresses; an empty
+		// peers map still yields a valid single-voter (self-only)
+		// Configuration, so this should be unreachable.
+		panic(fmt.Sprintf("raft: invalid bootstrap configuration: %v", err))
+	}
+	return cfg
 }
 
 // SetVoteSend and SetAppendSend replace the functions this node uses to
@@ -449,10 +513,11 @@ func (n *Node) becomeLeaderLocked() {
 	self := n.id
 	n.leaderID = &self
 	last := n.log.LastIndex()
-	n.nextIndex = make(map[NodeID]LogIndex, len(n.peers))
-	n.matchIndex = make(map[NodeID]LogIndex, len(n.peers))
-	n.snapshotSending = make(map[NodeID]bool, len(n.peers))
-	for id := range n.peers {
+	targets := n.membership.Targets(n.id)
+	n.nextIndex = make(map[NodeID]LogIndex, len(targets))
+	n.matchIndex = make(map[NodeID]LogIndex, len(targets))
+	n.snapshotSending = make(map[NodeID]bool, len(targets))
+	for id := range targets {
 		n.nextIndex[id] = last + 1
 		n.matchIndex[id] = 0
 	}
@@ -493,7 +558,7 @@ func (n *Node) HandleRequestVote(req RequestVoteRequest) (RequestVoteResponse, e
 	}
 
 	grant := false
-	if n.persistent.VotedFor == nil || *n.persistent.VotedFor == req.CandidateID {
+	if n.membership.IsVoter(n.id) && (n.persistent.VotedFor == nil || *n.persistent.VotedFor == req.CandidateID) {
 		lastIndex, lastTerm := n.lastLogInfo()
 		if LogUpToDate(req.LastLogTerm, req.LastLogIndex, lastTerm, lastIndex) {
 			grant = true
@@ -533,6 +598,12 @@ func (n *Node) StartElection(ctx context.Context) error {
 		n.mu.Unlock()
 		return nil
 	}
+	if !n.membership.IsVoter(n.id) {
+		// A node that is not an effective voter (e.g. removed, or not yet
+		// activated as a new joiner) must not campaign.
+		n.mu.Unlock()
+		return nil
+	}
 
 	prev := n.persistent
 	newTerm := prev.CurrentTerm + 1
@@ -548,17 +619,13 @@ func (n *Node) StartElection(ctx context.Context) error {
 	n.votes = map[NodeID]bool{n.id: true}
 	lastIndex, lastTerm := n.lastLogInfo()
 
-	clusterSize := len(n.peers) + 1
-	if len(n.votes) >= Majority(clusterSize) {
+	if n.membership.HasQuorum(n.votes) {
 		n.becomeLeaderLocked()
 		n.mu.Unlock()
 		return nil
 	}
 
-	peers := make(map[NodeID]string, len(n.peers))
-	for id, addr := range n.peers {
-		peers[id] = addr
-	}
+	peers := n.membership.Targets(n.id)
 	n.mu.Unlock()
 
 	req := RequestVoteRequest{
@@ -607,7 +674,7 @@ func (n *Node) applyVoteResponse(electionTerm Term, from NodeID, resp RequestVot
 	}
 	n.votes[from] = true
 
-	if len(n.votes) >= Majority(len(n.peers)+1) {
+	if n.membership.HasQuorum(n.votes) {
 		n.becomeLeaderLocked()
 	}
 }
@@ -729,9 +796,10 @@ func (n *Node) replicateToAllPeers(ctx context.Context) {
 	leaderCommit := n.commitIndex
 	baseIndex := n.log.BaseIndex()
 
-	reqs := make([]replicationRequest, 0, len(n.peers))
+	targets := n.membership.Targets(n.id)
+	reqs := make([]replicationRequest, 0, len(targets))
 	var snapshotPeers []replicationRequest // reused only for id/addr
-	for id, addr := range n.peers {
+	for id, addr := range targets {
 		next := n.nextIndex[id]
 		if next < 1 {
 			next = 1
@@ -833,13 +901,13 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 		if !ok || term != n.persistent.CurrentTerm {
 			continue
 		}
-		count := 1 // self
-		for id := range n.peers {
-			if n.matchIndex[id] >= N {
-				count++
+		acked := map[NodeID]bool{n.id: true}
+		for id, match := range n.matchIndex {
+			if match >= N {
+				acked[id] = true
 			}
 		}
-		if count >= Majority(len(n.peers)+1) {
+		if n.membership.HasQuorum(acked) {
 			// N is already logically committed cluster-wide (a majority
 			// has it) regardless of what happens next. But this node must
 			// not treat that as *durably recorded* — and so must not let
