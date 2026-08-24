@@ -36,7 +36,7 @@ var (
 
 func isKnownMessageType(t MessageType) bool {
 	switch t {
-	case MessagePing, MessagePong, MessageTest:
+	case MessagePing, MessagePong, MessageTest, MessageRequestVote, MessageRequestVoteResponse:
 		return true
 	default:
 		return false
