@@ -96,9 +96,13 @@ type Node struct {
 	// bgCtx/bgCancel bound this Node's own background work (heartbeat and
 	// apply loops), independent of whatever short-lived ctx a particular
 	// StartElection/HandleRequestVote/HandleAppendEntries call happens to
-	// receive. Close cancels it.
+	// receive. Close cancels it and waits (via bgWG) for every background
+	// goroutine spawned under it to actually exit before returning, so a
+	// caller that has called Close can rely on no further heartbeats or
+	// application happening — not just that cancellation was requested.
 	bgCtx    context.Context
 	bgCancel context.CancelFunc
+	bgWG     sync.WaitGroup
 
 	mu         sync.Mutex
 	persistent PersistentState
@@ -190,10 +194,12 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, peers 
 	return n, nil
 }
 
-// Close stops this node's background heartbeat/replication work. Safe to
-// call whether or not this node is currently Leader.
+// Close stops this node's background heartbeat/replication/apply work
+// and waits for it to actually finish before returning. Safe to call
+// whether or not this node is currently Leader.
 func (n *Node) Close() {
 	n.bgCancel()
+	n.bgWG.Wait()
 }
 
 // Handler returns the transport.Handler that dispatches inbound Raft RPC
@@ -210,6 +216,26 @@ func (n *Node) SetPeers(peers map[NodeID]string) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.peers = peers
+}
+
+// SetVoteSend and SetAppendSend replace the functions this node uses to
+// send RequestVote/AppendEntries RPCs. Production code never calls
+// these — the defaults (sendOverTransport/sendAppendOverTransport)
+// already go over the real transport. They exist so deterministic
+// fault-injection tests outside this package can wrap the real sender
+// with an allow/block decision while still delegating to real TCP for
+// anything allowed through, rather than replacing the network path
+// entirely.
+func (n *Node) SetVoteSend(fn func(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.send = fn
+}
+
+func (n *Node) SetAppendSend(fn func(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.sendAppend = fn
 }
 
 func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.Message, error) {
@@ -336,6 +362,7 @@ func (n *Node) becomeLeaderLocked() {
 	}
 	leaderCtx, cancel := context.WithCancel(n.bgCtx)
 	n.leaderCancel = cancel
+	n.bgWG.Add(1)
 	go n.heartbeatLoop(leaderCtx)
 }
 
@@ -711,6 +738,7 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 // leadership term; becomeLeaderLocked/stepToFollowerLocked/stepDownLocked
 // ensure the previous one is always stopped before a new one can start.
 func (n *Node) heartbeatLoop(ctx context.Context) {
+	defer n.bgWG.Done()
 	n.replicateToAllPeers(ctx)
 	ticker := time.NewTicker(n.heartbeatInterval)
 	defer ticker.Stop()
@@ -752,7 +780,11 @@ func (n *Node) Propose(command []byte) (LogIndex, Term, error) {
 	n.maybeAdvanceCommitIndexLocked() // handles the single-node-cluster case
 	n.mu.Unlock()
 
-	go n.replicateToAllPeers(n.bgCtx)
+	n.bgWG.Add(1)
+	go func() {
+		defer n.bgWG.Done()
+		n.replicateToAllPeers(n.bgCtx)
+	}()
 	return index, term, nil
 }
 
