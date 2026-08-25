@@ -350,6 +350,49 @@ func (l *Log) EntriesFrom(from LogIndex) []LogEntry {
 	return cloneEntries(l.entries[physIdx:])
 }
 
+// EntriesRange returns up to maxEntries entries starting at from (the
+// same snapshot-boundary clamping as EntriesFrom: from at or before the
+// compaction boundary is treated as BaseIndex()+1), stopping before
+// including an entry that would push the running encoded-wire-size total
+// (see encodedEntrySize) beyond maxEncodedBytes. The first entry is
+// always included regardless of its own size — a single entry larger
+// than maxEncodedBytes is still returned alone rather than becoming
+// unsendable, matching the caller's normal-batch-target-vs-single-large-
+// entry distinction (see MaxAppendEntriesBytes). Returns nil if from is
+// past the end of the log or maxEntries <= 0.
+//
+// Unlike EntriesFrom, this never copies more of the retained log than
+// the returned result actually needs — EntriesFrom, unbounded, would
+// clone an entire multi-thousand-entry retained suffix just to form one
+// small replication batch.
+func (l *Log) EntriesRange(from LogIndex, maxEntries int, maxEncodedBytes int) []LogEntry {
+	if from <= l.baseIndex {
+		from = l.baseIndex + 1
+	}
+	physIdx := from - l.baseIndex - 1
+	if physIdx < 0 || int(physIdx) > len(l.entries) {
+		return nil
+	}
+	avail := l.entries[physIdx:]
+	if maxEntries <= 0 || len(avail) == 0 {
+		return nil
+	}
+	if maxEntries > len(avail) {
+		maxEntries = len(avail)
+	}
+	count := 1
+	total := encodedEntrySize(avail[0])
+	for count < maxEntries {
+		next := encodedEntrySize(avail[count])
+		if total+next > maxEncodedBytes {
+			break
+		}
+		total += next
+		count++
+	}
+	return cloneEntries(avail[:count])
+}
+
 func cloneEntries(entries []LogEntry) []LogEntry {
 	out := make([]LogEntry, len(entries))
 	for i, e := range entries {
