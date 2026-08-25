@@ -151,6 +151,26 @@ func TestRequestConflictResponseKnownByteVector(t *testing.T) {
 	}
 }
 
+// TestBusyResponseKnownByteVector independently derives the expected
+// wire bytes for a BUSY response (Milestone 13): protocolVersion is
+// unchanged (2) — BUSY is purely an additive status value, not a format
+// change — and the byte layout is otherwise identical to any other
+// value-less response like REQUEST_CONFLICT.
+func TestBusyResponseKnownByteVector(t *testing.T) {
+	got, err := EncodeResponse(Response{Status: StatusBusy})
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+	want := []byte{2, byte(StatusBusy), 0, 0, 0, 0, 0, 0}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("bytes:\n got  % x\n want % x", got, want)
+	}
+	decoded, err := DecodeResponse(got)
+	if err != nil || decoded.Status != StatusBusy {
+		t.Fatalf("DecodeResponse round-trip: got (%+v, %v), want StatusBusy", decoded, err)
+	}
+}
+
 func TestDecodeRequestTooShort(t *testing.T) {
 	_, err := DecodeRequest([]byte{1, 2, 3})
 	if !errors.Is(err, ErrMalformedRequest) {

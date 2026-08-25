@@ -68,6 +68,17 @@ const (
 	// operation — invalid client behavior, not a legitimate retry.
 	// Terminal.
 	StatusRequestConflict
+	// StatusBusy (since Milestone 13) means this node rejected the
+	// request due to bounded overload — a full proposal admission queue
+	// (see raft.ErrBackpressure) or a full service-level concurrency
+	// bound — before ever touching Raft. Nothing was proposed, applied,
+	// or otherwise made durable: a PUT/DELETE is always safe to retry
+	// with the exact same request identity (see docs/request-dedup.md),
+	// and a GET is always safe to retry as-is since it is read-only.
+	// This is purely additive to the wire format (protocolVersion is
+	// unchanged) — an old client that has never seen this value simply
+	// treats it via its own default/unknown-status handling.
+	StatusBusy
 )
 
 // Request is a client PUT/GET/DELETE request.
@@ -245,7 +256,7 @@ func EncodeResponse(r Response) ([]byte, error) {
 		return nil, fmt.Errorf("clientproto: value length %d exceeds max %d", len(r.Value), MaxValueSize)
 	}
 	switch r.Status {
-	case StatusOK, StatusNotFound, StatusNotLeader, StatusTimeout, StatusInternalError, StatusBadRequest, StatusStaleRequest, StatusRequestConflict:
+	case StatusOK, StatusNotFound, StatusNotLeader, StatusTimeout, StatusInternalError, StatusBadRequest, StatusStaleRequest, StatusRequestConflict, StatusBusy:
 	default:
 		return nil, fmt.Errorf("clientproto: unknown status %d", r.Status)
 	}
@@ -273,7 +284,7 @@ func DecodeResponse(b []byte) (Response, error) {
 	}
 	status := Status(b[1])
 	switch status {
-	case StatusOK, StatusNotFound, StatusNotLeader, StatusTimeout, StatusInternalError, StatusBadRequest, StatusStaleRequest, StatusRequestConflict:
+	case StatusOK, StatusNotFound, StatusNotLeader, StatusTimeout, StatusInternalError, StatusBadRequest, StatusStaleRequest, StatusRequestConflict, StatusBusy:
 	default:
 		return Response{}, fmt.Errorf("%w: unknown status %d", ErrMalformedResponse, status)
 	}

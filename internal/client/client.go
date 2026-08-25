@@ -81,6 +81,16 @@ var (
 	// every value up to the maximum representable Sequence. Practically
 	// unreachable; see internal/reqid.ErrSequenceExhausted.
 	ErrSequenceExhausted = reqid.ErrSequenceExhausted
+	// ErrBusy means the contacted node rejected the request due to
+	// bounded overload (a full proposal queue or a full service-level
+	// concurrency bound) before it ever touched Raft — nothing was
+	// proposed or applied. For PUT/DELETE this Client already retries a
+	// BUSY response automatically with the same request identity (see
+	// doWrite); ErrBusy from Get is returned to the caller instead,
+	// since a read carries no request identity and this package's GET
+	// path has always been a single conservative attempt (see doRead) —
+	// GET is safe to retry as-is, at the caller's discretion.
+	ErrBusy = errors.New("client: server reported it is busy")
 )
 
 // Client is a leader-aware QuorumKV client seeded with one or more static
@@ -217,6 +227,13 @@ func (c *Client) doWrite(ctx context.Context, req clientproto.Request) error {
 					addr = ""
 				case clientproto.StatusTimeout:
 					addr = ""
+				case clientproto.StatusBusy:
+					// Same treatment as StatusTimeout: retry the exact
+					// same request identity after the existing
+					// context-aware backoff below, never allocating a
+					// new sequence — nothing was proposed or applied for
+					// a BUSY rejection (see docs/request-dedup.md).
+					addr = ""
 				case clientproto.StatusRequestConflict:
 					return ErrRequestConflict
 				case clientproto.StatusStaleRequest:
@@ -338,6 +355,8 @@ func statusErr(status clientproto.Status) error {
 		return nil
 	case clientproto.StatusTimeout:
 		return ErrTimeout
+	case clientproto.StatusBusy:
+		return ErrBusy
 	case clientproto.StatusBadRequest:
 		return ErrBadRequest
 	case clientproto.StatusRequestConflict:

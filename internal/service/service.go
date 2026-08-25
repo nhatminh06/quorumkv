@@ -31,6 +31,17 @@ import (
 	"quorumkv/internal/transport"
 )
 
+// DefaultMaxConcurrentRequests bounds how many client requests (PUT,
+// DELETE, and GET alike) this Service will admit into dispatch at once.
+// A request beyond the bound is rejected immediately with StatusBusy
+// rather than queued: item 53 — an overloaded server should answer fast
+// and let the client's own bounded retry (see internal/client) pace
+// itself, not accumulate thousands of goroutines blocked waiting for a
+// semaphore slot. 256 is generous for ordinary load while still bounding
+// worst-case concurrent work (goroutines, in-flight Raft proposals,
+// state-machine lock contention) under a flood.
+const DefaultMaxConcurrentRequests = 256
+
 // requestTimeout bounds how long this node waits for its own request
 // processing — commit+apply for PUT/DELETE, ReadIndex quorum
 // confirmation + WaitApplied for GET — before giving up and reporting
@@ -76,17 +87,34 @@ type Service struct {
 	mu sync.Mutex
 	sm *kv.StateMachine
 
-	// resMu/results let proposeIdentified learn the ApplyOutcome Apply
-	// produced for the specific index it proposed, without polling or
-	// re-deriving it: register a waiter for an index before/around
-	// WaitApplied, Apply delivers to it exactly once. See
-	// registerResultWaiter.
-	resMu   sync.Mutex
-	results map[raft.LogIndex]chan kv.ApplyOutcome
+	// resMu/results/completed let proposeAndWaitIdentified learn the
+	// ApplyOutcome Apply produced for the specific index it proposed,
+	// without polling or re-deriving it. The caller only registers a
+	// waiter AFTER Propose has already returned the index — so Apply can
+	// legitimately run first if commit+apply happens to win that race
+	// (increasingly likely now that Propose can hand off to a batching
+	// worker goroutine — see raft/proposal.go — instead of returning
+	// synchronously in the same call). completed holds an outcome Apply
+	// produced with no waiter registered yet, so a registration arriving
+	// afterward still finds it instead of waiting on a channel nothing
+	// will ever write to. Every index that ever reaches either map
+	// always gets claimed by the one registerResultWaiter call
+	// proposeAndWaitIdentified makes right after its own Propose
+	// succeeds, so neither map accumulates entries for indexes no one is
+	// coming back for.
+	resMu     sync.Mutex
+	results   map[raft.LogIndex]chan kv.ApplyOutcome
+	completed map[raft.LogIndex]kv.ApplyOutcome
 
 	// pendMu/pending implement in-flight coalescing (see pendingWrite).
 	pendMu  sync.Mutex
 	pending map[pendingKey]*pendingWrite
+
+	// admission bounds concurrent in-flight client requests — see
+	// DefaultMaxConcurrentRequests/handleClient. A buffered channel used
+	// purely as a counting semaphore: acquire is a non-blocking send,
+	// release a receive, capacity is the concurrency bound.
+	admission chan struct{}
 }
 
 // New constructs a Service. peers is used only to resolve a NOT_LEADER
@@ -102,11 +130,22 @@ type Service struct {
 //	svc.Attach(node)
 func New(peers map[raft.NodeID]string) *Service {
 	return &Service{
-		peers:   peers,
-		sm:      kv.NewStateMachine(),
-		results: make(map[raft.LogIndex]chan kv.ApplyOutcome),
-		pending: make(map[pendingKey]*pendingWrite),
+		peers:     peers,
+		sm:        kv.NewStateMachine(),
+		results:   make(map[raft.LogIndex]chan kv.ApplyOutcome),
+		completed: make(map[raft.LogIndex]kv.ApplyOutcome),
+		pending:   make(map[pendingKey]*pendingWrite),
+		admission: make(chan struct{}, DefaultMaxConcurrentRequests),
 	}
+}
+
+// SetMaxConcurrentRequests overrides the concurrency bound handleClient
+// admits under — tests use this to construct a tiny bound (e.g. 1 or 2)
+// so overload/BUSY behavior is deterministic rather than needing real
+// load to trigger. Call before serving any traffic; not meant to be
+// tuned live in production.
+func (s *Service) SetMaxConcurrentRequests(n int) {
+	s.admission = make(chan struct{}, n)
 }
 
 // Attach completes construction by giving the Service the raft.Node it
@@ -140,6 +179,13 @@ func (s *Service) Apply(index raft.LogIndex, command []byte) error {
 	if ch, ok := s.results[index]; ok {
 		ch <- outcome
 		delete(s.results, index)
+	} else {
+		// No one has registered for this index yet (see the Service
+		// struct's doc comment) — remember the outcome so the
+		// registration that is still coming finds it instead of
+		// blocking on a channel Apply will never write to again (Apply
+		// runs each index exactly once).
+		s.completed[index] = outcome
 	}
 	s.resMu.Unlock()
 	return nil
@@ -174,6 +220,12 @@ func (s *Service) Restore(data []byte) error {
 func (s *Service) registerResultWaiter(index raft.LogIndex) chan kv.ApplyOutcome {
 	ch := make(chan kv.ApplyOutcome, 1)
 	s.resMu.Lock()
+	if outcome, ok := s.completed[index]; ok {
+		delete(s.completed, index)
+		s.resMu.Unlock()
+		ch <- outcome
+		return ch
+	}
 	s.results[index] = ch
 	s.resMu.Unlock()
 	return ch
@@ -198,6 +250,20 @@ func (s *Service) Handler() transport.Handler {
 }
 
 func (s *Service) handleClient(ctx context.Context, m transport.Message) (transport.Message, error) {
+	// Bound concurrent in-flight work before doing anything else — a
+	// non-blocking acquire, never a wait: a request beyond capacity gets
+	// an immediate BUSY instead of piling up a blocked goroutine (item
+	// 53). ch is captured locally so release always targets the exact
+	// channel this request acquired from, even if SetMaxConcurrentRequests
+	// were (against its own documented precondition) called concurrently.
+	ch := s.admission
+	select {
+	case ch <- struct{}{}:
+		defer func() { <-ch }()
+	default:
+		return s.respond(clientproto.Response{Status: clientproto.StatusBusy})
+	}
+
 	req, err := clientproto.DecodeRequest(m.Payload)
 	if err != nil {
 		return s.respond(clientproto.Response{Status: clientproto.StatusBadRequest})
@@ -356,6 +422,12 @@ func (s *Service) proposeAndWaitIdentified(ctx context.Context, cmd kv.Command) 
 			// request-identity outcome as a context/quorum timeout (see
 			// docs/request-dedup.md) — not an internal error.
 			return clientproto.Response{Status: clientproto.StatusTimeout}
+		}
+		if errors.Is(err, raft.ErrBackpressure) {
+			// The proposal queue is full: nothing was appended, nothing
+			// applied — safe to retry with the same request identity,
+			// same as any other BUSY rejection (see docs/request-dedup.md).
+			return clientproto.Response{Status: clientproto.StatusBusy}
 		}
 		return clientproto.Response{Status: clientproto.StatusInternalError}
 	}
