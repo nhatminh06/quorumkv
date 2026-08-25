@@ -117,5 +117,5 @@ func (s *Store) Save(state PersistentState) error {
 	checksum := crc32.Checksum(data[4:checksumStart], crc32cTable)
 	binary.BigEndian.PutUint32(data[checksumStart:], checksum)
 
-	return atomicWriteFile(s.path, data)
+	return atomicWriteFile("stable", s.path, data)
 }

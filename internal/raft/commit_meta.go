@@ -78,5 +78,5 @@ func (s *CommitStore) Save(index LogIndex) error {
 	checksumStart := commitMetaFileSize - 4
 	checksum := crc32.Checksum(data[4:checksumStart], crc32cTable)
 	binary.BigEndian.PutUint32(data[checksumStart:], checksum)
-	return atomicWriteFile(s.path, data)
+	return atomicWriteFile("commit", s.path, data)
 }
