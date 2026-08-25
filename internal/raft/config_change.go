@@ -114,35 +114,52 @@ func (n *Node) changeMembership(ctx context.Context, mutate func(old Configurati
 		n.mu.Unlock()
 		return err
 	}
-	n.rebuildMembershipLocked() // activates the Joint immediately, before commit
+	jointIndex := n.log.LastIndex()
+	n.rebuildMembershipLocked() // activates the Joint immediately, before commit — also starts a worker for any newly-added voter (see reconcileReplicationWorkersLocked)
 	n.maybeAdvanceCommitIndexLocked()
-	n.pingTransferChanged() // LastIndex moved
+	n.pingTransferChanged()      // LastIndex moved
+	n.wakeAllReplicationLocked() // the Joint entry itself needs replicating to every existing target too
 	n.mu.Unlock()
 
-	n.bgWG.Add(1)
-	go func() {
-		defer n.bgWG.Done()
-		n.replicateToAllPeers(n.bgCtx)
-	}()
-
-	return n.waitForStableConfiguration(ctx, newC)
+	return n.waitForStableConfiguration(ctx, jointIndex)
 }
 
-// waitForStableConfiguration blocks until n.membership is Stable(target)
-// and that has been applied (n.lastApplied covers the entry that produced
-// it) — see membershipEntryIndex/membershipChanged. It does not poll:
-// every place that can change this outcome pings membershipChanged.
-func (n *Node) waitForStableConfiguration(ctx context.Context, target Configuration) error {
+// waitForStableConfiguration blocks until this transition — the Joint
+// entry appended at jointIndex — has run to completion: some Stable
+// entry at or after jointIndex has committed and been applied. This
+// deliberately does not compare current membership against the
+// newC this call originally computed: with event-driven replication
+// (see replication_worker.go), a Joint→Stable transition can complete
+// fast enough that a second, entirely independent AddVoter/RemoveVoter
+// call starting immediately afterward finds Mode == Stable again and
+// begins (and possibly finishes) its OWN transition before this call's
+// wait loop gets scheduled again — current membership can legitimately
+// have moved past the exact Configuration this call built by the time
+// it checks. That is not a bug (it is two sequential, individually valid
+// transitions, exactly like two sequential Puts to the same key), and
+// this call's own transition still genuinely completed — waiting for
+// "current == my exact target" would hang until ctx expires despite
+// that, which is what index-based completion (jointIndex is a fixed
+// point in this node's own log, never invalidated by a later,
+// independent transition) avoids. See docs/replication-performance.md.
+func (n *Node) waitForStableConfiguration(ctx context.Context, jointIndex LogIndex) error {
 	for {
 		n.mu.Lock()
-		if n.membership.Mode == ModeStable && n.membership.Stable.Equal(target) && n.lastApplied >= n.membershipEntryIndex {
+		if n.membership.Mode == ModeStable && n.membershipEntryIndex >= jointIndex && n.lastApplied >= n.membershipEntryIndex {
 			n.mu.Unlock()
 			return nil
 		}
+		// Capture the current channel in the SAME critical section as
+		// the check above (see the Node struct's membershipChanged doc
+		// comment) — a close() landing between unlocking and this select
+		// is impossible to miss this way, since selecting on an
+		// already-closed channel returns immediately rather than
+		// blocking.
+		changed := n.membershipChanged
 		n.mu.Unlock()
 
 		select {
-		case <-n.membershipChanged:
+		case <-changed:
 			continue
 		case <-ctx.Done():
 			return ctx.Err()
@@ -183,8 +200,9 @@ func (n *Node) maybeCompleteMembershipTransitionLocked() {
 	if err := n.log.Append([]LogEntry{{Term: n.persistent.CurrentTerm, Kind: EntryConfiguration, Command: b}}); err != nil {
 		return // best-effort; the next commit-index advance or leadership change retries
 	}
-	n.rebuildMembershipLocked()
+	n.rebuildMembershipLocked() // also stops any worker for a voter this final Stable just excluded (see reconcileReplicationWorkersLocked)
 	n.maybeAdvanceCommitIndexLocked()
+	n.wakeAllReplicationLocked() // the completing Stable entry itself needs replicating immediately, not on the next heartbeat tick
 }
 
 // MembershipStatus is a read-only snapshot of a Node's effective

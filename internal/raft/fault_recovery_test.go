@@ -659,6 +659,16 @@ func TestRepeatedFailoverCyclesRemainStable(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		last = proposeAndWait(t, c.node(1), "PUT a1 x")
 	}
+	// proposeAndWait only waits for the LEADER's own lastApplied — i.e.
+	// majority commit, not full replication to every follower. Node 2 is
+	// about to be elected next; without this wait it could still be
+	// legitimately behind node 3 at the exact moment node 1 stops,
+	// making its own PreVote/election correctly lose to node 3's fresher
+	// log — a real Raft outcome, not a bug, but not what this test
+	// (which always elects 2 next) is set up to tolerate.
+	eventually(t, 2*time.Second, func() bool {
+		return c.node(2).LastApplied() >= last && c.node(3).LastApplied() >= last
+	}, func() string { return statusString(c.nodes) })
 	c.stop(1)
 
 	electAndWaitLeader(t, c, 2)
@@ -670,6 +680,12 @@ func TestRepeatedFailoverCyclesRemainStable(t *testing.T) {
 	eventually(t, 2*time.Second, func() bool { return c.node(1).CommitIndex() >= last },
 		func() string { return statusString(c.nodes) })
 
+	// Same reasoning as above: node 3 is elected next, so it must have
+	// fully caught up (not merely been part of the majority that
+	// committed) before node 2 stops.
+	eventually(t, 2*time.Second, func() bool {
+		return c.node(1).LastApplied() >= last && c.node(3).LastApplied() >= last
+	}, func() string { return statusString(c.nodes) })
 	c.stop(2)
 	electAndWaitLeader(t, c, 3)
 	for i := 0; i < 3; i++ {

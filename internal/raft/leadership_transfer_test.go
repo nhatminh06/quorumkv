@@ -89,18 +89,23 @@ func TestConcurrentTransferRequestsOnlyOneSucceeds(t *testing.T) {
 	if err := a.StartElection(ctx); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
+	// Block replication to both targets BEFORE proposing anything: A's
+	// replication workers (see replication_worker.go) are real,
+	// persistent, and already idling-ready the instant A becomes
+	// leader — blocking after Propose returns leaves a real window where
+	// an already-woken worker completes a full (in-process, near-instant)
+	// round trip and advances matchIndex before the block ever takes
+	// effect, especially now that there is no per-round goroutine-spawn
+	// delay to rely on for timing separation.
+	net.setBlocked("B", true)
+	net.setBlocked("C", true)
+	// Something to catch up on: without a proposed entry, an empty log
+	// trivially satisfies matchIndex >= LastIndex and both calls would
+	// race straight to TimeoutNow instead of contending on the same
+	// guard for the duration of the test.
 	if _, _, err := a.Propose([]byte("x")); err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
-	// Block replication to both targets so neither transfer's catch-up
-	// phase can ever complete (there is now something to catch up on —
-	// without a proposed entry, an empty log trivially satisfies
-	// matchIndex >= LastIndex and both calls would race straight to
-	// TimeoutNow instead) — this keeps both calls contending on the same
-	// guard for the duration of the test rather than one finishing
-	// before the other even starts.
-	net.setBlocked("B", true)
-	net.setBlocked("C", true)
 
 	shortCtx, shortCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer shortCancel()
@@ -309,10 +314,20 @@ func TestMembershipChangeRejectedDuringTransfer(t *testing.T) {
 	if err := a.StartElection(context.Background()); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
+	// Block B (the transfer target) before proposing anything — see the
+	// identical fix in TestConcurrentTransferRequestsOnlyOneSucceeds: A's
+	// replication worker for B is real and already idling-ready the
+	// instant A becomes leader, so blocking only after Propose returns
+	// leaves a window where B's worker races ahead and catches up before
+	// the block takes effect. If that happens here, TransferLeadership
+	// finds catch-up already satisfied, its TimeoutNow to now-blocked B
+	// fails instantly, and the whole call can return before this test's
+	// own polling loop below ever gets a chance to observe a.transfer
+	// non-nil.
+	net.setBlocked("B", true)
 	if _, _, err := a.Propose([]byte("x")); err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
-	net.setBlocked("B", true) // B (the transfer target) can never catch up
 
 	transferCtx, transferCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer transferCancel()

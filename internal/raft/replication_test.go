@@ -306,10 +306,11 @@ func TestApplyAppendEntriesResponseSuccessAdvancesMatchAndNext(t *testing.T) {
 	n.mu.Lock()
 	n.becomeLeaderLocked()
 	term := n.persistent.CurrentTerm
+	gen := n.replicationGeneration[2]
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a", "b")}
-	n.applyAppendEntriesResponse(term, 2, req, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 2})
+	n.applyReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 2})
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -323,11 +324,12 @@ func TestApplyAppendEntriesResponseFailureBacksOffNextIndex(t *testing.T) {
 	n.mu.Lock()
 	n.becomeLeaderLocked()
 	term := n.persistent.CurrentTerm
+	gen := n.replicationGeneration[2]
 	n.nextIndex[2] = 5
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 4}
-	n.applyAppendEntriesResponse(term, 2, req, AppendEntriesResponse{Term: term, Success: false})
+	n.applyReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: false})
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -341,11 +343,12 @@ func TestApplyAppendEntriesResponseNextIndexNeverBelowOne(t *testing.T) {
 	n.mu.Lock()
 	n.becomeLeaderLocked()
 	term := n.persistent.CurrentTerm
+	gen := n.replicationGeneration[2]
 	n.nextIndex[2] = 1
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 0}
-	n.applyAppendEntriesResponse(term, 2, req, AppendEntriesResponse{Term: term, Success: false})
+	n.applyReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: false})
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -359,13 +362,16 @@ func TestApplyAppendEntriesResponseMatchIndexNeverRegresses(t *testing.T) {
 	n.mu.Lock()
 	n.becomeLeaderLocked()
 	term := n.persistent.CurrentTerm
+	gen := n.replicationGeneration[2]
 	n.mu.Unlock()
 
 	// A newer, higher success arrives first...
-	n.applyAppendEntriesResponse(term, 2, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a", "b", "c")},
+	n.applyReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a", "b", "c")},
 		AppendEntriesResponse{Term: term, Success: true, MatchIndex: 3})
-	// ...then a stale, older success for a smaller prefix arrives late.
-	n.applyAppendEntriesResponse(term, 2, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a")},
+	// ...then a stale, older success for a smaller prefix arrives late
+	// (same generation — this proves ordinary out-of-order-arrival
+	// monotonicity, independent of the generation mechanism).
+	n.applyReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a")},
 		AppendEntriesResponse{Term: term, Success: true, MatchIndex: 1})
 
 	n.mu.Lock()
@@ -380,9 +386,10 @@ func TestApplyAppendEntriesResponseHigherTermStepsDown(t *testing.T) {
 	n.mu.Lock()
 	n.becomeLeaderLocked()
 	term := n.persistent.CurrentTerm
+	gen := n.replicationGeneration[2]
 	n.mu.Unlock()
 
-	n.applyAppendEntriesResponse(term, 2, AppendEntriesRequest{Term: term}, AppendEntriesResponse{Term: term + 5, Success: false})
+	n.applyReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term}, AppendEntriesResponse{Term: term + 5, Success: false})
 
 	if n.Role() != Follower {
 		t.Fatalf("Role() = %v, want Follower", n.Role())
@@ -397,6 +404,7 @@ func TestApplyAppendEntriesResponseStaleTermIgnored(t *testing.T) {
 	n.mu.Lock()
 	n.becomeLeaderLocked()
 	staleTerm := n.persistent.CurrentTerm
+	gen := n.replicationGeneration[2]
 	n.mu.Unlock()
 
 	// This node moved on to a new term (e.g. it stepped down and won a
@@ -405,7 +413,7 @@ func TestApplyAppendEntriesResponseStaleTermIgnored(t *testing.T) {
 	n.persistent.CurrentTerm = staleTerm + 1
 	n.mu.Unlock()
 
-	n.applyAppendEntriesResponse(staleTerm, 2, AppendEntriesRequest{Term: staleTerm, PrevLogIndex: 0, Entries: entriesOf("a")},
+	n.applyReplicationResponse(2, staleTerm, gen, AppendEntriesRequest{Term: staleTerm, PrevLogIndex: 0, Entries: entriesOf("a")},
 		AppendEntriesResponse{Term: staleTerm, Success: true, MatchIndex: 1})
 
 	n.mu.Lock()

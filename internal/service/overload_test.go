@@ -73,10 +73,10 @@ func TestServiceConcurrencyFloodStaysBounded(t *testing.T) {
 	nodes := startCluster(t, 1)
 	electLeader(t, nodes, 0)
 	n := nodes[0]
-	const capacity = 4
+	const capacity = 2
 	n.svc.SetMaxConcurrentRequests(capacity)
 
-	const flood = 100
+	const flood = 300
 	var wg sync.WaitGroup
 	var busyCount, otherCount int
 	var countMu sync.Mutex
@@ -84,10 +84,13 @@ func TestServiceConcurrencyFloodStaysBounded(t *testing.T) {
 	defer cancel()
 
 	// admission is not exported for direct observation from a real flood,
-	// so this measures via real client outcomes instead: with 100
-	// concurrent GETs against a capacity-4 server, seeing at least one
-	// BUSY among them is the observable proxy for "the bound was
-	// actually reached."
+	// so this measures via real client outcomes instead: with 300
+	// concurrent GETs launched against a capacity-2 server (deliberately
+	// lopsided — goroutine creation is far cheaper than a real GET's
+	// ReadIndex/quorum round trip, so this margin is what makes
+	// saturation reliable without any artificial synchronization
+	// barrier), seeing at least one BUSY among them is the observable
+	// proxy for "the bound was actually reached."
 	for i := 0; i < flood; i++ {
 		wg.Add(1)
 		go func() {

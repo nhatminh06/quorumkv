@@ -60,8 +60,11 @@ func (n *Node) kickApplyLocked() {
 		return
 	}
 	n.applying = true
-	n.bgWG.Add(1)
-	go n.applyLoop()
+	if n.spawnBackgroundLocked() {
+		go n.applyLoop()
+	} else {
+		n.applying = false
+	}
 }
 
 // applyLoop applies committed-but-unapplied entries one at a time, in
@@ -137,12 +140,10 @@ func (n *Node) applyLoop() {
 // (error), or lastApplied has reached its index (success). Must be called
 // with n.mu held.
 func (n *Node) notifyWaitersLocked() {
-	// lastApplied may have just crossed membershipEntryIndex — wake any
-	// AddVoter/RemoveVoter caller waiting on that (see config_change.go).
-	select {
-	case n.membershipChanged <- struct{}{}:
-	default:
-	}
+	// lastApplied may have just crossed membershipEntryIndex — wake every
+	// AddVoter/RemoveVoter caller waiting on that (see config_change.go
+	// and notifyMembershipChangedLocked).
+	n.notifyMembershipChangedLocked()
 	remaining := n.waiters[:0]
 	for _, w := range n.waiters {
 		if err := n.checkEntryLocked(w.index, w.term); err != nil {

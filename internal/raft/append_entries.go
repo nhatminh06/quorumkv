@@ -3,6 +3,8 @@ package raft
 import (
 	"encoding/binary"
 	"fmt"
+
+	"quorumkv/internal/transport"
 )
 
 // AppendEntriesRequest is the Raft AppendEntries RPC. A heartbeat is an
@@ -44,11 +46,12 @@ type AppendEntriesResponse struct {
 }
 
 // maxEntriesPerAppend bounds how many log entries a single AppendEntries
-// RPC may carry. Combined with maxCommandSize this keeps a request
-// comfortably under the transport's 1 MiB frame limit without needing a
-// dynamic byte-budget calculation; a leader with more to replicate simply
-// sends further batches on the next round (heartbeat tick or immediate
-// post-Propose replication).
+// RPC may carry. This is a count-only safety ceiling, not a claim that a
+// batch at this count is small in bytes — see MaxAppendEntriesBytes and
+// EntriesRange for the actual byte-accurate bound a leader constructs a
+// replication batch against; this constant only stops a decoder from
+// ever having to allocate for an unbounded entry count (see
+// DecodeAppendEntries).
 const maxEntriesPerAppend = 64
 
 // appendEntriesFixedSize is the wire size of everything in
@@ -64,17 +67,59 @@ const appendEntriesFixedSize = 8*6 + 4
 // CRC32C over the whole payload.
 const perEntryHeaderSize = 8 + 1 + 4
 
+// MaxAppendEntriesBytes is the encoded-byte target a leader constructs a
+// normal replication batch against (see Log.EntriesRange, used by
+// replication_worker.go) — deliberately well below
+// maxAppendEntriesEncodedSize (the hard ceiling EncodeAppendEntries
+// itself enforces) so a single valid maxCommandSize entry can always
+// still be sent alone even though it alone exceeds this target (see
+// EntriesRange's doc comment and item 10 of docs/replication-performance.md).
+const MaxAppendEntriesBytes = 512 * 1024
+
+// maxAppendEntriesEncodedSize is the hard ceiling EncodeAppendEntries
+// enforces: comfortably below transport.MaxPayloadSize (the actual wire
+// limit — AppendEntries' encoded bytes ARE the transport.Message
+// payload directly, with no additional framing inside that bound) so a
+// request built from the byte-accurate EntriesRange/MaxAppendEntriesBytes
+// budget above never comes anywhere near this, and a corrupt/malicious
+// oversized declared entry count or command length is rejected before
+// this package would ever attempt to hand a too-large buffer to the
+// transport layer.
+const maxAppendEntriesEncodedSize = transport.MaxPayloadSize - 64*1024
+
+// encodedEntrySize is the one place that computes how many wire bytes
+// one LogEntry contributes to an AppendEntries payload — reused by both
+// EncodeAppendEntries (encoding) and Log.EntriesRange (deciding how many
+// entries to include before ever encoding anything), so there is a
+// single source of size truth rather than two independently-maintained
+// calculations that could drift apart.
+func encodedEntrySize(e LogEntry) int {
+	return perEntryHeaderSize + len(e.Command)
+}
+
+// appendEntriesEncodedSize computes the exact wire size EncodeAppendEntries
+// will produce for req, without allocating or encoding anything.
+func appendEntriesEncodedSize(req AppendEntriesRequest) int {
+	size := appendEntriesFixedSize
+	for _, e := range req.Entries {
+		size += encodedEntrySize(e)
+	}
+	return size
+}
+
 // EncodeAppendEntries produces the exact wire bytes for req.
 func EncodeAppendEntries(req AppendEntriesRequest) ([]byte, error) {
 	if len(req.Entries) > maxEntriesPerAppend {
 		return nil, fmt.Errorf("raft: %d entries exceeds max %d per AppendEntries", len(req.Entries), maxEntriesPerAppend)
 	}
-	size := appendEntriesFixedSize
 	for _, e := range req.Entries {
 		if len(e.Command) > maxCommandSize {
 			return nil, fmt.Errorf("raft: command length %d exceeds max %d", len(e.Command), maxCommandSize)
 		}
-		size += perEntryHeaderSize + len(e.Command)
+	}
+	size := appendEntriesEncodedSize(req)
+	if size > maxAppendEntriesEncodedSize {
+		return nil, fmt.Errorf("raft: encoded AppendEntries size %d exceeds max %d", size, maxAppendEntriesEncodedSize)
 	}
 
 	buf := make([]byte, size)
