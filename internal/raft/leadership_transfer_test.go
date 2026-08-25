@@ -288,3 +288,70 @@ func TestTransferLeadershipReturnsBoundedErrorOnNodeClose(t *testing.T) {
 		t.Fatalf("TransferLeadership did not return after Close — leaked")
 	}
 }
+
+// TestMembershipChangeRejectedDuringTransfer is the mandatory pairing to
+// TestTransferLeadershipRejectsDuringJointMembership: while a leadership
+// transfer is active (catching up or already in handoff), AddVoter/
+// RemoveVoter must be rejected — only one major administrative
+// transition runs at a time, in either direction.
+func TestMembershipChangeRejectedDuringTransfer(t *testing.T) {
+	net := newFakeNetwork()
+	a := newFakeNode(t, 1, map[NodeID]string{2: "B", 3: "C"})
+	b := newFakeNode(t, 2, map[NodeID]string{1: "A", 3: "C"})
+	c := newFakeNode(t, 3, map[NodeID]string{1: "A", 2: "B"})
+	for _, n := range []*Node{a, b, c} {
+		n.send, n.sendAppend, n.sendPreVote, n.sendTimeoutNow = net.send, net.sendAppend, net.sendPreVote, net.sendTimeoutNow
+	}
+	net.register("A", a)
+	net.register("B", b)
+	net.register("C", c)
+
+	if err := a.StartElection(context.Background()); err != nil {
+		t.Fatalf("StartElection: %v", err)
+	}
+	if _, _, err := a.Propose([]byte("x")); err != nil {
+		t.Fatalf("Propose: %v", err)
+	}
+	net.setBlocked("B", true) // B (the transfer target) can never catch up
+
+	transferCtx, transferCancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer transferCancel()
+	transferDone := make(chan error, 1)
+	go func() { transferDone <- a.TransferLeadership(transferCtx, 2) }()
+
+	// Give the transfer a moment to register itself as active before
+	// racing a membership change against it.
+	if !waitFor(time.Second, func() bool {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		return a.transfer != nil
+	}) {
+		t.Fatalf("transfer never registered as active")
+	}
+
+	if err := a.AddVoter(context.Background(), 4, "D"); !errors.Is(err, ErrLeadershipTransferInProgress) {
+		t.Fatalf("AddVoter during active transfer: err = %v, want ErrLeadershipTransferInProgress", err)
+	}
+
+	transferCancel()
+	<-transferDone // let the transfer's own goroutine finish before test cleanup
+}
+
+// TestSelfRemovalDoesNotRequireLeadershipTransfer is the mandatory
+// regression check (items 82/132): Milestone 10's leader self-removal
+// remains independently valid — it never requires a prior
+// TransferLeadership call.
+func TestSelfRemovalDoesNotRequireLeadershipTransfer(t *testing.T) {
+	a, _, _, _, _, _, _ := threeNodeFakeClusterWithApply(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := a.RemoveVoter(ctx, 1); err != nil {
+		t.Fatalf("RemoveVoter(self): %v", err)
+	}
+	if a.Role() == Leader {
+		t.Fatalf("Role() = Leader after self-removal completed, want a passive Follower")
+	}
+	if a.MembershipStatus().Stable.Has(1) {
+		t.Fatalf("final Stable configuration still has self-removed voter 1")
+	}
+}
