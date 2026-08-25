@@ -110,9 +110,71 @@ candidate wins if terms are equal and candidateLastLogIndex >= localLastLogIndex
 candidate loses otherwise
 ```
 
+## PreVote phase (Milestone 11)
+
+Before ever incrementing `currentTerm`, `Node.StartElection` runs a
+**PreVote** round: a hypothetical "would you vote for me in
+`currentTerm+1`?" that mutates no persistent state on either side. Only
+once that round reaches quorum does the real election (below) begin.
+This is what keeps a node that has been isolated and repeatedly timed
+out from bumping the cluster's term on every attempt — it can never even
+reach the real election without first proving it could win.
+
+`PreVoteRequest`/`PreVoteResponse` mirror `RequestVoteRequest`/
+`RequestVoteResponse`'s wire layout exactly
+(`prospectiveTerm|candidateID|lastLogIndex|lastLogTerm` and
+`term|voteGranted`), with one semantic difference the type names make
+explicit: the response's `term` is always the responder's *actual*
+current term, never a claim about having entered the prospective one.
+
+`Node.HandlePreVote` rejects (never granting, never touching persistent
+state or `votedFor`, never resetting the election timer — a PreVote
+request is not evidence a valid leader exists) if:
+
+- `prospectiveTerm <= currentTerm` — wouldn't advance anything.
+- **The responder has accepted valid AppendEntries contact from a leader
+  within the last `minElectionTimeout`** — the core
+  disruption-prevention rule (`hasRecentLeaderContactLocked`,
+  deliberately reusing the same constant that already governs the
+  shortest legitimate election timeout rather than a second
+  independently-tuned window). A node that is itself the current Leader
+  always counts as having recent contact too: it never receives
+  AppendEntries (only sends them), so without this a healthy,
+  actively-heartbeating leader would have no protection at all and would
+  grant a vote to any challenger presenting a merely
+  technically-higher prospective term — exactly the scenario this
+  safeguard exists to prevent.
+- The candidate, or the responder itself, is not an effective voter in
+  the responder's own membership (see docs/membership.md) — same
+  `Membership.IsVoter`/`HasQuorum` abstraction RequestVote/commit/
+  ReadIndex already use, including dual-majority quorum during a Joint
+  transition. There is no separate union-majority shortcut for PreVote.
+- The candidate's log is not at least as up to date (`LogUpToDate`, the
+  same shared helper RequestVote uses — no duplicated, subtly different
+  freshness logic).
+
+On the candidate side, `applyPreVoteResponse` still processes a **higher
+actual term** in a response as real evidence (persist, clear `votedFor`,
+step down) exactly like every other higher-term path — PreVote never
+suppresses genuine higher-term information, it only refuses to manufacture
+term increases from responses that carry none. The round's vote tally is
+a plain local variable, not `Node` state, so a second concurrent
+`StartElection` call cannot corrupt or be corrupted by it, and a stale
+response from an abandoned round has nothing shared to corrupt.
+
+A leadership-transfer target's election (see
+[docs/leadership-transfer.md](leadership-transfer.md)) deliberately
+bypasses PreVote entirely via an authorized `TimeoutNow` — the current
+leader has already decided to hand off, so there is no disruption risk
+left for PreVote to guard against. Every other election, including one
+started by `Node.Run`'s ordinary timer, always goes through PreVote
+first; `TimeoutNow` is not a general "skip PreVote" switch.
+
 ## Election flow
 
-`Node.StartElection`:
+`Node.StartElection` (PreVote-gated) and the internal `startRealElection`
+it calls once PreVote succeeds (also called directly by a
+`TimeoutNow`-authorized transfer target, bypassing PreVote):
 
 ```text
 increment currentTerm
@@ -130,7 +192,9 @@ each response is validated (applyVoteResponse) before counting:
   - majority of granted votes reached → become Leader
 ```
 
-`Majority(clusterSize)` is `clusterSize/2 + 1`.
+`Majority(clusterSize)` is `clusterSize/2 + 1` outside a Joint
+transition; `Membership.HasQuorum` is the actual quorum check used
+everywhere, including PreVote and this real-election tally.
 
 ## Concurrency model
 
@@ -162,9 +226,9 @@ rules.
 
 ## Known limitations
 
-- No client-facing writes through Raft yet — only internal code can
-  `Propose`.
-- No snapshots, no membership changes.
+- No automatic leader balancing, ranking, or preferred-leader
+  configuration — [docs/leadership-transfer.md](leadership-transfer.md)
+  is an explicit, caller-specified, best-effort handoff, never automatic.
 - `internal/kv` and `internal/wal` are untouched — the Milestone 1 WAL is
   a state-machine command log, not the Raft log; they are separate
   concerns by design. See docs/raft-log-replication.md for further

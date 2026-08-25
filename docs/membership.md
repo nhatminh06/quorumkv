@@ -363,8 +363,14 @@ state (`TestMembershipStatusIsDefensiveCopy`).
 - An existing NodeID's address can never change through a transition —
   `AddVoter` on an already-present NodeID always errors, never
   reinterpreted as an address update.
-- No witness nodes, no leadership transfer, no pre-vote, no multi-Raft,
-  no sharding, no TLS/auth, no admin CLI.
+- No witness nodes, no multi-Raft, no sharding, no TLS/auth, no admin
+  CLI. PreVote and leadership transfer exist since Milestone 11 (see
+  [docs/raft-election.md](raft-election.md) and
+  [docs/leadership-transfer.md](leadership-transfer.md)), but a
+  leadership transfer is rejected outright while membership is Joint,
+  and an active transfer likewise blocks `AddVoter`/`RemoveVoter` — the
+  two administrative transitions never run concurrently, in either
+  direction (see leadership-transfer.md §10).
 - `CreateSnapshot` refuses during an active Joint transition (§8) — a
   short, serialized wait, not a permanent limitation.
 - Prefer: *implemented*, *tested*, *observed* — not *fault tolerant*,
