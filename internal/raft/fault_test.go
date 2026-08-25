@@ -122,6 +122,40 @@ func (d *directedNetwork) appendSenderFor(from NodeID) appendSender {
 	}
 }
 
+func (d *directedNetwork) preVoteSenderFor(from NodeID) preVoteSender {
+	return func(_ context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
+		d.mu.Lock()
+		to, known := d.idOf[addr]
+		peer, alive := d.nodes[to]
+		blocked := d.blocked[link{from, to}]
+		d.mu.Unlock()
+		if !known || !alive {
+			return PreVoteResponse{}, fmt.Errorf("directedNetwork: %s unreachable", addr)
+		}
+		if blocked {
+			return PreVoteResponse{}, fmt.Errorf("directedNetwork: %d->%d blocked", from, to)
+		}
+		return peer.HandlePreVote(req)
+	}
+}
+
+func (d *directedNetwork) timeoutNowSenderFor(from NodeID) timeoutNowSender {
+	return func(_ context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error) {
+		d.mu.Lock()
+		to, known := d.idOf[addr]
+		peer, alive := d.nodes[to]
+		blocked := d.blocked[link{from, to}]
+		d.mu.Unlock()
+		if !known || !alive {
+			return TimeoutNowResponse{}, fmt.Errorf("directedNetwork: %s unreachable", addr)
+		}
+		if blocked {
+			return TimeoutNowResponse{}, fmt.Errorf("directedNetwork: %d->%d blocked", from, to)
+		}
+		return peer.HandleTimeoutNow(req)
+	}
+}
+
 // faultCluster is a small deterministic test harness: n nodes, each with
 // its own persistent temp directory and a fixed synthetic address, wired
 // together through a directedNetwork. Node lifecycle (stop/restart)
@@ -185,6 +219,8 @@ func (c *faultCluster) start(id NodeID, applyFn ApplyFunc) *Node {
 	}
 	n.send = c.net.senderFor(id)
 	n.sendAppend = c.net.appendSenderFor(id)
+	n.sendPreVote = c.net.preVoteSenderFor(id)
+	n.sendTimeoutNow = c.net.timeoutNowSenderFor(id)
 	c.net.register(id, c.addrs[id], n)
 	c.nodes[id] = n
 	c.t.Cleanup(n.Close)

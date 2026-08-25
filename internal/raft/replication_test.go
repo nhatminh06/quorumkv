@@ -57,8 +57,10 @@ func TestHandleAppendEntriesSameTermCandidateStepsDown(t *testing.T) {
 	n.send = func(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
 		return RequestVoteResponse{}, errors.New("unreachable in this test")
 	}
-	if err := n.StartElection(context.Background()); err != nil {
-		t.Fatalf("StartElection: %v", err)
+	// startRealElection directly: this test is about same-term leader
+	// contact stepping down a Candidate, not PreVote.
+	if err := n.startRealElection(context.Background()); err != nil {
+		t.Fatalf("startRealElection: %v", err)
 	}
 	if n.Role() != Candidate {
 		t.Fatalf("Role() = %v, want Candidate", n.Role())

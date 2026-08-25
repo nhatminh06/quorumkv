@@ -144,8 +144,11 @@ func TestHandleRequestVoteCandidateSameTermCompetingRequestRejected(t *testing.T
 	n.send = func(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
 		return RequestVoteResponse{}, errors.New("unreachable in this test")
 	}
-	if err := n.StartElection(context.Background()); err != nil {
-		t.Fatalf("StartElection: %v", err)
+	// startRealElection directly: this test is about real-election
+	// candidate state, not about PreVote (which has its own dedicated
+	// tests — see prevote_test.go/node_prevote_test.go).
+	if err := n.startRealElection(context.Background()); err != nil {
+		t.Fatalf("startRealElection: %v", err)
 	}
 	if n.Role() != Candidate {
 		t.Fatalf("Role() = %v, want Candidate", n.Role())
@@ -214,9 +217,13 @@ func TestStartElectionFailsIfPersistenceFails(t *testing.T) {
 		t.Fatalf("NewNode: %v", err)
 	}
 
-	err = n.StartElection(context.Background())
+	// startRealElection directly: term/self-vote persistence only happens
+	// in the real-election phase, which PreVote (unrelated to this test)
+	// would otherwise prevent from ever being reached against an
+	// unreachable fake peer address.
+	err = n.startRealElection(context.Background())
 	if err == nil {
-		t.Fatalf("StartElection succeeded despite persistence failure, want error")
+		t.Fatalf("startRealElection succeeded despite persistence failure, want error")
 	}
 	if n.Role() != Follower {
 		t.Fatalf("Role() = %v, want unchanged Follower", n.Role())
@@ -251,8 +258,10 @@ func TestApplyVoteResponseDeduplicatesGrants(t *testing.T) {
 	n.send = func(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
 		return RequestVoteResponse{}, errors.New("no automatic responses in this test")
 	}
-	if err := n.StartElection(context.Background()); err != nil {
-		t.Fatalf("StartElection: %v", err)
+	// startRealElection directly: this test is about real-election vote
+	// tallying (applyVoteResponse), not PreVote.
+	if err := n.startRealElection(context.Background()); err != nil {
+		t.Fatalf("startRealElection: %v", err)
 	}
 	term := n.CurrentTerm()
 
@@ -280,8 +289,10 @@ func TestApplyVoteResponseIgnoresStaleTermResponse(t *testing.T) {
 	n.send = func(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
 		return RequestVoteResponse{}, errors.New("no automatic responses in this test")
 	}
-	if err := n.StartElection(context.Background()); err != nil {
-		t.Fatalf("StartElection: %v", err)
+	// startRealElection directly: this test is about real-election vote
+	// tallying (applyVoteResponse), not PreVote.
+	if err := n.startRealElection(context.Background()); err != nil {
+		t.Fatalf("startRealElection: %v", err)
 	}
 	staleTerm := n.CurrentTerm() // term 1
 

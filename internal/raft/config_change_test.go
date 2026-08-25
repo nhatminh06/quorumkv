@@ -43,6 +43,8 @@ func threeNodeFakeClusterWithApply(t *testing.T) (a, b, c *Node, smA, smB, smC *
 		n.send = net.send
 		n.sendAppend = net.sendAppend
 		n.sendInstallSnapshot = net.sendInstallSnapshot
+		n.sendPreVote = net.sendPreVote
+		n.sendTimeoutNow = net.sendTimeoutNow
 	}
 	net.register("A", a)
 	net.register("B", b)
@@ -136,6 +138,8 @@ func TestConcurrentMembershipChangesOnlyOneSucceeds(t *testing.T) {
 		n.send = net.send
 		n.sendAppend = net.sendAppend
 		n.sendInstallSnapshot = net.sendInstallSnapshot
+		n.sendPreVote = net.sendPreVote
+		n.sendTimeoutNow = net.sendTimeoutNow
 	}
 	net.register("A", a)
 	net.register("B", b)
@@ -210,6 +214,8 @@ func TestAddVoterEndToEndNewNodeCatchesUpAndBecomesVoter(t *testing.T) {
 	d.send = net.send
 	d.sendAppend = net.sendAppend
 	d.sendInstallSnapshot = net.sendInstallSnapshot
+	d.sendPreVote = net.sendPreVote
+	d.sendTimeoutNow = net.sendTimeoutNow
 	net.register("D", d)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -316,6 +322,8 @@ func TestCreateSnapshotBlockedDuringJointThenAllowedAfter(t *testing.T) {
 		n.send = net.send
 		n.sendAppend = net.sendAppend
 		n.sendInstallSnapshot = net.sendInstallSnapshot
+		n.sendPreVote = net.sendPreVote
+		n.sendTimeoutNow = net.sendTimeoutNow
 	}
 	net.register("A", a)
 	net.register("B", b)
@@ -368,6 +376,7 @@ func TestJointWriteCommitRequiresBothMajorities(t *testing.T) {
 	a, _, _, _, _, _, net := threeNodeFakeClusterWithApply(t)
 	d, _ := newFakeNodeWithApply(t, 4, nil)
 	d.send, d.sendAppend, d.sendInstallSnapshot = net.send, net.sendAppend, net.sendInstallSnapshot
+	d.sendPreVote, d.sendTimeoutNow = net.sendPreVote, net.sendTimeoutNow
 	net.register("D", d)
 	net.setBlocked("D", true) // D is registered but never reachable in this test
 	// Block C before the Joint entry ever exists, so the transition can
@@ -406,6 +415,7 @@ func TestJointReadIndexRequiresBothMajorities(t *testing.T) {
 	a, _, _, _, _, _, net := threeNodeFakeClusterWithApply(t)
 	d, _ := newFakeNodeWithApply(t, 4, nil)
 	d.send, d.sendAppend, d.sendInstallSnapshot = net.send, net.sendAppend, net.sendInstallSnapshot
+	d.sendPreVote, d.sendTimeoutNow = net.sendPreVote, net.sendTimeoutNow
 	net.register("D", d)
 	net.setBlocked("D", true)
 	// Block C before the Joint entry ever exists — see the identical
@@ -466,9 +476,10 @@ func activateJointDirectly(t *testing.T, n *Node, oldC, newC Configuration) {
 // otherwise the leader-crash self-healing logic (by design) would race
 // ahead and finish the transition before this test can observe it mid-way.
 func TestJointElectionRequiresBothMajorities(t *testing.T) {
-	a, b, _, _, _, _, net := threeNodeFakeClusterWithApply(t)
+	a, b, cNode, _, _, _, net := threeNodeFakeClusterWithApply(t)
 	d, _ := newFakeNodeWithApply(t, 4, nil)
 	d.send, d.sendAppend, d.sendInstallSnapshot = net.send, net.sendAppend, net.sendInstallSnapshot
+	d.sendPreVote, d.sendTimeoutNow = net.sendPreVote, net.sendTimeoutNow
 	net.register("D", d)
 	net.setBlocked("C", true)
 	net.setBlocked("D", true)
@@ -477,6 +488,16 @@ func TestJointElectionRequiresBothMajorities(t *testing.T) {
 	if !waitFor(time.Second, func() bool { return b.MembershipStatus().Mode == ModeJoint }) {
 		t.Fatalf("B never received/activated the replicated Joint entry")
 	}
+	// This test is about Joint quorum math for PreVote/election, not
+	// realistic leader-transition mechanics: PreVote's leader-contact
+	// safeguard (a healthy Leader always rejects a hypothetical vote —
+	// see docs/raft-election.md) would otherwise make A refuse B's
+	// PreVote unconditionally merely because A is still nominally
+	// Leader, regardless of the quorum math this test wants to exercise.
+	// Demote A directly so it behaves as an ordinary voter.
+	a.mu.Lock()
+	a.role = Follower
+	a.mu.Unlock()
 
 	// Case 1: only A reachable besides self (C, D still blocked). B's
 	// candidacy gets A's vote: old={A,B}=2/2 (majority(ABC)=2) satisfied,
@@ -494,6 +515,13 @@ func TestJointElectionRequiresBothMajorities(t *testing.T) {
 	// and C's votes: old={A,B,C}=3/3 and new={A,B,C}=3/4 — both
 	// satisfied, B must win, with D never having been reachable.
 	net.setBlocked("C", false)
+	// A's background heartbeat loop may win the race to reach C first
+	// once unblocked, which would make C reject B's immediately-following
+	// PreVote under the leader-contact safeguard — clear it so this test
+	// doesn't depend on that race.
+	cNode.mu.Lock()
+	cNode.lastLeaderContact = time.Time{}
+	cNode.mu.Unlock()
 	ctx2, cancel2 := context.WithTimeout(context.Background(), time.Second)
 	defer cancel2()
 	if err := b.StartElection(ctx2); err != nil {

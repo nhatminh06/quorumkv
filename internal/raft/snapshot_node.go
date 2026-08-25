@@ -342,6 +342,12 @@ func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, add
 		if done {
 			if snap.LastIncludedIndex > n.matchIndex[id] {
 				n.matchIndex[id] = snap.LastIncludedIndex
+				// A leadership-transfer catch-up waiter may be watching
+				// this peer's matchIndex specifically (see
+				// leadership_transfer.go) — an InstallSnapshot completion
+				// is as much a catch-up event as an ordinary AppendEntries
+				// ack.
+				n.pingTransferChanged()
 			}
 			n.nextIndex[id] = snap.LastIncludedIndex + 1
 			n.mu.Unlock()

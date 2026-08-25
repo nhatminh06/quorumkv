@@ -126,8 +126,10 @@ func TestApplyOnlyAppliesCommittedEntries(t *testing.T) {
 	n.sendAppend = func(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
 		return AppendEntriesResponse{}, errors.New("unreachable")
 	}
-	if err := n.StartElection(context.Background()); err != nil {
-		t.Fatalf("StartElection: %v", err)
+	// startRealElection directly: this test is about apply-only-committed
+	// behavior as a Candidate, not PreVote.
+	if err := n.startRealElection(context.Background()); err != nil {
+		t.Fatalf("startRealElection: %v", err)
 	}
 	if n.Role() != Candidate {
 		t.Fatalf("Role() = %v, want Candidate (no majority without the peer)", n.Role())
@@ -246,6 +248,9 @@ func TestWaitAppliedReturnsOnContextTimeout(t *testing.T) {
 		// proposed entry can never reach majority replication.
 		return RequestVoteResponse{Term: req.Term, VoteGranted: true}, nil
 	}
+	n.sendPreVote = func(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
+		return PreVoteResponse{Term: req.ProspectiveTerm - 1, VoteGranted: true}, nil
+	}
 	if err := n.StartElection(context.Background()); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
@@ -277,6 +282,9 @@ func TestWaitAppliedReturnsOnNodeClose(t *testing.T) {
 	}
 	n.send = func(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
 		return RequestVoteResponse{Term: req.Term, VoteGranted: true}, nil
+	}
+	n.sendPreVote = func(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
+		return PreVoteResponse{Term: req.ProspectiveTerm - 1, VoteGranted: true}, nil
 	}
 	if err := n.StartElection(context.Background()); err != nil {
 		t.Fatalf("StartElection: %v", err)
@@ -313,6 +321,7 @@ func TestWaitAppliedDetectsSupersededEntry(t *testing.T) {
 	c := newNodeWithApply(t, 3, map[NodeID]string{1: "A", 2: "B"}, nil)
 	a.send, b.send, c.send = net.send, net.send, net.send
 	a.sendAppend, b.sendAppend, c.sendAppend = net.sendAppend, net.sendAppend, net.sendAppend
+	a.sendPreVote, b.sendPreVote, c.sendPreVote = net.sendPreVote, net.sendPreVote, net.sendPreVote
 	net.register("A", a)
 	net.register("B", b)
 	net.register("C", c)
@@ -337,6 +346,16 @@ func TestWaitAppliedDetectsSupersededEntry(t *testing.T) {
 	net.setBlocked("A", true)
 	net.setBlocked("B", false)
 	net.setBlocked("C", false)
+	// PreVote's leader-contact safeguard would otherwise make C reject B's
+	// PreVote — C only just (moments of real wall-clock time ago) accepted
+	// AppendEntries from A — so simulate enough real time having passed
+	// rather than sleeping for it (see electAndWaitLeader in
+	// fault_recovery_test.go for the same technique).
+	for _, n := range []*Node{a, b, c} {
+		n.mu.Lock()
+		n.lastLeaderContact = time.Time{}
+		n.mu.Unlock()
+	}
 	if err := b.StartElection(context.Background()); err != nil {
 		t.Fatalf("B StartElection: %v", err)
 	}

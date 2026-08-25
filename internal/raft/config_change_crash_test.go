@@ -6,6 +6,18 @@ import (
 	"time"
 )
 
+// clearLeaderContact resets lastLeaderContact on every still-running node
+// in c, simulating enough real time having passed for PreVote's
+// leader-contact safeguard to no longer apply — see electAndWaitLeader in
+// fault_recovery_test.go for the identical technique/rationale.
+func clearLeaderContact(c *faultCluster) {
+	for _, n := range c.nodes {
+		n.mu.Lock()
+		n.lastLeaderContact = time.Time{}
+		n.mu.Unlock()
+	}
+}
+
 // seedJointEntry directly appends and commits Joint(oldC, newC) on n's
 // own log — mimicking what changeMembership does, but without calling
 // maybeCompleteMembershipTransitionLocked, so the caller controls
@@ -87,6 +99,7 @@ func TestLeaderCrashAfterJointCommitBeforeStableAppended(t *testing.T) {
 	c.stop(1) // "A crashes" — Stable was never appended anywhere
 
 	b := c.node(2)
+	clearLeaderContact(c)
 	if err := b.StartElection(ctx); err != nil {
 		t.Fatalf("B StartElection: %v", err)
 	}
@@ -151,6 +164,7 @@ func TestLeaderCrashAfterStableAppendedBeforeItCommits(t *testing.T) {
 	if b.LastLogIndex() != idxA {
 		t.Fatalf("B's log = index %d, want exactly %d (A's Stable entry must never have replicated)", b.LastLogIndex(), idxA)
 	}
+	clearLeaderContact(c)
 	if err := b.StartElection(ctx); err != nil {
 		t.Fatalf("B StartElection: %v", err)
 	}
@@ -198,6 +212,7 @@ func TestConflictRepairRevertsUncommittedJointEntry(t *testing.T) {
 	// B and C can still reach each other; B wins a new, higher-term
 	// election without ever having seen A's Joint entry.
 	b, cc := c.node(2), c.node(3)
+	clearLeaderContact(c)
 	if err := b.StartElection(ctx); err != nil {
 		t.Fatalf("B StartElection: %v", err)
 	}

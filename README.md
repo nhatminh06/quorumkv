@@ -18,24 +18,37 @@ KV State Machine
 
 ## Current milestone
 
-QuorumKV now supports changing cluster membership — adding or removing
-exactly one voter at a time — through Raft's joint-consensus protocol:
-a transition passes through a joint phase (`C_old,new`) where every
-quorum-based decision (election, log commitment, ReadIndex, the
-current-term barrier, client writes) requires a majority of the old
-configuration **and** a majority of the new one simultaneously, never a
-majority of their union. Proven over a real three-node TCP cluster: a
-brand-new node with no prior log joins past a leader whose log is
-already compacted, catching up entirely through a real `InstallSnapshot`
-transfer; it is later removed; the leader removes itself and stops
-leading once that becomes final. Also proven: a cluster that loses its
-leader mid-transition — at either of two distinct crash points — always
-finishes the transition automatically once a new leader is elected,
-never getting stuck in the joint phase. See
-[docs/membership.md](docs/membership.md) for the full protocol, the API
-(`Node.AddVoter`/`Node.RemoveVoter`), and the complete test list.
+QuorumKV now runs a PreVote phase before every ordinary election: a
+node asks, hypothetically, "would you vote for me?" without touching
+any persistent state, and only proceeds to a real election if that
+round reaches quorum. A voter that recently heard from a healthy leader
+(including the leader itself, protecting its own term) rejects the
+hypothetical vote outright, so a node that has been isolated and
+repeatedly times out never bumps the cluster's term — proven by fully
+(bidirectionally) partitioning a follower away from a healthy leader:
+across repeated failed election timeouts its term never advances and
+the leader is never disrupted, while a follower-losing-its-leader
+scenario still elects a legitimate replacement normally. Leaders can
+also perform a controlled leadership transfer to a specific, fully
+caught-up voter: the target is brought current through ordinary
+replication (diverting through real `InstallSnapshot` if it's behind a
+compacted log — composing with Milestone 10's membership changes), new
+write/read/membership admission is frozen only once handoff begins, and
+an authorized `TimeoutNow` triggers the target's real election
+(deliberately bypassing PreVote, since the current leader has already
+authorized the handoff) — success is only reported once the old leader
+observes real evidence the target actually won, never merely that
+`TimeoutNow` was accepted. See
+[docs/raft-election.md](docs/raft-election.md) and
+[docs/leadership-transfer.md](docs/leadership-transfer.md) for the full
+protocol and test list.
 
-This builds on QuorumKV giving PUT/DELETE a stable request identity
+This builds on QuorumKV's Raft joint-consensus membership changes —
+adding or removing exactly one voter at a time, where every quorum-based
+decision during a transition requires a majority of the old
+configuration **and** a majority of the new one simultaneously, never a
+majority of their union (see [docs/membership.md](docs/membership.md)) —
+and on giving PUT/DELETE a stable request identity
 (`ClientID` + a monotonic per-client sequence number) so an ambiguous write — a
 transport failure, a server-side `TIMEOUT`, or a `NOT_LEADER` redirect —
 can be safely retried: the replicated KV state machine deduplicates a
@@ -90,7 +103,13 @@ are limited to one voter at a time, with no batched multi-node changes,
 no learner/observer promotion as a public feature, and no automatic
 rebalancing or discovery (see [docs/membership.md](docs/membership.md)).
 There is no client-side session persistence across a client process
-restart.
+restart. PreVote reduces disruptive elections caused by isolated or
+stale followers; it does not eliminate all disruption in every possible
+scenario, and is not a formal proof of election stability. Leadership
+transfer provides an intentional, best-effort handoff to a specified
+up-to-date voter — a caller-specified operation, not automatic leader
+balancing, and not a guarantee that a transfer can never fail (a
+partitioned or crashed target simply fails the call cleanly).
 
 ## Layout
 

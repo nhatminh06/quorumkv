@@ -86,7 +86,14 @@ func TestInstallSnapshotDedupSurvives(t *testing.T) {
 	}
 
 	// Stop A and B, and legitimately elect C leader among the survivors
-	// (a real election, not a forced role).
+	// (a real election, not a forced role). Close() stops each node's own
+	// background work but does not reset its role: A's RPC handler stays
+	// reachable and, being closed rather than truly gone, still correctly
+	// insists it is Leader — so C must win using B's vote alone (B, a
+	// Follower whose own last leader contact is long past by this point
+	// in the test, has no such objection). This models "unreachable" as
+	// this test suite already does elsewhere (isolatedSender), not a
+	// literal process crash.
 	a.svc.node.Close()
 	b.svc.node.Close()
 	electDedupLeader(t, []*dedupTestNode{cNode}, 0)

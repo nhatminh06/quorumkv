@@ -23,6 +23,8 @@ func setupThreeNodeFakeCluster(t *testing.T) (a, b, c *Node, net *fakeNetwork) {
 		n.send = net.send
 		n.sendAppend = net.sendAppend
 		n.sendInstallSnapshot = net.sendInstallSnapshot
+		n.sendPreVote = net.sendPreVote
+		n.sendTimeoutNow = net.sendTimeoutNow
 	}
 	net.register("A", a)
 	net.register("B", b)
@@ -319,6 +321,16 @@ func TestLeaderFailureCommittedEntryPreserved(t *testing.T) {
 
 	a.Close() // "A stops"
 	net.setBlocked("A", true)
+
+	// PreVote's leader-contact safeguard would otherwise make C reject
+	// B's PreVote — C only just accepted AppendEntries from A moments of
+	// real wall-clock time ago — so simulate enough real time having
+	// passed rather than sleeping for it.
+	for _, n := range []*Node{b, c} {
+		n.mu.Lock()
+		n.lastLeaderContact = time.Time{}
+		n.mu.Unlock()
+	}
 
 	// B, the more caught-up-looking remaining follower, starts an
 	// election among the survivors.

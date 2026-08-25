@@ -22,6 +22,8 @@ func setupThreeSnapshottingNodes(t *testing.T) (a, b, c *snapshottingNode, net *
 		n.send = net.send
 		n.sendAppend = net.sendAppend
 		n.sendInstallSnapshot = net.sendInstallSnapshot
+		n.sendPreVote = net.sendPreVote
+		n.sendTimeoutNow = net.sendTimeoutNow
 	}
 	net.register("A", a.Node)
 	net.register("B", b.Node)
@@ -235,6 +237,7 @@ func (c *snapshottingTCPCluster) startFresh(id NodeID) {
 	if err != nil {
 		c.t.Fatalf("Listen node %d: %v", id, err)
 	}
+	n.SetSelfAddr(tr.Addr())
 	c.nodes[id] = &snapshottingNode{Node: n, dir: c.dirs[id], state: sm}
 	c.sms[id] = sm
 	c.trs[id] = tr

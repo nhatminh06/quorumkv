@@ -102,6 +102,8 @@ test and full `-race` repeats of the whole fault suite afterward.
 | 20 | Client's cached leader dies; retried against a known survivor | The stale-cache attempt returns a transport error (no blind retry, per Milestone 5); a fresh call against a live node succeeds | `TestClientRedirectsToNewLeaderAfterFailover` |
 | 21 | Follower stale beyond a leader's compacted log prefix (Milestone 7) | The leader detects the follower is behind its snapshot boundary and sends `InstallSnapshot` instead of a doomed AppendEntries; the follower installs it, resumes ordinary suffix catch-up, and the recovered state survives a real restart from disk over a fresh real-TCP connection | `TestSnapshotCatchUpEndToEndRealTCP` (`internal/raft`) |
 | 22 | Leader isolated from the majority, which elects a replacement and commits a different write, while the old leader may still believe `Role == Leader` (Milestone 8) | GET sent directly to the isolated old leader never returns the stale value: `ReadIndex` cannot obtain quorum for it, so it returns `TIMEOUT`/`NOT_LEADER`, never `OK`; GET against the new majority leader succeeds with the current value; once healed, the old leader returns `NOT_LEADER` | `TestIsolatedOldLeaderCannotServeStaleGet`, `TestNewLeaderReadServesQuorumConfirmedValue`, `TestHealedOldLeaderReturnsNotLeaderNoStaleRead` (`internal/service`) |
+| 23 | A follower is fully (bidirectionally) partitioned away from a healthy leader and repeatedly times out (Milestone 11) | PreVote's leader-contact safeguard means the isolated follower's `currentTerm` never advances across its failed attempts (a failed PreVote round mutates no persistent state), and the healthy leader is never disrupted — same term, same role, throughout. Once healed, the follower simply rejoins as a follower with no special-cased reconciliation | `TestIsolatedFollowerDoesNotDisruptHealthyLeader` (`internal/raft`) |
+| 24 | Planned leadership transfer to a fully caught-up voter, including one behind a compacted log (Milestone 11) | The target catches up (via ordinary replication, diverting to real `InstallSnapshot` if behind the leader's compacted prefix — composing Milestones 7/10/11), wins a real (PreVote-bypassing) election via an authorized `TimeoutNow`, and client state is preserved: a pre-transfer write is still readable through the new leader via `ReadIndex`, and a post-transfer write succeeds | `TestLeadershipTransferOverRealTCP`, `TestLeadershipTransferToFarBehindSnapshotTarget` (`internal/raft`) |
 
 Every result above is from an actually-passing test at the time this
 document was written — see "Verification" in the PR description for the
@@ -129,11 +131,16 @@ This is proven, not merely asserted — see the tests cited in scenario 22.
 - ReadIndex closes the isolated-old-leader stale-read gap (scenario 22)
   but is not a lease-based optimization and pays a quorum round trip per
   GET — see [docs/read-index.md](read-index.md)'s limitations section.
-- No request deduplication; Scenario 18 above is exactly why that
-  matters for future work (a client that times out cannot safely
-  distinguish "never committed" from "committed, response lost").
-- No membership changes; the peer set is static throughout every
-  scenario.
+- Request deduplication (Milestone 9, see
+  [docs/request-dedup.md](request-dedup.md)) and joint-consensus
+  membership changes (Milestone 10, see
+  [docs/membership.md](membership.md)) both exist now, but this
+  document's scenarios 1–20 predate both and were not retroactively
+  rerun under dedup-retry or membership-transition conditions beyond
+  what those milestones' own docs cover.
+- PreVote and leadership transfer (Milestone 11, scenarios 23–24) exist
+  now — see [docs/raft-election.md](raft-election.md) and
+  [docs/leadership-transfer.md](leadership-transfer.md).
 - The two-node/three-node partition scenarios are exercised directly; a
   5-node minority/majority split was not added, since the mandatory
   3-node cases already exercise the same commit-rule and quorum-count
