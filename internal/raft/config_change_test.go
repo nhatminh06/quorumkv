@@ -488,6 +488,16 @@ func TestJointElectionRequiresBothMajorities(t *testing.T) {
 	if !waitFor(time.Second, func() bool { return b.MembershipStatus().Mode == ModeJoint }) {
 		t.Fatalf("B never received/activated the replicated Joint entry")
 	}
+	// This test is about Joint quorum math for PreVote/election, not
+	// realistic leader-transition mechanics: PreVote's leader-contact
+	// safeguard (a healthy Leader always rejects a hypothetical vote —
+	// see docs/raft-election.md) would otherwise make A refuse B's
+	// PreVote unconditionally merely because A is still nominally
+	// Leader, regardless of the quorum math this test wants to exercise.
+	// Demote A directly so it behaves as an ordinary voter.
+	a.mu.Lock()
+	a.role = Follower
+	a.mu.Unlock()
 
 	// Case 1: only A reachable besides self (C, D still blocked). B's
 	// candidacy gets A's vote: old={A,B}=2/2 (majority(ABC)=2) satisfied,

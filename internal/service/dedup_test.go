@@ -150,6 +150,12 @@ func reopenDedupNode(t *testing.T, old *dedupTestNode) *dedupTestNode {
 func electDedupLeader(t *testing.T, nodes []*dedupTestNode, leaderIdx int) {
 	t.Helper()
 	leader := nodes[leaderIdx]
+	// See electLeaderAmong in service_test.go: PreVote's leader-contact
+	// safeguard needs a real amount of wall time to pass since any prior
+	// leader's last AppendEntries before a voter will grant a new
+	// hypothetical vote — this helper is reused for failover elections
+	// too, not only a cluster's very first election.
+	time.Sleep(200 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := leader.svc.node.StartElection(ctx); err != nil {

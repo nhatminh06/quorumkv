@@ -773,9 +773,20 @@ func (n *Node) pingTransferChanged() {
 // (e.g. one that is isolated, not the leader) timed out. Deliberately
 // reuses minElectionTimeout, the same constant already governing the
 // shortest legitimate election timeout, rather than a second
-// independently-tuned window — "one clear election/timer model." Must be
-// called with n.mu held.
+// independently-tuned window — "one clear election/timer model."
+//
+// A node that is itself the current Leader always counts as having
+// recent contact: it never receives AppendEntries (it only sends them),
+// so lastLeaderContact would otherwise stay perpetually zero for it —
+// without this, a perfectly healthy, actively-heartbeating leader would
+// grant a hypothetical vote to any challenger presenting a merely
+// technically-higher prospective term, defeating the entire safeguard
+// for the one node it matters most for protecting. Must be called with
+// n.mu held.
 func (n *Node) hasRecentLeaderContactLocked() bool {
+	if n.role == Leader {
+		return true
+	}
 	if n.lastLeaderContact.IsZero() {
 		return false
 	}
