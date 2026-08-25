@@ -1535,6 +1535,16 @@ func (n *Node) LastLogIndex() LogIndex {
 	return n.log.LastIndex()
 }
 
+// SnapshotBoundary returns the index/term of the most recent entry
+// covered by a snapshot (the log's compaction boundary) — (0, 0) if
+// this node has never compacted. For operational status reporting; not
+// used by any consensus decision.
+func (n *Node) SnapshotBoundary() (LogIndex, Term) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.log.BaseIndex(), n.log.BaseTerm()
+}
+
 // Run drives this node's election timer until ctx is canceled: whenever
 // the timeout fires and the node is not already Leader, it starts an
 // election. The timer restarts whenever the timeout fires, an election
