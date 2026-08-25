@@ -18,7 +18,30 @@ KV State Machine
 
 ## Current milestone
 
-QuorumKV now runs a PreVote phase before every ordinary election: a
+QuorumKV now bounds follower replication by entry count and encoded
+bytes, and uses event-driven per-peer replication workers to catch a
+stale follower up without waiting for successive heartbeat intervals
+between batches. Replication responses are guarded by a per-peer
+generation, so a stale or superseded response can never regress
+progress that has already moved on. Measured on a 5000-entry lagging
+follower: catch-up dropped from 3.95s to 0.27s (about 14.7x), with no
+observed regression to steady-state write/read throughput. See
+[docs/replication-performance.md](docs/replication-performance.md) for
+the full design and [docs/performance.md](docs/performance.md) for
+measured results.
+
+This builds on Milestone 13's proposal batching and bounded backpressure
+(concurrent proposals share one durable log write instead of each
+paying for its own; a full proposal queue or a full service admission
+bound fails fast with a retryable `BUSY` status rather than accepting
+unbounded work) and Milestone 12's deterministic crash-consistency
+proofs (every durable file recovers as exactly its old content or
+exactly its new content after a process killed at any point during a
+write — proven with genuine subprocess crashes, not just simulated
+errors). See [docs/performance.md](docs/performance.md) and
+[docs/crash-consistency.md](docs/crash-consistency.md).
+
+QuorumKV also runs a PreVote phase before every ordinary election: a
 node asks, hypothetically, "would you vote for me?" without touching
 any persistent state, and only proceeds to a real election if that
 round reaches quorum. A voter that recently heard from a healthy leader

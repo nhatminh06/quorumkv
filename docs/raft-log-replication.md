@@ -79,9 +79,11 @@ entryCount    4B
 
 A heartbeat is exactly this with `entryCount = 0` — there is no separate
 heartbeat RPC. `entryCount` is validated against `maxEntriesPerAppend`
-(64) and each entry's `commandLength` against `maxCommandSize` before any
-per-entry allocation, so a corrupt or hostile peer cannot force an
-oversized allocation by declaring a huge count or length.
+(64, a count-only decoder safety ceiling — see "Replication batch size"
+below for the actual byte-accurate bound a leader builds a batch
+against) and each entry's `commandLength` against `maxCommandSize`
+before any per-entry allocation, so a corrupt or hostile peer cannot
+force an oversized allocation by declaring a huge count or length.
 
 `AppendEntriesResponse` — 25 bytes:
 
@@ -105,14 +107,24 @@ peer's log happens to be caught up, so a log-replication failure must
 not be confused with a ReadIndex quorum failure. See
 [docs/read-index.md](read-index.md) for the full mechanism.
 
-## Replication batch size
+## Replication batch size (since Milestone 14)
 
-A leader sends up to `maxEntriesPerAppend` (64) entries per AppendEntries
-call — a fixed cap rather than a dynamic byte-budget calculation, which
-combined with the 256 KiB command limit keeps a request comfortably under
-transport's 1 MiB frame limit. A leader with more to replicate than that
-simply catches a peer up over further rounds (the next heartbeat tick, or
-immediately after another Propose).
+A leader builds each AppendEntries batch via `Log.EntriesRange(from,
+maxEntriesPerAppend, MaxAppendEntriesBytes)`, bounded by both an entry
+count (64) and an encoded-byte target (`MaxAppendEntriesBytes`, 512 KiB)
+— computed from the same `encodedEntrySize`/`appendEntriesEncodedSize`
+helpers `EncodeAppendEntries` itself uses (one source of size truth, not
+two independently-maintained calculations). `EntriesRange` never copies
+more of the retained log than the batch actually needs, unlike the
+unbounded `EntriesFrom` a full-suffix caller would otherwise have to
+truncate after the fact. A single entry larger than the byte target is
+still returned alone rather than becoming unsendable —
+`EncodeAppendEntries` separately enforces a hard ceiling
+(`maxAppendEntriesEncodedSize`) comfortably below `transport.MaxPayloadSize`,
+so a leader can never hand the transport layer an RPC oversized enough
+to be rejected after the fact. A leader with more to replicate than one
+batch simply sends further batches immediately (see "Per-peer
+replication workers" below) rather than waiting for another trigger.
 
 ## Heartbeat behavior and timer reset
 
@@ -167,13 +179,49 @@ On a successful response, `matchIndex[peer]` advances to `prevLogIndex +
 len(entries)` from that request and `nextIndex[peer] = matchIndex[peer] +
 1` — but only if that's higher than the peer's current `matchIndex`, so a
 stale-but-successful older response can never regress it. On failure,
-`nextIndex[peer]` decreases by one (never below 1) for a retry on the next
-round.
+`nextIndex[peer]` decreases by one (never below 1) for a retry.
 
 Every applied response is first checked against current state: a response
 carrying a higher term forces step-down; a response whose sender's
 `sentTerm` no longer matches `currentTerm`, or whose recipient is no
-longer Leader, is stale and dropped without being applied.
+longer Leader, is stale and dropped without being applied — and (since
+Milestone 14) so is one whose generation no longer matches, see below.
+
+## Per-peer replication workers and generations (since Milestone 14)
+
+Each current replication target has its own long-lived goroutine
+(`replicationWorker`, `internal/raft/replication_worker.go`) rather than
+replication happening only as a side effect of a shared per-round call.
+A worker blocks on a coalescing wake signal, then repeatedly performs one
+bounded step (an AppendEntries batch, or an InstallSnapshot chunk-loop
+transfer if the peer has fallen behind the compacted boundary) for as
+long as each step reports more work remains — with no wait in between —
+only returning to idle once the peer is genuinely caught up. Every
+place that used to trigger a replication round directly (a proposal
+batch, a configuration entry, the ReadIndex no-op barrier) now just
+wakes every current worker; the heartbeat ticker does the same on its
+own interval, which is what still provides heartbeat-cadence leader
+authority, follower election-timer resets, and commit-index propagation
+for an already-caught-up peer — heartbeatLoop sends no RPC itself.
+Workers are children of the current leadership term's context, so
+stepping down cancels every one of them with no separate bookkeeping;
+worker lifecycle (start/stop) is decided in exactly one place,
+`reconcileReplicationWorkersLocked`, called whenever effective
+membership might have changed.
+
+Each peer also carries a volatile replication generation, incremented
+whenever its replication assumptions are invalidated: a conflict
+backtrack, taking over for InstallSnapshot, resuming after it, or the
+worker being (re)created. Every in-flight request is validated against
+the CURRENT generation before its response is allowed to mutate
+`nextIndex`/`matchIndex`/`commitIndex` — a response captured under an
+older generation is discarded exactly like one that never arrived,
+regardless of whether it reports success or failure, so a delayed reply
+to a since-superseded assumption can never regress or corrupt progress
+that has already moved on. See
+[docs/replication-performance.md](replication-performance.md) for the
+full design rationale, the InstallSnapshot/membership/leadership-transfer
+interaction, and measured before/after results.
 
 ## Commit rule
 
@@ -232,16 +280,18 @@ committed entries are actually applied to the KV state machine.
 ## Concurrency and network-lock discipline
 
 Unchanged from Milestone 3: a single mutex protects all of `Node`'s
-state, and RPCs (both RequestVote and now AppendEntries) are never sent
-while it's held — `StartElection` and `replicateToAllPeers` each snapshot
-what they need, unlock, do the I/O concurrently, and re-lock only to
-apply each response.
+state, and RPCs (both RequestVote and AppendEntries) are never sent
+while it's held — `StartElection` and each peer's `replicationStep`
+(since Milestone 14 — see above) each snapshot what they need, unlock,
+do the I/O, and re-lock only to apply the response.
 
-The leader's heartbeat loop is bound to the `Node`'s own long-lived
-background context (`bgCtx`), not to whatever short-lived `ctx` happened
-to trigger the leadership transition, so it keeps running on its own
-schedule until this node steps down (`stepDownLocked`/
-`stepToFollowerLocked` cancel it) or `Node.Close` is called.
+The leader's heartbeat loop and every replication worker are bound to
+the current leadership term's context (itself a child of `Node`'s own
+long-lived background context, `bgCtx`), not to whatever short-lived
+`ctx` happened to trigger the leadership transition, so they keep
+running on their own schedule until this node steps down
+(`stepDownLocked`/`stepToFollowerLocked` cancel them all at once) or
+`Node.Close` is called.
 
 ## Committed entries feed application (since Milestone 5)
 

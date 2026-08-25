@@ -1,11 +1,17 @@
 # Performance
 
-This document records Milestone 13's actual, measured before/after
-result for QuorumKV's client write path, on the environment described
-below. It follows the project's measure-first discipline: the benchmark
-harness (`internal/service/benchmark_test.go`) was written before any
-optimization, a baseline was recorded, then proposal batching was
-implemented, then the same benchmarks were re-run unchanged.
+This document records Milestone 13's and Milestone 14's actual, measured
+before/after results, on the environment described below. Both followed
+the project's measure-first discipline: the benchmark harness
+(`internal/service/benchmark_test.go`) was written before any
+optimization, a baseline was recorded, the change was implemented, then
+the same benchmarks were re-run unchanged. Milestone 13's numbers are
+kept below exactly as originally recorded — this document does not erase
+earlier tradeoffs. See
+[docs/replication-performance.md](replication-performance.md) for
+Milestone 14's full design rationale (bounded AppendEntries, per-peer
+event-driven workers, generations); this file keeps only its measured
+results and environment.
 
 No number here is a hardware-independent throughput claim. Every figure
 below is "on the documented local benchmark environment," nothing more.
@@ -166,41 +172,88 @@ target for future work, not something this milestone's proposal-batching
 change addresses. Profile files are not committed (item 18); reproduce
 with the command above.
 
-## Deferred (not implemented this milestone)
+## Deferred at the end of Milestone 13 (resolved in Milestone 14)
 
-The milestone's full scope was substantially larger than what is above;
-the following were deliberately not implemented, to keep this a single
-reviewable, well-tested change rather than a sprawling one:
+Two of Milestone 13's deferred items were addressed in Milestone 14 —
+bounded/byte-accurate AppendEntries batches and a bounded log-range API,
+and event-driven per-peer replication workers with generation-based
+stale-response suppression. See
+[docs/replication-performance.md](replication-performance.md) and the
+M14 results below. Membership/leadership-transfer interaction with the
+new worker model, and the InstallSnapshot handoff, were also covered
+there. The observational stats surface was not extended to replication
+in M14 either — still proposal admission/batching only.
 
-- **Bounded/byte-accurate AppendEntries batches and a bounded log-range
-  API** (items 67-73): `Log.EntriesFrom` still clones an entire matched
-  suffix before `replicateToAllPeers` truncates it to
-  `maxEntriesPerAppend` — real waste for a far-behind follower with a
-  large retained suffix, and the batch bound is still count-only (64
-  entries), not byte-accurate.
-- **Event-driven per-peer replication workers with a bounded pipeline**
-  (items 74-89, 98-103): replication remains "one goroutine per
-  replication round, call-response, wait for the next heartbeat/Propose
-  trigger" rather than a persistent per-peer worker with an in-flight
-  window, generation-based stale-response suppression, and immediate
-  catch-up loops. This is the reason Workload E shows no improvement.
-- **Membership/leadership-transfer interaction with a replication
-  pipeline** (items 63-66, 91-97, 101-102): moot without the pipeline
-  above; existing Milestone 10/11 behavior is unaffected and unchanged
-  (verified by the full existing test suite passing unmodified).
-- **The full observational stats surface** (item 114): `Node.Stats()`
-  covers proposal admission/batching only, not AppendEntries RPC/pipeline
-  counters, since no pipeline exists yet to instrument.
-- **Deterministic load/stress test matrix beyond the overload tests
-  added** (items 130-133): `internal/service/overload_test.go` covers
-  deterministic queue/concurrency saturation and recovery; a
-  32-client/100-write-each combined correctness-under-load stress test,
-  a one-follower-down load test, and a leader-failover-under-load test
-  were not added.
+The deterministic load/stress test matrix beyond `overload_test.go`
+(items 130-133 of Milestone 13's own spec — a combined 32-client stress
+test, a one-follower-down load test, a leader-failover-under-load test)
+remains undone; it was not part of Milestone 14's scope either.
 
-These are legitimate follow-up work, not silently dropped requirements —
-each depends on the replication pipeline redesign, which is
-correctness-sensitive enough (stale-response suppression, generation
-invalidation, InstallSnapshot/membership/transfer interaction) to
-deserve its own dedicated measurement-driven milestone rather than being
-folded in here.
+## Milestone 14 — replication performance
+
+### Environment
+
+Same machine/toolchain as the Milestone 13 measurements above.
+
+### Benchmark commands
+
+```bash
+go test ./internal/service -run '^$' -bench 'BenchmarkFollowerCatchUp' -benchtime=3x
+go test ./internal/service -run '^$' -bench 'BenchmarkThreeNodeSequentialPut' -benchtime=50x -count=3
+go test ./internal/service -run '^$' -bench 'BenchmarkThreeNodeConcurrentPut|BenchmarkThreeNodeConcurrentGet|BenchmarkThreeNodeMixedReadWrite' -benchtime=300x -count=3
+```
+
+"Before" (M13) was measured on the Milestone 13 merge commit
+(`bb972997149931608bf585254d42d36f8949d377`) in a separate worktree;
+"after" (M14) is this branch. Both used the identical commands, machine,
+and Go version.
+
+### Follower catch-up (the targeted improvement)
+
+| | Before (M13) | After (M14) | Change |
+|---|---|---|---|
+| Catch-up duration (5000-entry lagging suffix) | 3.952 s | 0.269 s | **14.7x faster** |
+| Entries/sec | 1,265 | 18,583 | **14.7x** |
+
+This is the primary result: event-driven immediate re-send between
+successful batches, instead of waiting for the next heartbeat tick,
+removes almost the entire wait time from catching a far-behind follower
+up. See [docs/replication-performance.md](replication-performance.md)
+§18 for a profile of the new dominant cost (the follower's own whole-log
+rewrite on each received batch — unchanged, and explicitly out of
+scope, this milestone).
+
+### Steady-state workloads (re-run, not the primary target)
+
+Mean `ns/op` across the `-count=3` runs; throughput is `1e9/ns_op`.
+
+| Workload | M13 ns/op | M14 ns/op | M13 throughput | M14 throughput | Change |
+|---|---|---|---|---|---|
+| Sequential PUT, 16 B | 974,544 | 974,853 | — | — | unchanged |
+| Sequential PUT, 1024 B | 1,424,131 | 1,508,504 | — | — | +6% latency (within run-to-run noise) |
+| Concurrent PUT, 16 B | 256,477 | 231,557 | 3,899 ops/s | 4,318 ops/s | +11% |
+| Concurrent PUT, 1024 B | 558,989 | 374,444 | 1,789 ops/s | 2,671 ops/s | +49% |
+| Concurrent GET | 143,154 | 98,661 | 6,986 ops/s | 10,136 ops/s | +45% |
+| Mixed 80/20 | 154,564 | 105,748 | 6,470 ops/s | 9,457 ops/s | +46% |
+
+None of these were the targeted improvement (only follower catch-up
+was), and none regressed. The concurrent-workload gains beyond PUT are a
+plausible secondary effect of event-driven workers removing the old
+periodic full-replication-round background cost even for an idle/
+caught-up cluster, but this was not isolated or specifically profiled to
+confirm that attribution — reported as measured, not fully explained.
+Sequential PUT is unaffected as expected (a single sequential writer
+never benefits from replication scheduling changes either way).
+
+### CPU profile
+
+See [docs/replication-performance.md](replication-performance.md) §18
+for the follower catch-up profile and its implication (the follower's
+whole-log rewrite is now the dominant remaining cost).
+
+## Deferred (not implemented in Milestone 14)
+
+See [docs/replication-performance.md](replication-performance.md) §19
+for the full list (no request pipelining beyond window 1, no transport
+connection pooling, no replication-specific stats, snapshot chunking
+unchanged).
