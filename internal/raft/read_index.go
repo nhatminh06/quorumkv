@@ -161,6 +161,21 @@ type readProbeResult struct {
 //   - whatever establishing the current-term commit barrier failed with
 //     (see ensureCurrentTermCommitted), if one was needed.
 func (n *Node) ReadIndex(ctx context.Context) (LogIndex, error) {
+	n.mu.Lock()
+	if n.transfer != nil && n.transfer.phase == transferHandoff {
+		// Handoff freeze (see leadership_transfer.go): this leader is
+		// intentionally giving up leadership: it must not serve — or even
+		// start establishing quorum for — a new read once that's underway.
+		// (ensureCurrentTermCommitted's own internal barrier proposal
+		// would also be blocked by proposeLocked's identical check, but a
+		// read that reuses an already-established barrier would otherwise
+		// slip through that path entirely, so this is checked explicitly
+		// here too.)
+		n.mu.Unlock()
+		return 0, ErrLeadershipTransferInProgress
+	}
+	n.mu.Unlock()
+
 	if err := n.ensureCurrentTermCommitted(ctx); err != nil {
 		return 0, err
 	}

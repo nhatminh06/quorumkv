@@ -423,6 +423,10 @@ func TestRetryToNewLeaderAfterFailoverRecognizesDedup(t *testing.T) {
 func electLeaderAmongDedup(t *testing.T, voters []*dedupTestNode, nodes []*dedupTestNode, leaderIdx int) {
 	t.Helper()
 	leader := nodes[leaderIdx]
+	// See electLeaderAmong in service_test.go: PreVote's leader-contact
+	// safeguard needs a real amount of wall time to pass before a
+	// failover election immediately following the old leader's stop.
+	time.Sleep(200 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := leader.svc.node.StartElection(ctx); err != nil {

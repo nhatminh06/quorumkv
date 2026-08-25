@@ -88,6 +88,14 @@ func (n *Node) changeMembership(ctx context.Context, mutate func(old Configurati
 		n.mu.Unlock()
 		return ErrMembershipChangeInProgress
 	}
+	if n.transfer != nil {
+		// Only one major administrative transition at a time (see
+		// leadership_transfer.go): a leadership transfer is active
+		// (catching up or already in handoff), so this membership change
+		// must wait until it finishes or is abandoned.
+		n.mu.Unlock()
+		return ErrLeadershipTransferInProgress
+	}
 	oldC := n.membership.Stable
 	newC, err := mutate(oldC)
 	if err != nil {
@@ -108,6 +116,7 @@ func (n *Node) changeMembership(ctx context.Context, mutate func(old Configurati
 	}
 	n.rebuildMembershipLocked() // activates the Joint immediately, before commit
 	n.maybeAdvanceCommitIndexLocked()
+	n.pingTransferChanged() // LastIndex moved
 	n.mu.Unlock()
 
 	n.bgWG.Add(1)

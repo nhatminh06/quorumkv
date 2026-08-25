@@ -78,6 +78,40 @@ func sendAppendOverTransport(ctx context.Context, addr string, req AppendEntries
 	return DecodeAppendEntriesResponse(resp.Payload)
 }
 
+// preVoteSender issues a PreVote RPC to addr and returns the decoded
+// response, mirroring sender's real-transport/fake-network
+// substitutability.
+type preVoteSender func(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error)
+
+func sendPreVoteOverTransport(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
+	msg := transport.NewMessage(transport.MessagePreVote, EncodePreVote(req))
+	resp, err := transport.Send(ctx, addr, msg)
+	if err != nil {
+		return PreVoteResponse{}, err
+	}
+	if resp.Type != transport.MessagePreVoteResponse {
+		return PreVoteResponse{}, fmt.Errorf("raft: unexpected response message type %d", resp.Type)
+	}
+	return DecodePreVoteResponse(resp.Payload)
+}
+
+// timeoutNowSender issues a TimeoutNow RPC to addr and returns the
+// decoded response, mirroring sender's real-transport/fake-network
+// substitutability.
+type timeoutNowSender func(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error)
+
+func sendTimeoutNowOverTransport(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error) {
+	msg := transport.NewMessage(transport.MessageTimeoutNow, EncodeTimeoutNow(req))
+	resp, err := transport.Send(ctx, addr, msg)
+	if err != nil {
+		return TimeoutNowResponse{}, err
+	}
+	if resp.Type != transport.MessageTimeoutNowResponse {
+		return TimeoutNowResponse{}, fmt.Errorf("raft: unexpected response message type %d", resp.Type)
+	}
+	return DecodeTimeoutNowResponse(resp.Payload)
+}
+
 // Node is a single Raft participant: persistent term/vote/log, volatile
 // role, in-progress vote counting, and (while Leader) replication state.
 // See docs/raft-election.md and docs/raft-log-replication.md.
@@ -97,10 +131,21 @@ type Node struct {
 	send                sender
 	sendAppend          appendSender
 	sendInstallSnapshot installSnapshotSender
+	sendPreVote         preVoteSender
+	sendTimeoutNow      timeoutNowSender
 
 	timeoutFunc       func() time.Duration
 	heartbeatInterval time.Duration
 	resetCh           chan struct{}
+	// nowFunc is time.Now by default, injectable so tests can control
+	// leader-contact recency (see hasRecentLeaderContactLocked)
+	// deterministically instead of depending on real sleeps.
+	nowFunc func() time.Time
+	// lastLeaderContact is when this node last accepted valid AppendEntries
+	// contact from a current/higher-term leader — the one signal PreVote's
+	// leader-contact safeguard is built on (see docs/raft-election.md).
+	// Zero value means "never observed" this process run.
+	lastLeaderContact time.Time
 
 	// bgCtx/bgCancel bound this Node's own background work (heartbeat and
 	// apply loops), independent of whatever short-lived ctx a particular
@@ -197,6 +242,17 @@ type Node struct {
 	membershipEntryIndex LogIndex
 	pendingStableIndex   LogIndex
 	membershipChanged    chan struct{}
+
+	// transfer is this node's in-progress leadership transfer, if any (see
+	// leadership_transfer.go) — nil when idle. Never persisted: a crash or
+	// restart simply forgets it, which is correct (no transfer state
+	// survives a process boundary). transferChanged is pinged (same
+	// non-blocking, buffered-1 pattern as membershipChanged) whenever
+	// something a transfer's waiters care about changes: matchIndex
+	// (catch-up progress), LastIndex (new catch-up target), or
+	// role/leaderID/currentTerm (transfer completion evidence).
+	transfer        *transferState
+	transferChanged chan struct{}
 }
 
 // NewNode loads persistent state, the Raft log, the durably recorded
@@ -274,10 +330,14 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		send:                sendOverTransport,
 		sendAppend:          sendAppendOverTransport,
 		sendInstallSnapshot: sendInstallSnapshotOverTransport,
+		sendPreVote:         sendPreVoteOverTransport,
+		sendTimeoutNow:      sendTimeoutNowOverTransport,
 		timeoutFunc:         randomElectionTimeout,
 		heartbeatInterval:   defaultHeartbeatInterval,
 		resetCh:             make(chan struct{}, 1),
+		nowFunc:             time.Now,
 		membershipChanged:   make(chan struct{}, 1),
+		transferChanged:     make(chan struct{}, 1),
 		bgCtx:               bgCtx,
 		bgCancel:            bgCancel,
 		persistent:          state,
@@ -495,6 +555,21 @@ func (n *Node) SetInstallSnapshotSend(fn func(ctx context.Context, addr string, 
 	n.sendInstallSnapshot = fn
 }
 
+// SetPreVoteSend and SetTimeoutNowSend replace the functions this node
+// uses to send PreVote/TimeoutNow RPCs, for the same deterministic
+// fault-injection reasons as SetVoteSend/SetAppendSend.
+func (n *Node) SetPreVoteSend(fn func(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.sendPreVote = fn
+}
+
+func (n *Node) SetTimeoutNowSend(fn func(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error)) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.sendTimeoutNow = fn
+}
+
 func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.Message, error) {
 	switch m.Type {
 	case transport.MessageRequestVote:
@@ -527,6 +602,26 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 			return transport.Message{}, err
 		}
 		return transport.NewMessage(transport.MessageInstallSnapshotResponse, EncodeInstallSnapshotResponse(resp)), nil
+	case transport.MessagePreVote:
+		req, err := DecodePreVote(m.Payload)
+		if err != nil {
+			return transport.Message{}, err
+		}
+		resp, err := n.HandlePreVote(req)
+		if err != nil {
+			return transport.Message{}, err
+		}
+		return transport.NewMessage(transport.MessagePreVoteResponse, EncodePreVoteResponse(resp)), nil
+	case transport.MessageTimeoutNow:
+		req, err := DecodeTimeoutNow(m.Payload)
+		if err != nil {
+			return transport.Message{}, err
+		}
+		resp, err := n.HandleTimeoutNow(req)
+		if err != nil {
+			return transport.Message{}, err
+		}
+		return transport.NewMessage(transport.MessageTimeoutNowResponse, EncodeTimeoutNowResponse(resp)), nil
 	default:
 		return transport.Message{}, fmt.Errorf("raft: unexpected message type %d", m.Type)
 	}
@@ -609,6 +704,10 @@ func (n *Node) stepToFollowerLocked() {
 		n.leaderCancel()
 		n.leaderCancel = nil
 	}
+	// A leadership-transfer catch-up/handoff waiter on this node needs to
+	// notice losing leadership promptly, not only when its ctx eventually
+	// expires (see leadership_transfer.go).
+	n.pingTransferChanged()
 }
 
 // becomeLeaderLocked transitions to Leader: initializes nextIndex/
@@ -654,6 +753,35 @@ func (n *Node) resetTimer() {
 	}
 }
 
+// pingTransferChanged wakes any leadership-transfer waiter (catch-up or
+// completion — see leadership_transfer.go) blocked on transferChanged, so
+// it can re-check its condition instead of polling. Must be called with
+// n.mu held (it only touches a channel, so this is really about keeping
+// every call site obviously paired with the state change it announces).
+func (n *Node) pingTransferChanged() {
+	select {
+	case n.transferChanged <- struct{}{}:
+	default:
+	}
+}
+
+// hasRecentLeaderContactLocked reports whether this node accepted valid
+// AppendEntries contact from a current/higher-term leader within the last
+// minElectionTimeout — PreVote's leader-contact safeguard (see
+// docs/raft-election.md): a follower that has recently heard from a
+// healthy leader must not grant a PreVote merely because some other node
+// (e.g. one that is isolated, not the leader) timed out. Deliberately
+// reuses minElectionTimeout, the same constant already governing the
+// shortest legitimate election timeout, rather than a second
+// independently-tuned window — "one clear election/timer model." Must be
+// called with n.mu held.
+func (n *Node) hasRecentLeaderContactLocked() bool {
+	if n.lastLeaderContact.IsZero() {
+		return false
+	}
+	return n.nowFunc().Sub(n.lastLeaderContact) < minElectionTimeout
+}
+
 // HandleRequestVote implements the Raft RequestVote RPC handler: reject
 // stale terms, step down (persisting first) on a newer term, then grant
 // the vote if this node hasn't voted for someone else this term and the
@@ -697,16 +825,20 @@ func (n *Node) HandleRequestVote(req RequestVoteRequest) (RequestVoteResponse, e
 	return RequestVoteResponse{Term: n.persistent.CurrentTerm, VoteGranted: grant}, nil
 }
 
-// StartElection transitions this node to Candidate and runs one election
-// attempt: increment currentTerm, vote for self, persist that before
-// sending anything, then request votes from every peer concurrently. If
-// self-vote alone is already a majority (a single-node cluster), it
-// becomes Leader with no network requests at all.
+// StartElection runs one PreVote-gated election attempt: first ask every
+// peer, hypothetically, "would you vote for me in currentTerm+1?"
+// (PreVote — see docs/raft-election.md) without touching any persistent
+// state; only if that round reaches quorum does it proceed to a real
+// election (startRealElection: increment currentTerm, vote for self,
+// persist, RequestVote). PreVote is what keeps a node that has been
+// isolated and timed out repeatedly from bumping the cluster term on
+// every attempt — it can never even get that far without first proving
+// it could win.
 //
 // StartElection does not retry and does not loop waiting for further
-// votes after this attempt's responses come back; a subsequent election
-// (whether from Run's timer or another explicit call) is a new attempt in
-// a higher term.
+// responses after this attempt's round(s) come back; a subsequent
+// election (whether from Run's timer or another explicit call) is a new
+// attempt, normally in a higher term.
 func (n *Node) StartElection(ctx context.Context) error {
 	n.mu.Lock()
 	if n.role == Leader {
@@ -716,6 +848,111 @@ func (n *Node) StartElection(ctx context.Context) error {
 	if !n.membership.IsVoter(n.id) {
 		// A node that is not an effective voter (e.g. removed, or not yet
 		// activated as a new joiner) must not campaign.
+		n.mu.Unlock()
+		return nil
+	}
+
+	prospectiveTerm := n.persistent.CurrentTerm + 1
+	lastIndex, lastTerm := n.lastLogInfo()
+	// A coherent membership snapshot for this one round (item 106): every
+	// quorum decision below — the self-count fast path, and the final
+	// tally — uses this exact value, never a freshly re-read n.membership
+	// that could reflect a config change mid-round.
+	roundMembership := n.membership
+	granted := map[NodeID]bool{n.id: true}
+	if roundMembership.HasQuorum(granted) {
+		// Single-node (or otherwise self-sufficient) cluster: no need to
+		// ask anyone hypothetically — go straight to a real election.
+		n.mu.Unlock()
+		return n.startRealElection(ctx)
+	}
+	peers := n.resolveTargetsLocked()
+	n.mu.Unlock()
+
+	req := PreVoteRequest{
+		ProspectiveTerm: prospectiveTerm,
+		CandidateID:     n.id,
+		LastLogIndex:    lastIndex,
+		LastLogTerm:     lastTerm,
+	}
+
+	// granted accumulates responses from multiple goroutines below, each
+	// write guarded by n.mu (see applyPreVoteResponse) — not Node state,
+	// just a plain map local to this one round, so a concurrent round (a
+	// second StartElection call racing this one) cannot cross-contaminate
+	// or be contaminated by this one; there is nothing here for a stale
+	// response to corrupt (item 97/98).
+	var wg sync.WaitGroup
+	for id, addr := range peers {
+		wg.Add(1)
+		go func(id NodeID, addr string) {
+			defer wg.Done()
+			resp, err := n.sendPreVote(ctx, addr, req)
+			if err != nil {
+				return
+			}
+			n.applyPreVoteResponse(id, resp, granted)
+		}(id, addr)
+	}
+	wg.Wait()
+
+	n.mu.Lock()
+	// Re-verify nothing moved on while this round was in flight: a higher
+	// term learned from a PreVote response's real evidence (see
+	// applyPreVoteResponse), a concurrent election already won, or a
+	// membership change — any of these makes this round's tally stale, so
+	// discard it rather than acting on it (item 106/107).
+	stale := n.role == Leader || n.persistent.CurrentTerm != prospectiveTerm-1 || !n.membership.Equal(roundMembership)
+	won := !stale && roundMembership.HasQuorum(granted)
+	n.mu.Unlock()
+	if !won {
+		return nil // PreVote failed (or went stale): currentTerm/votedFor untouched, timer will retry
+	}
+	return n.startRealElection(ctx)
+}
+
+// applyPreVoteResponse validates a PreVote response before counting it in
+// this round's local granted tally. A higher ACTUAL term in the response
+// is real evidence this node is behind — unlike merely receiving a
+// request for a higher prospective term, this is processed exactly like
+// any other higher-term evidence (persist, clear votedFor, step down);
+// PreVote must not suppress genuine higher-term information (item 21/90).
+// granted is this one round's local map (see StartElection) — n.mu here
+// only serializes concurrent writes to it from multiple response
+// goroutines, the same map is never touched outside this round.
+func (n *Node) applyPreVoteResponse(from NodeID, resp PreVoteResponse, granted map[NodeID]bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if resp.Term > n.persistent.CurrentTerm {
+		_ = n.stepDownLocked(resp.Term) // best-effort; on failure state is unchanged
+		return
+	}
+	if resp.VoteGranted {
+		granted[from] = true
+	}
+}
+
+// startRealElection performs the actual Raft election attempt: increment
+// currentTerm, vote for self, persist that before sending anything, then
+// request votes from every peer concurrently. If self-vote alone is
+// already a majority (a single-node cluster), it becomes Leader with no
+// network requests at all.
+//
+// Shared by two callers with different authorization: StartElection,
+// only after its own PreVote round reaches quorum, and an authorized
+// TimeoutNow-triggered leadership-transfer election (see
+// HandleTimeoutNow), which deliberately bypasses PreVote entirely — the
+// current leader has already authorized the transfer, so there is no
+// disruption risk PreVote needs to guard against here (see
+// docs/leadership-transfer.md).
+func (n *Node) startRealElection(ctx context.Context) error {
+	n.mu.Lock()
+	if n.role == Leader {
+		n.mu.Unlock()
+		return nil
+	}
+	if !n.membership.IsVoter(n.id) {
 		n.mu.Unlock()
 		return nil
 	}
@@ -794,6 +1031,83 @@ func (n *Node) applyVoteResponse(electionTerm Term, from NodeID, resp RequestVot
 	}
 }
 
+// HandlePreVote implements the Raft PreVote RPC handler. Unlike
+// HandleRequestVote, it never mutates persistent state and never resets
+// the election timer — a PreVote request is not evidence a valid leader
+// exists, so receiving one must not be treated as leader contact (see
+// docs/raft-election.md). The returned Term is always this node's actual
+// current term, never a claim about having entered ProspectiveTerm.
+func (n *Node) HandlePreVote(req PreVoteRequest) (PreVoteResponse, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if req.ProspectiveTerm <= n.persistent.CurrentTerm {
+		// Would not advance the election; never grant for a term that
+		// isn't actually ahead of what this node already has.
+		return PreVoteResponse{Term: n.persistent.CurrentTerm, VoteGranted: false}, nil
+	}
+	if n.hasRecentLeaderContactLocked() {
+		// The core PreVote-disruption-prevention rule: a node that has
+		// recently heard from a healthy leader does not grant a
+		// hypothetical vote just because some other node timed out.
+		return PreVoteResponse{Term: n.persistent.CurrentTerm, VoteGranted: false}, nil
+	}
+	if !n.membership.IsVoter(req.CandidateID) || !n.membership.IsVoter(n.id) {
+		// The candidate must be a member of this node's own effective
+		// configuration, and this node itself must be a voter to
+		// contribute a counted PreVote (passive/removed nodes do not).
+		return PreVoteResponse{Term: n.persistent.CurrentTerm, VoteGranted: false}, nil
+	}
+	lastIndex, lastTerm := n.lastLogInfo()
+	if !LogUpToDate(req.LastLogTerm, req.LastLogIndex, lastTerm, lastIndex) {
+		return PreVoteResponse{Term: n.persistent.CurrentTerm, VoteGranted: false}, nil
+	}
+	return PreVoteResponse{Term: n.persistent.CurrentTerm, VoteGranted: true}, nil
+}
+
+// HandleTimeoutNow implements the Raft TimeoutNow RPC handler: an
+// authorized leadership-transfer trigger, never a general-purpose
+// "campaign now" request any peer can issue. It is accepted only from
+// the exact leader/term this node currently recognizes, and only if this
+// node is itself an effective voter; a genuinely higher term in the
+// request is still processed as ordinary higher-term evidence first
+// (persist, clear votedFor, step down — the same as every other RPC
+// handler), but that alone never authorizes a campaign: stepping down
+// clears leaderID, so the identity check below will then correctly fail
+// for a request that turns out not to be from a leader this node
+// actually recognized at that term (item 113) — no separate special case
+// is needed to prevent an arbitrary higher-term peer from forcing a
+// campaign this way.
+//
+// Once accepted, the real election (bypassing PreVote — see
+// startRealElection) is kicked off in the background so this RPC itself
+// returns promptly; Accepted=true means only that an election attempt
+// was started, not that it will succeed (see leadership_transfer.go for
+// how the transfer's actual success is observed).
+func (n *Node) HandleTimeoutNow(req TimeoutNowRequest) (TimeoutNowResponse, error) {
+	n.mu.Lock()
+	if req.Term > n.persistent.CurrentTerm {
+		if err := n.stepDownLocked(req.Term); err != nil {
+			n.mu.Unlock()
+			return TimeoutNowResponse{}, err
+		}
+	}
+	if req.Term != n.persistent.CurrentTerm || n.leaderID == nil || *n.leaderID != req.LeaderID || !n.membership.IsVoter(n.id) {
+		term := n.persistent.CurrentTerm
+		n.mu.Unlock()
+		return TimeoutNowResponse{Term: term, Accepted: false}, nil
+	}
+	term := n.persistent.CurrentTerm
+	n.mu.Unlock()
+
+	n.bgWG.Add(1)
+	go func() {
+		defer n.bgWG.Done()
+		_ = n.startRealElection(n.bgCtx)
+	}()
+	return TimeoutNowResponse{Term: term, Accepted: true}, nil
+}
+
 // HandleAppendEntries implements the Raft AppendEntries RPC handler,
 // including heartbeats (Entries == nil/empty). Order of operations:
 // reject stale terms; step down (persisting first) on a newer term, or
@@ -825,10 +1139,16 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 	// election timer even if the log consistency check below fails,
 	// since the sender is still that leader and a rejection here isn't a
 	// reason for this follower to start its own election. Track who it
-	// is, too.
+	// is, too, and record it as the leader-contact evidence PreVote's
+	// safeguard relies on (see hasRecentLeaderContactLocked) — a
+	// leadership-transfer waiter may also be watching for this exact
+	// contact as evidence its target became leader (see
+	// leadership_transfer.go).
 	n.resetTimer()
 	leader := req.LeaderID
 	n.leaderID = &leader
+	n.lastLeaderContact = n.nowFunc()
+	n.pingTransferChanged()
 
 	localPrevTerm, ok := n.log.Term(req.PrevLogIndex)
 	if !ok || localPrevTerm != req.PrevLogTerm {
@@ -1003,6 +1323,9 @@ func (n *Node) applyAppendEntriesResponse(sentTerm Term, from NodeID, req Append
 		if newMatch > n.matchIndex[from] {
 			n.matchIndex[from] = newMatch
 			n.nextIndex[from] = newMatch + 1
+			// A leadership-transfer catch-up waiter may be watching this
+			// peer's matchIndex specifically (see leadership_transfer.go).
+			n.pingTransferChanged()
 		}
 		n.maybeAdvanceCommitIndexLocked()
 		return
@@ -1123,6 +1446,16 @@ func (n *Node) proposeLocked(command []byte) (LogIndex, Term, error) {
 		n.mu.Unlock()
 		return 0, 0, ErrNotLeader
 	}
+	if n.transfer != nil && n.transfer.phase == transferHandoff {
+		// Handoff freeze (see leadership_transfer.go): once the target is
+		// caught up and TimeoutNow is about to be (or has been) sent, no
+		// new entry may be appended — a further write here could make the
+		// target stale again right as it's declared ready. This also
+		// correctly blocks ensureCurrentTermCommitted's internal no-op
+		// barrier (see read_index.go), which calls this same path.
+		n.mu.Unlock()
+		return 0, 0, ErrLeadershipTransferInProgress
+	}
 	term := n.persistent.CurrentTerm
 	entry := LogEntry{Term: term, Command: cloneBytes(command)}
 	if err := n.log.Append([]LogEntry{entry}); err != nil {
@@ -1131,6 +1464,7 @@ func (n *Node) proposeLocked(command []byte) (LogIndex, Term, error) {
 	}
 	index := n.log.LastIndex()
 	n.maybeAdvanceCommitIndexLocked() // handles the single-node-cluster case
+	n.pingTransferChanged()           // LastIndex moved: a transfer catch-up waiter may need to keep replicating
 	n.mu.Unlock()
 
 	n.bgWG.Add(1)

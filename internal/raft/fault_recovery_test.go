@@ -85,8 +85,23 @@ func proposeAndWait(t *testing.T, n *Node, cmd string) LogIndex {
 	return index
 }
 
-func electAndWaitLeader(t *testing.T, n *Node) {
+// electAndWaitLeader triggers an election on c.node(id) and asserts it
+// wins. Before doing so, it clears every still-running cluster member's
+// lastLeaderContact: PreVote's leader-contact safeguard (see
+// docs/raft-election.md) means a voter that has recently accepted
+// AppendEntries from a leader rejects a hypothetical PreVote — correct
+// production behavior (an election legitimately waits out that window in
+// real time), but these deterministic tests deliberately never sleep for
+// it, so this simulates "enough real time has passed" the same
+// wall-clock-free way the rest of this test file avoids sleeps elsewhere.
+func electAndWaitLeader(t *testing.T, c *faultCluster, id NodeID) {
 	t.Helper()
+	for _, peer := range c.nodes {
+		peer.mu.Lock()
+		peer.lastLeaderContact = time.Time{}
+		peer.mu.Unlock()
+	}
+	n := c.node(id)
 	if err := n.StartElection(context.Background()); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
@@ -104,7 +119,7 @@ func TestCommittedWriteSurvivesLeaderCrash(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
 	c.nodes[1].applyFunc, c.nodes[2].applyFunc, c.nodes[3].applyFunc = kvA.apply, kvB.apply, kvC.apply
 
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	index := proposeAndWait(t, c.node(1), "PUT x 1")
 	committedEntry, _ := c.node(1).LogEntry(index)
 
@@ -125,7 +140,7 @@ func TestCommittedWriteSurvivesLeaderCrash(t *testing.T) {
 	c.stop(1)
 
 	// B is elected among the survivors.
-	electAndWaitLeader(t, c.node(2))
+	electAndWaitLeader(t, c, 2)
 
 	entry, ok := c.node(2).LogEntry(index)
 	if !ok {
@@ -148,7 +163,7 @@ func TestCommittedWriteSurvivesLeaderCrash(t *testing.T) {
 // availability" claim.
 func TestOneFollowerDownStillPermitsQuorumWrites(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	c.stop(3)
 
 	i1 := proposeAndWait(t, c.node(1), "PUT x 1")
@@ -172,7 +187,7 @@ func TestOneFollowerDownStillPermitsQuorumWrites(t *testing.T) {
 // higher term.
 func TestIsolatedLeaderCannotCommitButMajorityElectsNewLeader(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 
 	c.net.partition(1, 2)
 	c.net.partition(1, 3)
@@ -195,7 +210,7 @@ func TestIsolatedLeaderCannotCommitButMajorityElectsNewLeader(t *testing.T) {
 	// B and C, still connected to each other, can elect a leader in a
 	// higher term despite A believing it is still Leader.
 	oldTerm := c.node(1).CurrentTerm()
-	electAndWaitLeader(t, c.node(2))
+	electAndWaitLeader(t, c, 2)
 	if c.node(2).CurrentTerm() <= oldTerm {
 		t.Fatalf("new leader term = %d, want > %d", c.node(2).CurrentTerm(), oldTerm)
 	}
@@ -209,7 +224,7 @@ func TestIsolatedLeaderCannotCommitButMajorityElectsNewLeader(t *testing.T) {
 // been, and must never become, applied anywhere.
 func TestOldLeaderStepsDownAndDivergentEntryIsRepaired(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	baseline := proposeAndWait(t, c.node(1), "PUT base 1")
 	eventually(t, time.Second, func() bool { return c.node(2).LastApplied() >= baseline && c.node(3).LastApplied() >= baseline },
 		func() string { return statusString(c.nodes) })
@@ -223,7 +238,7 @@ func TestOldLeaderStepsDownAndDivergentEntryIsRepaired(t *testing.T) {
 	}
 	time.Sleep(50 * time.Millisecond) // let the doomed replication attempt fail
 
-	electAndWaitLeader(t, c.node(2))
+	electAndWaitLeader(t, c, 2)
 	newIndex := proposeAndWait(t, c.node(2), "PUT real 2")
 	eventually(t, time.Second, func() bool { return c.node(3).LastApplied() >= newIndex },
 		func() string { return statusString(c.nodes) })
@@ -267,7 +282,7 @@ func TestOldLeaderStepsDownAndDivergentEntryIsRepaired(t *testing.T) {
 // once the partition heals, without a restart.
 func TestStaleFollowerCatchesUpAfterPartitionHeal(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	c.net.partition(1, 3)
 	c.net.partition(2, 3)
 
@@ -297,7 +312,7 @@ func TestStaleFollowerCatchesUpAfterPartitionHeal(t *testing.T) {
 // converges.
 func TestStaleFollowerCatchesUpAfterRestart(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	c.stop(3)
 
 	proposeAndWait(t, c.node(1), "PUT a 1")
@@ -404,7 +419,7 @@ func TestDivergentUncommittedSuffixIsRepairedPreservingPrefix(t *testing.T) {
 // against a majority holding newer entries.
 func TestStaleCandidateCannotWinAgainstMajorityWithNewerLog(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	c.net.partition(1, 3)
 	c.net.partition(2, 3)
 
@@ -429,7 +444,7 @@ func TestStaleCandidateCannotWinAgainstMajorityWithNewerLog(t *testing.T) {
 	}
 
 	// B, with the up-to-date log, wins.
-	electAndWaitLeader(t, c.node(2))
+	electAndWaitLeader(t, c, 2)
 }
 
 // TestRestartRestoresCommittedNodeState is Scenario 8: after committing
@@ -439,7 +454,7 @@ func TestStaleCandidateCannotWinAgainstMajorityWithNewerLog(t *testing.T) {
 func TestRestartRestoresCommittedNodeState(t *testing.T) {
 	kv := newFakeKV()
 	c := newFaultCluster(t, 1, kv.apply)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	proposeAndWait(t, c.node(1), "PUT x 1")
 	proposeAndWait(t, c.node(1), "PUT y 2")
 	last := proposeAndWait(t, c.node(1), "DELETE x")
@@ -523,7 +538,7 @@ func TestRestartWithUncommittedSuffixAppliesOnlyCommittedPrefix(t *testing.T) {
 // request from an older term is still rejected.
 func TestTermPersistsAcrossCrashAndRejectsStaleTerm(t *testing.T) {
 	c := newFaultCluster(t, 1, nil)
-	electAndWaitLeader(t, c.node(1)) // term 1
+	electAndWaitLeader(t, c, 1) // term 1
 	higherTerm := c.node(1).CurrentTerm() + 4
 	if _, err := c.node(1).HandleAppendEntries(AppendEntriesRequest{Term: higherTerm, LeaderID: 2}); err != nil {
 		t.Fatalf("HandleAppendEntries: %v", err)
@@ -585,7 +600,7 @@ func TestVotedForPersistsAcrossCrash(t *testing.T) {
 func TestCommitMetaSurvivesCrash(t *testing.T) {
 	kv := newFakeKV()
 	c := newFaultCluster(t, 1, kv.apply)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	index := proposeAndWait(t, c.node(1), "PUT x 1")
 	wantCommit := c.node(1).CommitIndex()
 	if wantCommit < index {
@@ -616,7 +631,7 @@ func TestCommitMetaSurvivesCrash(t *testing.T) {
 // cluster's quorum denominator.
 func TestQuorumDenominatorDoesNotShrinkWithDeadNodes(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	c.stop(2)
 	c.stop(3)
 
@@ -639,14 +654,14 @@ func TestRepeatedFailoverCyclesRemainStable(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
 	c.nodes[1].applyFunc, c.nodes[2].applyFunc, c.nodes[3].applyFunc = kv1.apply, kv2.apply, kv3.apply
 
-	electAndWaitLeader(t, c.node(1))
+	electAndWaitLeader(t, c, 1)
 	var last LogIndex
 	for i := 0; i < 3; i++ {
 		last = proposeAndWait(t, c.node(1), "PUT a1 x")
 	}
 	c.stop(1)
 
-	electAndWaitLeader(t, c.node(2))
+	electAndWaitLeader(t, c, 2)
 	for i := 0; i < 3; i++ {
 		last = proposeAndWait(t, c.node(2), "PUT a2 y")
 	}
@@ -656,7 +671,7 @@ func TestRepeatedFailoverCyclesRemainStable(t *testing.T) {
 		func() string { return statusString(c.nodes) })
 
 	c.stop(2)
-	electAndWaitLeader(t, c.node(3))
+	electAndWaitLeader(t, c, 3)
 	for i := 0; i < 3; i++ {
 		last = proposeAndWait(t, c.node(3), "PUT a3 z")
 	}

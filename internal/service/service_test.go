@@ -104,6 +104,15 @@ func electLeader(t *testing.T, nodes []*testNode, leaderIdx int) {
 func electLeaderAmong(t *testing.T, voters []*testNode, nodes []*testNode, leaderIdx int) {
 	t.Helper()
 	leader := nodes[leaderIdx]
+	// PreVote's leader-contact safeguard (see docs/raft-election.md)
+	// means a voter that has recently accepted AppendEntries from a
+	// leader rejects a hypothetical PreVote for a real amount of wall
+	// time (up to ~150ms) — correct production behavior, but this test
+	// helper is also used for a failover election immediately after
+	// stopping the old leader, well within that window. raft.Node has no
+	// exported hook to fast-forward this from outside its own package, so
+	// this waits it out for real rather than racing it.
+	time.Sleep(200 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := leader.svc.node.StartElection(ctx); err != nil {

@@ -22,6 +22,8 @@ func setupThreeSnapshottingNodes(t *testing.T) (a, b, c *snapshottingNode, net *
 		n.send = net.send
 		n.sendAppend = net.sendAppend
 		n.sendInstallSnapshot = net.sendInstallSnapshot
+		n.sendPreVote = net.sendPreVote
+		n.sendTimeoutNow = net.sendTimeoutNow
 	}
 	net.register("A", a.Node)
 	net.register("B", b.Node)

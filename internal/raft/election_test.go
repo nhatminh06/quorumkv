@@ -85,6 +85,38 @@ func (f *fakeNetwork) sendInstallSnapshot(_ context.Context, addr string, req In
 	return peer.HandleInstallSnapshot(req)
 }
 
+// sendPreVote dispatches PreVote the same way send dispatches
+// RequestVote.
+func (f *fakeNetwork) sendPreVote(_ context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
+	f.mu.Lock()
+	peer, ok := f.nodes[addr]
+	blocked := f.blocked[addr]
+	f.mu.Unlock()
+	if !ok {
+		return PreVoteResponse{}, errors.New("fakeNetwork: unknown address " + addr)
+	}
+	if blocked {
+		return PreVoteResponse{}, errors.New("fakeNetwork: " + addr + " unreachable")
+	}
+	return peer.HandlePreVote(req)
+}
+
+// sendTimeoutNow dispatches TimeoutNow the same way send dispatches
+// RequestVote.
+func (f *fakeNetwork) sendTimeoutNow(_ context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error) {
+	f.mu.Lock()
+	peer, ok := f.nodes[addr]
+	blocked := f.blocked[addr]
+	f.mu.Unlock()
+	if !ok {
+		return TimeoutNowResponse{}, errors.New("fakeNetwork: unknown address " + addr)
+	}
+	if blocked {
+		return TimeoutNowResponse{}, errors.New("fakeNetwork: " + addr + " unreachable")
+	}
+	return peer.HandleTimeoutNow(req)
+}
+
 func newFakeNode(t *testing.T, id NodeID, peers map[NodeID]string) *Node {
 	t.Helper()
 	dir := t.TempDir()
@@ -112,6 +144,7 @@ func TestThreeNodePureElection(t *testing.T) {
 	b := newFakeNode(t, 2, map[NodeID]string{1: "A", 3: "C"})
 	c := newFakeNode(t, 3, map[NodeID]string{1: "A", 2: "B"})
 	a.send, b.send, c.send = net.send, net.send, net.send
+	a.sendPreVote, b.sendPreVote, c.sendPreVote = net.sendPreVote, net.sendPreVote, net.sendPreVote
 	net.register("A", a)
 	net.register("B", b)
 	net.register("C", c)
@@ -134,25 +167,29 @@ func TestThreeNodePureElection(t *testing.T) {
 	}
 }
 
-// TestSplitVoteThenRecovery models the classic Raft split-vote scenario
-// with three nodes: A and B both become candidates in term 1 while the
-// network is fully partitioned, so each persists a self-vote but neither
-// learns about the other or reaches C — no one gets the 2-of-3 majority.
-// A then retries in term 2 once the partition heals, reaching both B and
-// C, and wins outright.
+// TestIsolatedCandidatesCannotBumpTermThenRecover models what a classic
+// Raft "split vote" scenario becomes once PreVote exists (Milestone 11):
+// with the network fully partitioned, A and B each attempt an election,
+// but PreVote — never even reaching a majority hypothetically — fails
+// for both before either ever touches its persistent term/vote state.
+// This is exactly PreVote's point: an isolated node's repeated election
+// attempts do not bump the cluster term at all, so there is no split
+// vote to recover from — a materially better outcome than pre-PreVote
+// Raft, not merely a different one. Once the partition heals, A's retry
+// reaches a real PreVote quorum and goes on to win a real election in
+// term 1 (not term 2 — no earlier attempt ever advanced it).
 //
 // (Round 1 must isolate every node from every other, not just the third
-// voter: StartElection sends its RequestVote RPCs immediately after
-// persisting its own self-vote with no automatic retry, so if A and B
-// could reach each other, whichever of the two happened to run first
-// would simply win the other's vote before the second one ever became a
-// candidate — that is a normal election, not a split vote.)
-func TestSplitVoteThenRecovery(t *testing.T) {
+// voter, so A and B's PreVote rounds can't reach each other either —
+// otherwise whichever ran first would simply win the other's PreVote
+// grant before the second ever tried.)
+func TestIsolatedCandidatesCannotBumpTermThenRecover(t *testing.T) {
 	net := newFakeNetwork()
 	a := newFakeNode(t, 1, map[NodeID]string{2: "B", 3: "C"})
 	b := newFakeNode(t, 2, map[NodeID]string{1: "A", 3: "C"})
 	c := newFakeNode(t, 3, map[NodeID]string{1: "A", 2: "B"})
 	a.send, b.send, c.send = net.send, net.send, net.send
+	a.sendPreVote, b.sendPreVote, c.sendPreVote = net.sendPreVote, net.sendPreVote, net.sendPreVote
 	net.register("A", a)
 	net.register("B", b)
 	net.register("C", c)
@@ -170,16 +207,17 @@ func TestSplitVoteThenRecovery(t *testing.T) {
 	}
 
 	if a.Role() == Leader || b.Role() == Leader {
-		t.Fatalf("split vote should elect no leader: A=%v B=%v", a.Role(), b.Role())
+		t.Fatalf("neither should win while fully isolated: A=%v B=%v", a.Role(), b.Role())
 	}
-	if a.Role() != Candidate || b.Role() != Candidate {
-		t.Fatalf("both A and B should remain Candidate after a split vote: A=%v B=%v", a.Role(), b.Role())
+	if a.Role() == Candidate || b.Role() == Candidate {
+		t.Fatalf("PreVote must fail before either ever becomes Candidate: A=%v B=%v", a.Role(), b.Role())
 	}
-	if a.CurrentTerm() != 1 || b.CurrentTerm() != 1 {
-		t.Fatalf("A/B term = %d/%d, want both 1", a.CurrentTerm(), b.CurrentTerm())
+	if a.CurrentTerm() != 0 || b.CurrentTerm() != 0 {
+		t.Fatalf("A/B term = %d/%d, want both unchanged at 0 — a failed PreVote must never bump the term", a.CurrentTerm(), b.CurrentTerm())
 	}
 
-	// Round 2: the partition heals; A retries in a higher term and wins.
+	// Round 2: the partition heals; A retries and wins in term 1 — the
+	// first term either of them ever actually reached.
 	net.setBlocked("A", false)
 	net.setBlocked("B", false)
 	net.setBlocked("C", false)
@@ -190,8 +228,8 @@ func TestSplitVoteThenRecovery(t *testing.T) {
 	if a.Role() != Leader {
 		t.Fatalf("A.Role() = %v, want Leader after recovery election", a.Role())
 	}
-	if a.CurrentTerm() != 2 {
-		t.Fatalf("A.CurrentTerm() = %d, want 2", a.CurrentTerm())
+	if a.CurrentTerm() != 1 {
+		t.Fatalf("A.CurrentTerm() = %d, want 1", a.CurrentTerm())
 	}
 }
 
