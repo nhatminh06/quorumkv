@@ -203,3 +203,72 @@ func TestCreateSnapshotRealCrashCrossFileConsistency(t *testing.T) {
 		})
 	}
 }
+
+// TestInstallSnapshotRealCrashCrossFileConsistency proves a real process
+// crash during installSnapshot's three-step sequence (snapshot publish,
+// then log boundary rewrite, then commit metadata) always leaves a state
+// a fresh Node can open and that is at least as advanced as whichever of
+// those steps durably completed — never "snapshot published but log
+// left behind it," which no reader could recover from.
+func TestInstallSnapshotRealCrashCrossFileConsistency(t *testing.T) {
+	stages := []struct {
+		domain string
+		stage  string
+	}{
+		{"snapshot", "before-temp-write"},
+		{"snapshot", "after-rename"},
+		{"snapshot", "after-dir-fsync"},
+		{"log", "before-temp-write"},
+		{"log", "after-rename"},
+		{"log", "after-dir-fsync"},
+		{"commit", "before-temp-write"},
+		{"commit", "after-rename"},
+		{"commit", "after-dir-fsync"},
+	}
+	for _, s := range stages {
+		t.Run(s.domain+"."+s.stage, func(t *testing.T) {
+			dir := t.TempDir()
+			runCrashSubprocess(t, dir, "install-snapshot", s.domain+"."+s.stage)
+
+			sm := newFakeStateMachine()
+			n, err := func() (*Node, error) {
+				store := NewStore(filepath.Join(dir, "state"))
+				l, err := OpenLog(filepath.Join(dir, "log"))
+				if err != nil {
+					return nil, err
+				}
+				commitStore := NewCommitStore(filepath.Join(dir, "commit"))
+				snapStore := NewSnapshotStore(filepath.Join(dir, "snapshot"))
+				return NewNode(2, store, l, commitStore, snapStore, nil, sm.apply, sm.snapshot, sm.restore)
+			}()
+			if err != nil {
+				t.Fatalf("fresh Node failed to open after crash at %s.%s: %v", s.domain, s.stage, err)
+			}
+			defer n.Close()
+
+			snap, err := NewSnapshotStore(filepath.Join(dir, "snapshot")).Load()
+			if err != nil {
+				t.Fatalf("Load snapshot after crash: %v", err)
+			}
+			if snap == nil {
+				return // snapshot never published: nothing else to check
+			}
+			l, err := OpenLog(filepath.Join(dir, "log"))
+			if err != nil {
+				t.Fatalf("OpenLog after crash: %v", err)
+			}
+			if l.LastIndex() < snap.LastIncludedIndex {
+				t.Fatalf("after crash at %s.%s: snapshot published to index %d but log only reaches %d",
+					s.domain, s.stage, snap.LastIncludedIndex, l.LastIndex())
+			}
+			commitIndex, err := NewCommitStore(filepath.Join(dir, "commit")).Load()
+			if err != nil {
+				t.Fatalf("Load commit meta after crash: %v", err)
+			}
+			if commitIndex < snap.LastIncludedIndex {
+				t.Fatalf("after crash at %s.%s: commitIndex %d < snapshot boundary %d",
+					s.domain, s.stage, commitIndex, snap.LastIncludedIndex)
+			}
+		})
+	}
+}

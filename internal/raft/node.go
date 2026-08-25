@@ -295,11 +295,17 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		return nil, err
 	}
 	if snap != nil {
-		if snap.LastIncludedIndex > log.LastIndex() {
-			return nil, fmt.Errorf("raft: snapshot index %d exceeds log length %d", snap.LastIncludedIndex, log.LastIndex())
-		}
+		// The log may not yet extend to the snapshot's boundary: a crash
+		// can interrupt installSnapshot/CreateSnapshot after the snapshot
+		// itself was durably published but before the log's own boundary
+		// rewrite completed. InstallSnapshotBoundary (not Compact, which
+		// requires the log to already reach newBaseIndex) is the general
+		// reconciliation for this — it keeps a verified-matching local
+		// suffix when the log already reaches the boundary, and discards
+		// the entire suffix otherwise, exactly like a live InstallSnapshot
+		// RPC would.
 		if snap.LastIncludedIndex > log.BaseIndex() {
-			if err := log.Compact(snap.LastIncludedIndex, snap.LastIncludedTerm); err != nil {
+			if err := log.InstallSnapshotBoundary(snap.LastIncludedIndex, snap.LastIncludedTerm); err != nil {
 				return nil, err
 			}
 		}

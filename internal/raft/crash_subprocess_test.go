@@ -124,6 +124,32 @@ func TestCrashHelperSubprocess(t *testing.T) {
 		if err := n.CreateSnapshot(); err != nil {
 			fmt.Fprintln(os.Stderr, "CreateSnapshot:", err)
 		}
+	case "install-snapshot":
+		sm := newFakeStateMachine()
+		n := openSnapshottingNode(t, dir, 2, nil, sm)
+		payloadSM := newFakeStateMachine()
+		if err := payloadSM.apply(1, []byte("installed")); err != nil {
+			fmt.Fprintln(os.Stderr, "apply:", err)
+			os.Exit(1)
+		}
+		payload, err := payloadSM.snapshot()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "snapshot:", err)
+			os.Exit(1)
+		}
+		req := InstallSnapshotRequest{
+			Term:              1,
+			LeaderID:          1,
+			LastIncludedIndex: 5,
+			LastIncludedTerm:  1,
+			Offset:            0,
+			Data:              payload,
+			Done:              true,
+			Configuration:     sampleSnapshotConfiguration(t),
+		}
+		if _, err := n.HandleInstallSnapshot(req); err != nil {
+			fmt.Fprintln(os.Stderr, "HandleInstallSnapshot:", err)
+		}
 	default:
 		fmt.Fprintln(os.Stderr, "unknown op:", op)
 		os.Exit(1)
