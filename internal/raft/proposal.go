@@ -291,23 +291,19 @@ func (n *Node) persistProposalBatch(batch []*pendingProposal) {
 	startIndex := last - LogIndex(len(entries)) + 1
 	n.maybeAdvanceCommitIndexLocked() // handles the single-node-cluster case
 	n.pingTransferChanged()           // LastIndex moved: a transfer catch-up waiter may need to keep replicating
+	// Wake every replication worker before unlocking (see
+	// replication_worker.go) — a coalescing channel ping, not network
+	// I/O, so doing it under the lock is cheap and gives an even
+	// stronger ordering guarantee than the old code's "spawn a
+	// replication goroutine before returning": by the time Propose
+	// returns to its caller, every worker has already observed the wake
+	// (some tests key timing-sensitive setup, e.g. blocking a peer
+	// address, off replication having been scheduled by then).
+	n.wakeAllReplicationLocked()
 	n.mu.Unlock()
 
 	n.stats.proposalBatches.Add(1)
 	n.stats.proposalBatchEntries.Add(int64(len(batch)))
-
-	// Spawn replication before delivering results: the old direct-append
-	// Propose did the equivalent `go replicateToAllPeers(...)` before
-	// ever returning to its caller, so a caller observing Propose return
-	// could already rely on that goroutine having been scheduled. Some
-	// tests key timing-sensitive setup (e.g. blocking a peer address)
-	// off exactly that ordering; delivering results first would let a
-	// caller race ahead of replication being scheduled at all.
-	n.bgWG.Add(1)
-	go func() {
-		defer n.bgWG.Done()
-		n.replicateToAllPeers(n.bgCtx)
-	}()
 
 	for i, p := range batch {
 		n.releaseQueueCapacity(len(p.command))

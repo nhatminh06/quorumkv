@@ -118,8 +118,9 @@ func sendTimeoutNowOverTransport(ctx context.Context, addr string, req TimeoutNo
 //
 // A single mutex protects all of Node's state. Network I/O (RequestVote
 // and AppendEntries RPCs sent to peers) never happens while that mutex is
-// held: StartElection and replicateToAllPeers each snapshot what they
-// need, unlock, perform I/O, and re-lock only to apply each response.
+// held: StartElection and each peer's replicationStep (see
+// replication_worker.go) each snapshot what they need, unlock, perform
+// I/O, and re-lock only to apply each response.
 type Node struct {
 	id                  NodeID
 	store               *Store
@@ -158,7 +159,21 @@ type Node struct {
 	bgCancel context.CancelFunc
 	bgWG     sync.WaitGroup
 
-	mu         sync.Mutex
+	mu sync.Mutex
+	// bgClosing is set by Close, under mu, before it cancels bgCtx and
+	// calls bgWG.Wait(). Every site that spawns a bgWG-tracked background
+	// goroutine must call spawnBackgroundLocked (or spawnBackground, its
+	// unlocked-caller wrapper) rather than calling bgWG.Add directly:
+	// sync.WaitGroup's own contract forbids a positive Add running
+	// concurrently with a Wait that could observe a zero counter in
+	// between, and Close's Wait has no other way to know a spawn is
+	// "in-flight, about to Add" versus "already accounted for." Gating
+	// every Add through this flag, under the same mu Close sets it
+	// under, guarantees one of two orderings: the spawn's Add
+	// happens-before bgClosing is set (a normal, safe Add-before-Wait),
+	// or the spawn observes bgClosing already true and never calls Add
+	// at all — never a race between them.
+	bgClosing  bool
 	persistent PersistentState
 	role       Role
 	votes      map[NodeID]bool // valid only while role == Candidate
@@ -176,8 +191,24 @@ type Node struct {
 	// snapshotSending guards against starting a second concurrent
 	// InstallSnapshot transfer to a peer while one is already in flight.
 	snapshotSending map[NodeID]bool
-	// leaderCancel stops this leadership term's heartbeat loop; nil
+	// replicationGeneration is a volatile per-peer epoch (see
+	// replication_worker.go): incremented whenever this peer's
+	// replication assumptions are invalidated (conflict backtrack,
+	// snapshot takeover, worker (re)creation). A response is only ever
+	// allowed to mutate nextIndex/matchIndex if it was sent under the
+	// CURRENT generation — a response from an earlier generation is
+	// stale by definition and is ignored, regardless of Success.
+	replicationGeneration map[NodeID]uint64
+	// workers holds one replicationWorker per current replication
+	// target, present only while role == Leader. Never persisted —
+	// purely runtime scheduling state, reconciled against
+	// n.membership.Targets on every rebuildMembershipLocked call (see
+	// reconcileReplicationWorkersLocked).
+	workers map[NodeID]*replicationWorker
+	// leaderCancel stops this leadership term's heartbeat loop and every
+	// current replication worker (they are children of leaderCtx); nil
 	// unless role == Leader.
+	leaderCtx    context.Context
 	leaderCancel context.CancelFunc
 
 	// commitIndex is durably recorded via commitStore whenever it
@@ -236,9 +267,24 @@ type Node struct {
 	// committed final Stable entry following the current Joint
 	// membership, or 0 if none — see rebuildMembershipLocked and
 	// maybeCompleteMembershipTransitionLocked (config_change.go).
-	// membershipChanged is pinged (non-blocking, buffered 1) every time a
-	// rebuild produces a possibly-different membership, so AddVoter/
-	// RemoveVoter can block on it instead of polling.
+	// membershipChanged is closed and replaced with a fresh channel (see
+	// notifyMembershipChangedLocked) every time a rebuild produces a
+	// possibly-different membership, broadcasting to every current
+	// waiter at once — AddVoter/RemoveVoter block on it instead of
+	// polling. This must be a close-and-replace broadcast, not a
+	// non-blocking buffered-1 "ping" (that was M14's original design
+	// here, and it lost wakeups: two membership changes can legitimately
+	// run concurrently — see waitForStableConfiguration's doc comment —
+	// so more than one goroutine can be waiting on this signal at once,
+	// and a buffered-1 channel only ever wakes ONE of them per send,
+	// silently dropping the rest whenever multiple state changes happen
+	// in quick succession before every waiter has had a chance to drain
+	// it). A waiter must capture the current channel value under n.mu in
+	// the same critical section where it checks its condition — never
+	// read n.membershipChanged again after unlocking — so a close()
+	// landing in the gap between "condition checked false" and "start
+	// waiting" is impossible to miss (closing a channel a waiter has
+	// already grabbed a reference to still unblocks it immediately).
 	membershipEntryIndex LogIndex
 	pendingStableIndex   LogIndex
 	membershipChanged    chan struct{}
@@ -369,7 +415,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		heartbeatInterval:   defaultHeartbeatInterval,
 		resetCh:             make(chan struct{}, 1),
 		nowFunc:             time.Now,
-		membershipChanged:   make(chan struct{}, 1),
+		membershipChanged:   make(chan struct{}), // never sent to — only closed-and-replaced; see notifyMembershipChangedLocked
 		transferChanged:     make(chan struct{}, 1),
 		bgCtx:               bgCtx,
 		bgCancel:            bgCancel,
@@ -410,8 +456,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 	n.kickApplyLocked()
 	n.mu.Unlock()
 
-	n.bgWG.Add(1)
-	go n.proposalWorker(n.bgCtx)
+	n.spawnBackground(func() { n.proposalWorker(n.bgCtx) })
 
 	return n, nil
 }
@@ -455,8 +500,45 @@ func (n *Node) Close() {
 	n.closed = true
 	n.queueMu.Unlock()
 
+	// Mark bgClosing before canceling too — see the Node struct's doc
+	// comment on bgClosing and spawnBackgroundLocked/spawnBackground.
+	n.mu.Lock()
+	n.bgClosing = true
+	n.mu.Unlock()
+
 	n.bgCancel()
 	n.bgWG.Wait()
+}
+
+// spawnBackgroundLocked registers one more bgWG-tracked background
+// goroutine unless this node is already closing, in which case it
+// refuses (returns false) — see the Node struct's bgClosing doc comment
+// for why this is the only safe way to call bgWG.Add. Must be called
+// with n.mu held; the caller launches the goroutine itself (with
+// `defer n.bgWG.Done()`) only if this returns true.
+func (n *Node) spawnBackgroundLocked() bool {
+	if n.bgClosing {
+		return false
+	}
+	n.bgWG.Add(1)
+	return true
+}
+
+// spawnBackground is spawnBackgroundLocked's wrapper for a caller that
+// does not already hold n.mu: it acquires n.mu only for the
+// check-and-Add, then launches f in its own goroutine (unlocked) if
+// permitted. f itself is responsible for `defer n.bgWG.Done()` — this
+// intentionally mirrors spawnBackgroundLocked's convention rather than
+// adding a second, hidden Done() call, since several callers pass an
+// existing method (e.g. n.proposalWorker) that already manages its own.
+func (n *Node) spawnBackground(f func()) {
+	n.mu.Lock()
+	ok := n.spawnBackgroundLocked()
+	n.mu.Unlock()
+	if !ok {
+		return
+	}
+	go f()
 }
 
 // Handler returns the transport.Handler that dispatches inbound Raft RPC
@@ -551,10 +633,19 @@ func (n *Node) rebuildMembershipLocked() {
 	n.membership = effective
 	n.membershipEntryIndex = entryIndex
 	n.pendingStableIndex = pendingStableIndex
-	select {
-	case n.membershipChanged <- struct{}{}:
-	default:
-	}
+	n.notifyMembershipChangedLocked()
+	n.reconcileReplicationWorkersLocked()
+}
+
+// notifyMembershipChangedLocked broadcasts to every current
+// waitForStableConfiguration caller that membership-related state may
+// have changed, by closing the current membershipChanged channel and
+// replacing it with a fresh one — see the Node struct's doc comment on
+// membershipChanged for why this must be a broadcast, not a "ping one
+// waiter" send. Must be called with n.mu held.
+func (n *Node) notifyMembershipChangedLocked() {
+	close(n.membershipChanged)
+	n.membershipChanged = make(chan struct{})
 }
 
 // resolveTargetsLocked returns the address every other effective voter
@@ -779,9 +870,15 @@ func (n *Node) stepToFollowerLocked() {
 	n.role = Follower
 	n.votes = nil
 	if n.leaderCancel != nil {
-		n.leaderCancel()
+		n.leaderCancel() // also cancels every current replicationWorker — they are children of leaderCtx
 		n.leaderCancel = nil
+		n.leaderCtx = nil
 	}
+	// Workers' own goroutines exit on their own once they observe
+	// cancellation; drop the bookkeeping map now rather than leaving
+	// entries pointing at workers that are in the process of shutting
+	// down, so a subsequent becomeLeaderLocked starts completely clean.
+	n.workers = nil
 	// A leadership-transfer catch-up/handoff waiter on this node needs to
 	// notice losing leadership promptly, not only when its ctx eventually
 	// expires (see leadership_transfer.go).
@@ -789,27 +886,29 @@ func (n *Node) stepToFollowerLocked() {
 }
 
 // becomeLeaderLocked transitions to Leader: initializes nextIndex/
-// matchIndex for every peer and starts this leadership term's heartbeat
-// loop, bound to n.bgCtx (not to whatever short-lived ctx triggered the
-// transition) so it keeps running until this node steps down or Close is
-// called. Must be called with n.mu held.
+// matchIndex/replication workers for every current target and starts
+// this leadership term's heartbeat loop, bound to n.bgCtx (not to
+// whatever short-lived ctx triggered the transition) so it keeps running
+// until this node steps down or Close is called. Must be called with
+// n.mu held.
 func (n *Node) becomeLeaderLocked() {
 	n.role = Leader
 	self := n.id
 	n.leaderID = &self
-	last := n.log.LastIndex()
-	targets := n.membership.Targets(n.id)
-	n.nextIndex = make(map[NodeID]LogIndex, len(targets))
-	n.matchIndex = make(map[NodeID]LogIndex, len(targets))
-	n.snapshotSending = make(map[NodeID]bool, len(targets))
-	for id := range targets {
-		n.nextIndex[id] = last + 1
-		n.matchIndex[id] = 0
-	}
+	n.nextIndex = make(map[NodeID]LogIndex)
+	n.matchIndex = make(map[NodeID]LogIndex)
+	n.snapshotSending = make(map[NodeID]bool)
+	n.replicationGeneration = make(map[NodeID]uint64)
+	n.workers = make(map[NodeID]*replicationWorker)
+
 	leaderCtx, cancel := context.WithCancel(n.bgCtx)
+	n.leaderCtx = leaderCtx
 	n.leaderCancel = cancel
-	n.bgWG.Add(1)
-	go n.heartbeatLoop(leaderCtx)
+	if n.spawnBackgroundLocked() {
+		go n.heartbeatLoop(leaderCtx)
+	}
+
+	n.reconcileReplicationWorkersLocked()
 
 	// A newly elected leader may be taking over mid-transition (the prior
 	// leader died after a Joint entry committed but before appending the
@@ -1189,11 +1288,10 @@ func (n *Node) HandleTimeoutNow(req TimeoutNowRequest) (TimeoutNowResponse, erro
 	term := n.persistent.CurrentTerm
 	n.mu.Unlock()
 
-	n.bgWG.Add(1)
-	go func() {
+	n.spawnBackground(func() {
 		defer n.bgWG.Done()
 		_ = n.startRealElection(n.bgCtx)
-	}()
+	})
 	return TimeoutNowResponse{Term: term, Accepted: true}, nil
 }
 
@@ -1299,131 +1397,6 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 	return AppendEntriesResponse{Term: n.persistent.CurrentTerm, Success: true, MatchIndex: lastNewIndex, ReadContext: req.ReadContext}, nil
 }
 
-// replicationRequest bundles one peer's outbound AppendEntries with the
-// addressing needed to send it, computed while the lock is held.
-type replicationRequest struct {
-	id   NodeID
-	addr string
-	req  AppendEntriesRequest
-}
-
-// replicateToAllPeers sends one round of AppendEntries (a heartbeat if a
-// peer has nothing new) to every peer concurrently. It is called both by
-// the periodic heartbeat loop and immediately after a successful Propose.
-//
-// A peer whose nextIndex has fallen at or behind the log's compacted base
-// (this leader no longer retains the entries that peer would need) is
-// diverted to InstallSnapshot instead: the transfer is started in the
-// background (it may take many rounds' worth of wall-clock time to send
-// all chunks) rather than joined into this round's AppendEntries wait, and
-// snapshotSending guards against starting a second concurrent transfer to
-// the same peer while one is already in flight.
-func (n *Node) replicateToAllPeers(ctx context.Context) {
-	n.mu.Lock()
-	if n.role != Leader {
-		n.mu.Unlock()
-		return
-	}
-	term := n.persistent.CurrentTerm
-	leaderID := n.id
-	leaderCommit := n.commitIndex
-	baseIndex := n.log.BaseIndex()
-
-	targets := n.resolveTargetsLocked()
-	reqs := make([]replicationRequest, 0, len(targets))
-	var snapshotPeers []replicationRequest // reused only for id/addr
-	for id, addr := range targets {
-		next := n.nextIndex[id]
-		if next < 1 {
-			next = 1
-		}
-		if baseIndex > 0 && next <= baseIndex {
-			if !n.snapshotSending[id] {
-				n.snapshotSending[id] = true
-				snapshotPeers = append(snapshotPeers, replicationRequest{id: id, addr: addr})
-			}
-			continue
-		}
-		prevIndex := next - 1
-		prevTerm, _ := n.log.Term(prevIndex)
-		entries := n.log.EntriesFrom(next)
-		if len(entries) > maxEntriesPerAppend {
-			entries = entries[:maxEntriesPerAppend]
-		}
-		reqs = append(reqs, replicationRequest{id: id, addr: addr, req: AppendEntriesRequest{
-			Term:         term,
-			LeaderID:     leaderID,
-			PrevLogIndex: prevIndex,
-			PrevLogTerm:  prevTerm,
-			Entries:      entries,
-			LeaderCommit: leaderCommit,
-		}})
-	}
-	n.mu.Unlock()
-
-	for _, r := range snapshotPeers {
-		n.bgWG.Add(1)
-		go func(id NodeID, addr string) {
-			defer n.bgWG.Done()
-			// Bound to n.bgCtx, not the ctx this replication round was
-			// called with: a snapshot transfer spans many chunks and must
-			// keep running after this round's (possibly short-lived,
-			// e.g. Propose's) ctx has already returned.
-			n.sendSnapshotToPeer(n.bgCtx, term, id, addr)
-		}(r.id, r.addr)
-	}
-
-	var wg sync.WaitGroup
-	for _, r := range reqs {
-		wg.Add(1)
-		go func(r replicationRequest) {
-			defer wg.Done()
-			resp, err := n.sendAppend(ctx, r.addr, r.req)
-			if err != nil {
-				return
-			}
-			n.applyAppendEntriesResponse(term, r.id, r.req, resp)
-		}(r)
-	}
-	wg.Wait()
-}
-
-// applyAppendEntriesResponse validates an AppendEntries response against
-// current state before applying it: a higher term forces step-down; a
-// response for a term/role this node has already moved on from is stale
-// and ignored. On success, matchIndex/nextIndex are advanced but
-// matchIndex never regresses (guards against a stale-but-successful
-// older response). On failure, nextIndex backs off by one (never below
-// 1) for a retry on the next round.
-func (n *Node) applyAppendEntriesResponse(sentTerm Term, from NodeID, req AppendEntriesRequest, resp AppendEntriesResponse) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	if resp.Term > n.persistent.CurrentTerm {
-		_ = n.stepDownLocked(resp.Term) // best-effort; on failure state is unchanged
-		return
-	}
-	if n.role != Leader || n.persistent.CurrentTerm != sentTerm {
-		return
-	}
-
-	if resp.Success {
-		newMatch := req.PrevLogIndex + LogIndex(len(req.Entries))
-		if newMatch > n.matchIndex[from] {
-			n.matchIndex[from] = newMatch
-			n.nextIndex[from] = newMatch + 1
-			// A leadership-transfer catch-up waiter may be watching this
-			// peer's matchIndex specifically (see leadership_transfer.go).
-			n.pingTransferChanged()
-		}
-		n.maybeAdvanceCommitIndexLocked()
-		return
-	}
-	if n.nextIndex[from] > 1 {
-		n.nextIndex[from]--
-	}
-}
-
 // maybeAdvanceCommitIndexLocked implements Raft's commit rule: commitIndex
 // may advance to N only if a majority (including self) has matchIndex >=
 // N AND log[N].term == currentTerm. An entry from an older term is never
@@ -1481,14 +1454,23 @@ func (n *Node) stepDownIfNoLongerVoterLocked() {
 	}
 }
 
-// heartbeatLoop sends AppendEntries to every peer immediately upon
-// becoming Leader, then every heartbeatInterval, until ctx is canceled
-// (step-down, term change, or Close). One heartbeatLoop runs per
-// leadership term; becomeLeaderLocked/stepToFollowerLocked/stepDownLocked
-// ensure the previous one is always stopped before a new one can start.
+// heartbeatLoop periodically wakes every current replication worker
+// (see replication_worker.go) every heartbeatInterval, until ctx is
+// canceled (step-down, term change, or Close). It does not send any RPC
+// itself: a wake causes each worker to run one replicationStep, which
+// naturally sends a heartbeat (an AppendEntries with no entries) for a
+// peer that is already caught up, or continues real catch-up progress
+// for one that isn't — either way this is what actually provides
+// leader-authority renewal, follower election-timer resets, and
+// commit-index propagation at heartbeatInterval granularity. The
+// initial wake on becoming Leader (or on a peer newly entering the
+// replication target set) happens separately, in
+// reconcileReplicationWorkersLocked, so catch-up is not delayed until
+// this loop's first tick. One heartbeatLoop runs per leadership term;
+// becomeLeaderLocked/stepToFollowerLocked/stepDownLocked ensure the
+// previous one is always stopped before a new one can start.
 func (n *Node) heartbeatLoop(ctx context.Context) {
 	defer n.bgWG.Done()
-	n.replicateToAllPeers(ctx)
 	ticker := time.NewTicker(n.heartbeatInterval)
 	defer ticker.Stop()
 	for {
@@ -1496,7 +1478,9 @@ func (n *Node) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			n.replicateToAllPeers(ctx)
+			n.mu.Lock()
+			n.wakeAllReplicationLocked()
+			n.mu.Unlock()
 		}
 	}
 }

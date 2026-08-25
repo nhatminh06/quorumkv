@@ -271,21 +271,17 @@ func (n *Node) installSnapshot(snap Snapshot) error {
 // sendSnapshotToPeer transfers the current canonical snapshot to one
 // peer as a tight sequence of chunks — not paced by the heartbeat
 // interval — used when that peer's nextIndex has fallen behind this
-// leader's compacted log prefix. The caller must have already recorded
-// this transfer as in-progress (n.snapshotSending[id] = true) before
-// starting the goroutine that calls this; it always clears that flag on
-// return.
-func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, addr string) {
-	defer func() {
-		n.mu.Lock()
-		delete(n.snapshotSending, id)
-		n.mu.Unlock()
-	}()
-
+// leader's compacted log prefix. Called synchronously from within that
+// peer's own replicationWorker (see replicationStep), which owns
+// n.snapshotSending[id] for the duration; this function only updates
+// matchIndex/nextIndex on a fully successful transfer and reports
+// whether that happened, so the caller knows whether to immediately
+// continue with suffix catch-up.
+func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, addr string) bool {
 	n.mu.Lock()
 	if n.role != Leader || n.persistent.CurrentTerm != term {
 		n.mu.Unlock()
-		return
+		return false
 	}
 	leaderID := n.id
 	fallbackCfg := n.membership.Stable
@@ -293,7 +289,7 @@ func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, add
 
 	snap, err := n.snapshotStore.Load()
 	if err != nil || snap == nil {
-		return
+		return false
 	}
 	if !snap.ConfigurationPresent {
 		// A legacy (pre-Milestone-10) snapshot has no stored membership —
@@ -317,24 +313,24 @@ func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, add
 		}
 		resp, err := n.sendInstallSnapshot(ctx, addr, req)
 		if err != nil {
-			return // transient failure; a later replication round retries from scratch
+			return false // transient failure; a later replication step retries from scratch
 		}
 
 		n.mu.Lock()
 		if resp.Term > n.persistent.CurrentTerm {
 			_ = n.stepDownLocked(resp.Term)
 			n.mu.Unlock()
-			return
+			return false
 		}
 		if n.role != Leader || n.persistent.CurrentTerm != term {
 			n.mu.Unlock()
-			return
+			return false
 		}
 		if !resp.Success {
 			nextOffset := resp.NextOffset
 			n.mu.Unlock()
 			if nextOffset >= end {
-				return // nonsensical reply; give up this round rather than loop
+				return false // nonsensical reply; give up this round rather than loop
 			}
 			offset = nextOffset
 			continue
@@ -351,7 +347,7 @@ func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, add
 			}
 			n.nextIndex[id] = snap.LastIncludedIndex + 1
 			n.mu.Unlock()
-			return
+			return true
 		}
 		n.mu.Unlock()
 		offset = end

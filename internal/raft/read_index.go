@@ -94,17 +94,12 @@ func (n *Node) ensureCurrentTermCommitted(ctx context.Context) error {
 		}
 		index := n.log.LastIndex()
 		n.maybeAdvanceCommitIndexLocked() // handles the single-node-cluster case
+		n.wakeAllReplicationLocked()      // the no-op barrier itself needs replicating immediately
 		pb = &pendingBarrier{term: term, index: index, done: make(chan struct{})}
 		n.pendingBarrier = pb
 		n.mu.Unlock()
 
-		n.bgWG.Add(1)
-		go func() {
-			defer n.bgWG.Done()
-			n.replicateToAllPeers(n.bgCtx)
-		}()
-		n.bgWG.Add(1)
-		go func() {
+		n.spawnBackground(func() {
 			defer n.bgWG.Done()
 			err := n.WaitApplied(n.bgCtx, index, term)
 			n.mu.Lock()
@@ -114,7 +109,7 @@ func (n *Node) ensureCurrentTermCommitted(ctx context.Context) error {
 			n.mu.Unlock()
 			pb.err = err
 			close(pb.done)
-		}()
+		})
 	}
 
 	select {
@@ -214,12 +209,12 @@ func (n *Node) ReadIndex(ctx context.Context) (LogIndex, error) {
 
 	resultCh := make(chan readProbeResult, len(peers))
 	for id, addr := range peers {
-		n.bgWG.Add(1)
-		go func(id NodeID, addr string) {
+		id, addr := id, addr
+		n.spawnBackground(func() {
 			defer n.bgWG.Done()
 			resp, err := n.sendAppend(probeCtx, addr, req)
 			resultCh <- readProbeResult{id: id, resp: resp, err: err}
-		}(id, addr)
+		})
 	}
 
 	seen := make(map[NodeID]bool, len(peers))
