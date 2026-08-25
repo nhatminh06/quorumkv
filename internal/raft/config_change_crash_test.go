@@ -73,6 +73,14 @@ func TestLeaderCrashAfterJointCommitBeforeStableAppended(t *testing.T) {
 		t.Fatalf("StartElection: %v", err)
 	}
 	term := a.CurrentTerm()
+	// A's own replication workers (see replication_worker.go) are real
+	// and already running the instant it becomes Leader — block its
+	// outbound links now, before any manual seeding below, so they can
+	// never race a real AppendEntries in ahead of (or interleaved with)
+	// the exact state this test is constructing by hand. A is stopped
+	// outright a few lines down, so there is no need to ever unblock.
+	c.net.block(1, 2)
+	c.net.block(1, 3)
 
 	// A removes itself: old=ABC (majority 2), new=BC (majority 2) — chosen
 	// deliberately so the crashing leader (A) is not itself needed to
@@ -135,6 +143,9 @@ func TestLeaderCrashAfterStableAppendedBeforeItCommits(t *testing.T) {
 		t.Fatalf("StartElection: %v", err)
 	}
 	term := a.CurrentTerm()
+	// See the identical block in TestLeaderCrashAfterJointCommitBeforeStableAppended.
+	c.net.block(1, 2)
+	c.net.block(1, 3)
 
 	oldC, newC := cfg(1, 2, 3), cfg(2, 3)
 	idxA := seedJointEntry(t, a, term, oldC, newC)
