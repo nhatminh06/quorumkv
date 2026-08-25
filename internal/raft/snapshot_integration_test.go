@@ -237,6 +237,7 @@ func (c *snapshottingTCPCluster) startFresh(id NodeID) {
 	if err != nil {
 		c.t.Fatalf("Listen node %d: %v", id, err)
 	}
+	n.SetSelfAddr(tr.Addr())
 	c.nodes[id] = &snapshottingNode{Node: n, dir: c.dirs[id], state: sm}
 	c.sms[id] = sm
 	c.trs[id] = tr
