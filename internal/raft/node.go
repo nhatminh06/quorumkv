@@ -796,6 +796,11 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 	}
 }
 
+// ID returns this node's own NodeID, fixed at construction.
+func (n *Node) ID() NodeID {
+	return n.id
+}
+
 // Role returns the node's current volatile role.
 func (n *Node) Role() Role {
 	n.mu.Lock()

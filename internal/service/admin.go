@@ -70,6 +70,7 @@ func (s *Service) adminStatus() adminproto.Response {
 	status := s.node.MembershipStatus()
 	snapIndex, snapTerm := s.node.SnapshotBoundary()
 	info := adminproto.StatusInfo{
+		NodeID:        uint64(s.node.ID()),
 		Role:          adminRole(s.node.Role()),
 		Term:          uint64(s.node.CurrentTerm()),
 		LastLogIndex:  uint64(s.node.LastLogIndex()),
