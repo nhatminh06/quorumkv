@@ -242,10 +242,14 @@ func (s *Service) removeResultWaiter(index raft.LogIndex) {
 func (s *Service) Handler() transport.Handler {
 	raftHandler := s.node.Handler()
 	return func(ctx context.Context, m transport.Message) (transport.Message, error) {
-		if m.Type == transport.MessageClientRequest {
+		switch m.Type {
+		case transport.MessageClientRequest:
 			return s.handleClient(ctx, m)
+		case transport.MessageAdminRequest:
+			return s.handleAdmin(ctx, m)
+		default:
+			return raftHandler(ctx, m)
 		}
-		return raftHandler(ctx, m)
 	}
 }
 

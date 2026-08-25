@@ -21,7 +21,13 @@ package transport
 // MessagePreVote/MessagePreVoteResponse carry the Raft PreVote RPC, and
 // MessageTimeoutNow/MessageTimeoutNowResponse carry the Raft TimeoutNow
 // RPC (leadership transfer); their payload encoding lives in package
-// raft, same as every other Raft RPC.
+// raft, same as every other Raft RPC. MessageAdminRequest/
+// MessageAdminResponse (since Milestone 15) carry the operational admin
+// protocol (status, snapshot, leadership transfer, voter add/remove);
+// their payload encoding lives in package adminproto. This is a
+// convenience wrapper over existing Node/Service operations, not a new
+// consensus mechanism, and — like every other message this package
+// carries — is unauthenticated.
 type MessageType uint8
 
 const (
@@ -40,6 +46,8 @@ const (
 	MessagePreVoteResponse
 	MessageTimeoutNow
 	MessageTimeoutNowResponse
+	MessageAdminRequest
+	MessageAdminResponse
 )
 
 // Message is a generic envelope transport carries between nodes.
