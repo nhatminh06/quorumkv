@@ -284,7 +284,7 @@ func (l *Log) rewrite() error {
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile(l.path, data)
+	return atomicWriteFile("log", l.path, data)
 }
 
 // BaseIndex returns the index of this log's compaction boundary

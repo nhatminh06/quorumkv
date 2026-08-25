@@ -119,7 +119,7 @@ func (s *SnapshotStore) Save(snap Snapshot) error {
 	checksum := crc32.Checksum(buf[4:off], crc32cTable)
 	binary.BigEndian.PutUint32(buf[off:off+snapshotChecksumSize], checksum)
 
-	return atomicWriteFile(s.path, buf)
+	return atomicWriteFile("snapshot", s.path, buf)
 }
 
 func decodeSnapshotFile(data []byte) (*Snapshot, error) {
