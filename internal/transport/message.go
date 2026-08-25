@@ -18,6 +18,10 @@ package transport
 // InstallSnapshot RPC; their payload encoding lives in package raft.
 // MessageClientRequest/MessageClientResponse carry the client PUT/GET/
 // DELETE protocol; their payload encoding lives in package clientproto.
+// MessagePreVote/MessagePreVoteResponse carry the Raft PreVote RPC, and
+// MessageTimeoutNow/MessageTimeoutNowResponse carry the Raft TimeoutNow
+// RPC (leadership transfer); their payload encoding lives in package
+// raft, same as every other Raft RPC.
 type MessageType uint8
 
 const (
@@ -32,6 +36,10 @@ const (
 	MessageClientResponse
 	MessageInstallSnapshot
 	MessageInstallSnapshotResponse
+	MessagePreVote
+	MessagePreVoteResponse
+	MessageTimeoutNow
+	MessageTimeoutNowResponse
 )
 
 // Message is a generic envelope transport carries between nodes.
