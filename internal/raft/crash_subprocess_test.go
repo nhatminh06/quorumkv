@@ -97,6 +97,21 @@ func TestCrashHelperSubprocess(t *testing.T) {
 		if err := l.Append([]LogEntry{{Term: 1, Command: []byte("b")}}); err != nil {
 			fmt.Fprintln(os.Stderr, "Append:", err)
 		}
+	case "batch-log-append":
+		l, err := OpenLog(filepath.Join(dir, "log"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "OpenLog:", err)
+			os.Exit(1)
+		}
+		batch := []LogEntry{
+			{Term: 1, Command: []byte("b1")},
+			{Term: 1, Command: []byte("b2")},
+			{Term: 1, Command: []byte("b3")},
+			{Term: 1, Command: []byte("b4")},
+		}
+		if err := l.Append(batch); err != nil {
+			fmt.Fprintln(os.Stderr, "Append(batch):", err)
+		}
 	case "log-conflict-repair":
 		l, err := OpenLog(filepath.Join(dir, "log"))
 		if err != nil {

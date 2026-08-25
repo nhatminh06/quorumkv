@@ -33,7 +33,7 @@ type testNode struct {
 // startCluster brings up n real nodes on real loopback TCP listeners,
 // each running its own raft.Node + Service, wired to each other. It does
 // not elect a leader — callers do that explicitly for determinism.
-func startCluster(t *testing.T, n int) []*testNode {
+func startCluster(t testing.TB, n int) []*testNode {
 	t.Helper()
 	nodes := make([]*testNode, n)
 	rNodes := make([]*raft.Node, n)
@@ -96,12 +96,12 @@ func (tn *testNode) addr() string { return tn.tr.Addr() }
 // followers have heard from the new leader yet, and callers that
 // immediately contact a follower need the latter. voters lets a caller
 // exclude nodes it has already shut down (e.g. during a failover test).
-func electLeader(t *testing.T, nodes []*testNode, leaderIdx int) {
+func electLeader(t testing.TB, nodes []*testNode, leaderIdx int) {
 	t.Helper()
 	electLeaderAmong(t, nodes, nodes, leaderIdx)
 }
 
-func electLeaderAmong(t *testing.T, voters []*testNode, nodes []*testNode, leaderIdx int) {
+func electLeaderAmong(t testing.TB, voters []*testNode, nodes []*testNode, leaderIdx int) {
 	t.Helper()
 	leader := nodes[leaderIdx]
 	// PreVote's leader-contact safeguard (see docs/raft-election.md)
@@ -145,7 +145,7 @@ func electLeaderAmong(t *testing.T, voters []*testNode, nodes []*testNode, leade
 	}
 }
 
-func waitForClusterCommit(t *testing.T, timeout time.Duration, nodes []*testNode, index raft.LogIndex) {
+func waitForClusterCommit(t testing.TB, timeout time.Duration, nodes []*testNode, index raft.LogIndex) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {

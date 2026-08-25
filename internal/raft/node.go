@@ -253,6 +253,33 @@ type Node struct {
 	// role/leaderID/currentTerm (transfer completion evidence).
 	transfer        *transferState
 	transferChanged chan struct{}
+
+	// Proposal admission/batching (see proposal.go): Propose enqueues onto
+	// proposalCh after reserving space against the queuedProposals/
+	// queuedProposalBytes bounds (guarded by queueMu, distinct from mu —
+	// admission must not contend with routine Raft state-transition
+	// locking); proposalWorker is the single goroutine that drains it and
+	// turns concurrently-queued proposals into one shared Log.Append per
+	// batch. All of this is purely a local-persistence/latency concern;
+	// it changes nothing about commit/apply/replication safety.
+	queueMu                 sync.Mutex
+	closed                  bool // set under queueMu by Close, before bgCancel — see propose/admitProposal
+	queuedProposals         int
+	queuedProposalBytes     int64
+	maxQueuedProposals      int
+	maxQueuedProposalBytes  int64
+	maxProposalBatchEntries int
+	maxProposalBatchBytes   int64
+	proposalCh              chan *pendingProposal
+	// testBeforeBatch, if set, is called by proposalWorker after it has
+	// dequeued the first proposal of a batch but before it drains any
+	// more or persists — test-only hook (never set outside _test.go
+	// files) used to deterministically hold the worker still so a test
+	// can fill the queue to an exact bound without a timing race; nil
+	// (a no-op) in every production Node. See TestProposeBackpressureDeterministic.
+	testBeforeBatch func()
+
+	stats nodeStats
 }
 
 // NewNode loads persistent state, the Raft log, the durably recorded
@@ -355,6 +382,12 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		applyFunc:           applyFunc,
 		snapshotFn:          snapshotFn,
 		restoreFn:           restoreFn,
+
+		maxQueuedProposals:      DefaultMaxQueuedProposals,
+		maxQueuedProposalBytes:  DefaultMaxQueuedProposalBytes,
+		maxProposalBatchEntries: DefaultMaxProposalBatchEntries,
+		maxProposalBatchBytes:   DefaultMaxProposalBatchBytes,
+		proposalCh:              make(chan *pendingProposal, DefaultMaxQueuedProposals),
 	}
 	if snap != nil {
 		if err := restoreFn(snap.Data); err != nil {
@@ -376,13 +409,52 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 	n.rebuildMembershipLocked()
 	n.kickApplyLocked()
 	n.mu.Unlock()
+
+	n.bgWG.Add(1)
+	go n.proposalWorker(n.bgCtx)
+
 	return n, nil
+}
+
+// SetProposalLimits overrides this node's proposal admission/batching
+// bounds (see proposal.go for the defaults and their rationale). It
+// exists so tests can construct small, deterministic bounds (e.g.
+// capacity 2) to exercise backpressure without needing real load. Safe
+// to call at any time (admission always reads the current bounds under
+// queueMu), though changing bounds mid-load is a testing tool, not a
+// production tuning knob.
+//
+// maxQueuedProposals may never exceed DefaultMaxQueuedProposals: unlike
+// the other three bounds, n.proposalCh's buffer capacity is fixed at
+// construction (see NewNode) and never resized — resizing it here would
+// mean replacing the channel field out from under proposalWorker's
+// already-running, unsynchronized reads of it, a real data/timing race.
+// A count bound smaller than the default (the only case any test in
+// this package needs) is always safe against the existing buffer.
+func (n *Node) SetProposalLimits(maxQueuedProposals int, maxQueuedProposalBytes int64, maxBatchEntries int, maxBatchBytes int64) {
+	if maxQueuedProposals > DefaultMaxQueuedProposals {
+		panic("raft: SetProposalLimits: maxQueuedProposals exceeds the fixed proposal-channel capacity")
+	}
+	n.queueMu.Lock()
+	defer n.queueMu.Unlock()
+	n.maxQueuedProposals = maxQueuedProposals
+	n.maxQueuedProposalBytes = maxQueuedProposalBytes
+	n.maxProposalBatchEntries = maxBatchEntries
+	n.maxProposalBatchBytes = maxBatchBytes
 }
 
 // Close stops this node's background heartbeat/replication/apply work
 // and waits for it to actually finish before returning. Safe to call
 // whether or not this node is currently Leader.
 func (n *Node) Close() {
+	// Mark closed before canceling: see propose/admitProposal for why
+	// this ordering, under queueMu, is what makes it safe for
+	// proposalWorker's on-close drain to be a one-shot sweep rather than
+	// having to keep watching for stragglers.
+	n.queueMu.Lock()
+	n.closed = true
+	n.queueMu.Unlock()
+
 	n.bgCancel()
 	n.bgWG.Wait()
 }
@@ -1429,67 +1501,32 @@ func (n *Node) heartbeatLoop(ctx context.Context) {
 	}
 }
 
-// Propose appends command as a new entry in the current term to this
-// node's local log, persisting it before returning, and kicks off
-// immediate replication to peers. It does not wait for commitment or
-// application — pass the returned (index, term) to WaitApplied for that.
+// Propose admits command into this node's proposal queue and blocks
+// until it has been durably persisted to the local log (or definitively
+// failed) — see proposal.go. Concurrent Propose calls may share one
+// durable Log.Append with each other (batching), but each still only
+// returns once ITS entry specifically is durable; it does not wait for
+// commitment or application — pass the returned (index, term) to
+// WaitApplied for that.
 //
-// Propose fails with ErrNotLeader if this node is not currently Leader,
-// and with ErrReservedCommand if command is empty — a zero-length command
-// is reserved for Raft's own internal current-term barrier no-op (see
-// read_index.go) and can only be appended through that internal path,
-// never by an application-level caller. If local persistence fails, the
-// log is left unchanged and the error is returned; the entry is never
-// treated as proposed. The returned term is the exact term the entry was
-// created with (read atomically with the append, avoiding a
-// check-then-act race with CurrentTerm changing between two separate
-// calls), needed by WaitApplied to detect if this entry is later
-// superseded by conflict repair before ever committing.
+// Propose fails with ErrReservedCommand if command is empty (a
+// zero-length command is reserved for Raft's own internal current-term
+// barrier no-op — see read_index.go — appended directly, never through
+// this path), with ErrBackpressure if the queue is already at its
+// configured count/byte bound, with ErrNodeClosed if the node is closed
+// before or while this proposal is queued, with ErrNotLeader if this
+// node is not Leader by the time its batch is persisted, and with
+// ErrLeadershipTransferInProgress during a transfer handoff freeze. If
+// local persistence fails, the log is left unchanged and the error is
+// returned; the entry is never treated as proposed. The returned term is
+// the exact term the entry was created with, needed by WaitApplied to
+// detect if this entry is later superseded by conflict repair before
+// ever committing.
 func (n *Node) Propose(command []byte) (LogIndex, Term, error) {
 	if len(command) == 0 {
 		return 0, 0, ErrReservedCommand
 	}
-	return n.proposeLocked(command)
-}
-
-// proposeLocked appends command (which may legally be empty only when
-// called internally, e.g. by ensureCurrentTermCommitted) as a new
-// current-term entry and kicks off replication. See Propose for the
-// externally-visible contract; this is the shared implementation both it
-// and the internal no-op barrier path use.
-func (n *Node) proposeLocked(command []byte) (LogIndex, Term, error) {
-	n.mu.Lock()
-	if n.role != Leader {
-		n.mu.Unlock()
-		return 0, 0, ErrNotLeader
-	}
-	if n.transfer != nil && n.transfer.phase == transferHandoff {
-		// Handoff freeze (see leadership_transfer.go): once the target is
-		// caught up and TimeoutNow is about to be (or has been) sent, no
-		// new entry may be appended — a further write here could make the
-		// target stale again right as it's declared ready. This also
-		// correctly blocks ensureCurrentTermCommitted's internal no-op
-		// barrier (see read_index.go), which calls this same path.
-		n.mu.Unlock()
-		return 0, 0, ErrLeadershipTransferInProgress
-	}
-	term := n.persistent.CurrentTerm
-	entry := LogEntry{Term: term, Command: cloneBytes(command)}
-	if err := n.log.Append([]LogEntry{entry}); err != nil {
-		n.mu.Unlock()
-		return 0, 0, err
-	}
-	index := n.log.LastIndex()
-	n.maybeAdvanceCommitIndexLocked() // handles the single-node-cluster case
-	n.pingTransferChanged()           // LastIndex moved: a transfer catch-up waiter may need to keep replicating
-	n.mu.Unlock()
-
-	n.bgWG.Add(1)
-	go func() {
-		defer n.bgWG.Done()
-		n.replicateToAllPeers(n.bgCtx)
-	}()
-	return index, term, nil
+	return n.propose(command)
 }
 
 // CommitIndex returns the highest log index this node currently
