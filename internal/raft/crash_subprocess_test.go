@@ -124,6 +124,43 @@ func TestCrashHelperSubprocess(t *testing.T) {
 		if err := n.CreateSnapshot(); err != nil {
 			fmt.Fprintln(os.Stderr, "CreateSnapshot:", err)
 		}
+	case "append-entries-ack":
+		// item 92 (mandatory): a follower must never report Success=true
+		// for an entry that is not yet durable. This op performs a real
+		// AppendEntries call and, only if it actually returned
+		// Success=true, crashes unconditionally right after — no
+		// failpoint, no mid-operation injection — proving the ack itself
+		// already implied durability rather than relying on whatever
+		// cleanup a graceful path might otherwise perform.
+		l, err := OpenLog(filepath.Join(dir, "log"))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "OpenLog:", err)
+			os.Exit(1)
+		}
+		n, err := NewNode(2, NewStore(filepath.Join(dir, "state")), l, NewCommitStore(filepath.Join(dir, "commit")), NewSnapshotStore(filepath.Join(dir, "snapshot")), nil, nil, nil, nil)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "NewNode:", err)
+			os.Exit(1)
+		}
+		resp, err := n.HandleAppendEntries(AppendEntriesRequest{
+			Term: 1, LeaderID: 1, PrevLogIndex: 0, PrevLogTerm: 0,
+			Entries: []LogEntry{{Term: 1, Command: []byte("acked")}},
+		})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "HandleAppendEntries:", err)
+			os.Exit(1)
+		}
+		if !resp.Success {
+			fmt.Fprintln(os.Stderr, "HandleAppendEntries did not succeed:", resp)
+			os.Exit(1)
+		}
+		// Crash unconditionally right after a successful ack — fp (set by
+		// the caller to "append.after-ack") never matches an actual
+		// atomicWriteFile failpoint name, so the append above ran to
+		// completion normally; this is a deliberate post-operation crash,
+		// not a mid-operation injection.
+		fmt.Fprintln(os.Stderr, crashMarkerPrefix+fp)
+		os.Exit(crashExitCode)
 	case "install-snapshot":
 		sm := newFakeStateMachine()
 		n := openSnapshottingNode(t, dir, 2, nil, sm)

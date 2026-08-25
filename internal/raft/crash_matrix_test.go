@@ -272,3 +272,30 @@ func TestInstallSnapshotRealCrashCrossFileConsistency(t *testing.T) {
 		})
 	}
 }
+
+// TestAppendEntriesAckedEntryRealCrashSurvives is the mandatory (item 92)
+// strongest form of the no-false-ack invariant: a follower processes a
+// real AppendEntries call, returns Success=true, and the process is
+// killed immediately afterward with no cleanup. The acked entry must
+// still be present, with the correct term and command, when a genuinely
+// fresh Node opens the same directory — an ack must never be sent before
+// the entry it describes is actually durable.
+func TestAppendEntriesAckedEntryRealCrashSurvives(t *testing.T) {
+	dir := t.TempDir()
+	runCrashSubprocess(t, dir, "append-entries-ack", "append.after-ack")
+
+	l, err := OpenLog(filepath.Join(dir, "log"))
+	if err != nil {
+		t.Fatalf("OpenLog after crash: %v", err)
+	}
+	if l.LastIndex() != 1 {
+		t.Fatalf("after crash: LastIndex() = %d, want 1 (the acked entry must survive)", l.LastIndex())
+	}
+	entry, ok := l.Entry(1)
+	if !ok {
+		t.Fatalf("after crash: entry 1 missing")
+	}
+	if entry.Term != 1 || string(entry.Command) != "acked" {
+		t.Fatalf("after crash: entry 1 = %+v, want {Term:1 Command:acked}", entry)
+	}
+}
