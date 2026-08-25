@@ -141,6 +141,145 @@ func TestEntriesFromCopiesOwnership(t *testing.T) {
 	}
 }
 
+// --- EntriesRange (see append_entries.go's encodedEntrySize) ---
+
+func TestEntriesRangeRespectsEntryLimit(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	entries := make([]LogEntry, 10)
+	for i := range entries {
+		entries[i] = LogEntry{Term: 1, Command: []byte("x")}
+	}
+	if err := l.Append(entries); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	got := l.EntriesRange(1, 4, 1<<20)
+	if len(got) != 4 {
+		t.Fatalf("len(EntriesRange) = %d, want 4 (entry limit)", len(got))
+	}
+}
+
+func TestEntriesRangeRespectsByteLimit(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	// Each entry costs perEntryHeaderSize + len(command) = 13 + 10 = 23
+	// encoded bytes. A budget of 50 fits exactly 2 (23+23=46 <= 50, a
+	// third would push it to 69 > 50).
+	entries := make([]LogEntry, 5)
+	for i := range entries {
+		entries[i] = LogEntry{Term: 1, Command: []byte("0123456789")}
+	}
+	if err := l.Append(entries); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	got := l.EntriesRange(1, 100, 50)
+	if len(got) != 2 {
+		t.Fatalf("len(EntriesRange) = %d, want 2 (byte limit)", len(got))
+	}
+}
+
+func TestEntriesRangeReturnsLargeEntryAlone(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	large := make([]byte, 1000)
+	entries := []LogEntry{
+		{Term: 1, Command: large},
+		{Term: 1, Command: []byte("small")},
+	}
+	if err := l.Append(entries); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	// A byte budget far smaller than the first entry alone: it must
+	// still be returned, by itself, rather than making it unsendable.
+	got := l.EntriesRange(1, 100, 10)
+	if len(got) != 1 {
+		t.Fatalf("len(EntriesRange) = %d, want 1 (oversized first entry sent alone)", len(got))
+	}
+	if len(got[0].Command) != 1000 {
+		t.Fatalf("returned entry command length = %d, want 1000", len(got[0].Command))
+	}
+}
+
+func TestEntriesRangeDoesNotExposeInternalState(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if err := l.Append([]LogEntry{{Term: 1, Command: []byte("hello")}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	got := l.EntriesRange(1, 10, 1<<20)
+	got[0].Command[0] = 'H'
+
+	e, _ := l.Entry(1)
+	if string(e.Command) != "hello" {
+		t.Fatalf("internal entry mutated via EntriesRange result: got %q", e.Command)
+	}
+}
+
+func TestEntriesRangeAtSnapshotBoundary(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if err := l.Append([]LogEntry{
+		{Term: 1, Command: []byte("a")},
+		{Term: 1, Command: []byte("b")},
+		{Term: 1, Command: []byte("c")},
+	}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if err := l.Compact(1, 1); err != nil {
+		t.Fatalf("Compact: %v", err)
+	}
+
+	// Requesting from the (now-compacted) boundary index itself, or
+	// anything at/before it, must start at BaseIndex()+1 — the same
+	// clamping EntriesFrom already does — never fabricate a compacted
+	// entry.
+	for _, from := range []LogIndex{0, 1} {
+		got := l.EntriesRange(from, 10, 1<<20)
+		if len(got) != 2 || string(got[0].Command) != "b" || string(got[1].Command) != "c" {
+			t.Fatalf("EntriesRange(%d) = %v, want [b c]", from, got)
+		}
+	}
+}
+
+func TestEntriesRangePastLastIndex(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if err := l.Append([]LogEntry{{Term: 1, Command: []byte("a")}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	if got := l.EntriesRange(l.LastIndex()+1, 10, 1<<20); got != nil {
+		t.Fatalf("EntriesRange(LastIndex()+1) = %v, want nil", got)
+	}
+	if got := l.EntriesRange(5, 10, 1<<20); got != nil {
+		t.Fatalf("EntriesRange(far past LastIndex()) = %v, want nil", got)
+	}
+}
+
+func TestEntriesRangeEmptyLog(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatalf("OpenLog: %v", err)
+	}
+	if got := l.EntriesRange(1, 10, 1<<20); got != nil {
+		t.Fatalf("EntriesRange on empty log = %v, want nil", got)
+	}
+}
+
 // TestKnownLogByteVector independently derives the expected on-disk bytes
 // for a single entry (term=5, kind=EntryApplication, command="abc")
 // rather than round-tripping Append->reopen. The checksum was computed
