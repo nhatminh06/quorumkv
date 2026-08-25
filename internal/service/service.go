@@ -350,6 +350,13 @@ func (s *Service) proposeAndWaitIdentified(ctx context.Context, cmd kv.Command) 
 		if errors.Is(err, raft.ErrNotLeader) {
 			return s.notLeaderResponse()
 		}
+		if errors.Is(err, raft.ErrLeadershipTransferInProgress) {
+			// This leader is intentionally handing off; treat it as the
+			// same kind of transient, safely-retryable-with-the-same-
+			// request-identity outcome as a context/quorum timeout (see
+			// docs/request-dedup.md) — not an internal error.
+			return clientproto.Response{Status: clientproto.StatusTimeout}
+		}
 		return clientproto.Response{Status: clientproto.StatusInternalError}
 	}
 
@@ -417,7 +424,8 @@ func (s *Service) readFailureResponse(err error) clientproto.Response {
 		return s.notLeaderResponse()
 	}
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
-		errors.Is(err, raft.ErrReadIndexUnavailable) || errors.Is(err, raft.ErrNodeClosed) {
+		errors.Is(err, raft.ErrReadIndexUnavailable) || errors.Is(err, raft.ErrNodeClosed) ||
+		errors.Is(err, raft.ErrLeadershipTransferInProgress) {
 		return clientproto.Response{Status: clientproto.StatusTimeout}
 	}
 	return clientproto.Response{Status: clientproto.StatusInternalError}
