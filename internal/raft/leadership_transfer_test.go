@@ -314,10 +314,20 @@ func TestMembershipChangeRejectedDuringTransfer(t *testing.T) {
 	if err := a.StartElection(context.Background()); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
+	// Block B (the transfer target) before proposing anything — see the
+	// identical fix in TestConcurrentTransferRequestsOnlyOneSucceeds: A's
+	// replication worker for B is real and already idling-ready the
+	// instant A becomes leader, so blocking only after Propose returns
+	// leaves a window where B's worker races ahead and catches up before
+	// the block takes effect. If that happens here, TransferLeadership
+	// finds catch-up already satisfied, its TimeoutNow to now-blocked B
+	// fails instantly, and the whole call can return before this test's
+	// own polling loop below ever gets a chance to observe a.transfer
+	// non-nil.
+	net.setBlocked("B", true)
 	if _, _, err := a.Propose([]byte("x")); err != nil {
 		t.Fatalf("Propose: %v", err)
 	}
-	net.setBlocked("B", true) // B (the transfer target) can never catch up
 
 	transferCtx, transferCancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer transferCancel()
