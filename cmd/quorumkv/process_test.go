@@ -53,6 +53,30 @@ func buildBinaries(t *testing.T) (string, string) {
 	return quorumkvBin, qkvBin
 }
 
+// lockedBuffer synchronizes subprocess output writes with diagnostic reads.
+// Locking only readers does not protect bytes.Buffer from exec's copy goroutine.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *lockedBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
 // nodeProcess is one real "quorumkv node" OS process.
 type nodeProcess struct {
 	id      int
@@ -61,8 +85,7 @@ type nodeProcess struct {
 	args    []string
 	binPath string
 	cmd     *exec.Cmd
-	out     *bytes.Buffer
-	outMu   sync.Mutex
+	out     *lockedBuffer
 }
 
 func startNode(t *testing.T, binPath string, id int, addr, dataDir string, peers map[int]string) *nodeProcess {
@@ -71,7 +94,7 @@ func startNode(t *testing.T, binPath string, id int, addr, dataDir string, peers
 	for pid, paddr := range peers {
 		args = append(args, "--peer", fmt.Sprintf("%d=%s", pid, paddr))
 	}
-	np := &nodeProcess{id: id, addr: addr, dataDir: dataDir, args: args, binPath: binPath, out: &bytes.Buffer{}}
+	np := &nodeProcess{id: id, addr: addr, dataDir: dataDir, args: args, binPath: binPath, out: &lockedBuffer{}}
 	np.launch(t)
 	return np
 }
@@ -80,11 +103,9 @@ func startNode(t *testing.T, binPath string, id int, addr, dataDir string, peers
 func (np *nodeProcess) launch(t *testing.T) {
 	t.Helper()
 	cmd := exec.Command(np.binPath, np.args...)
-	np.outMu.Lock()
 	np.out.Reset()
 	cmd.Stdout = np.out
 	cmd.Stderr = np.out
-	np.outMu.Unlock()
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting node %d: %v", np.id, err)
 	}
@@ -94,8 +115,6 @@ func (np *nodeProcess) launch(t *testing.T) {
 // output returns a safe snapshot of the process's combined stdout+stderr
 // so far (the buffer is written to concurrently by the running process).
 func (np *nodeProcess) output() string {
-	np.outMu.Lock()
-	defer np.outMu.Unlock()
 	return np.out.String()
 }
 

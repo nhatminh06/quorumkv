@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -12,9 +13,23 @@ import (
 func threeNodeAddrs(t *testing.T) (addrs map[int]string) {
 	t.Helper()
 	addrs = make(map[int]string, 3)
+	// Hold all reservations together so the OS cannot return the same port
+	// twice within this cluster. Release immediately before starting nodes.
+	var listeners []net.Listener
+	defer func() {
+		for _, l := range listeners {
+			l.Close()
+		}
+	}()
 	for _, id := range []int{1, 2, 3} {
-		addrs[id] = fmt.Sprintf("127.0.0.1:%d", freePort(t))
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		listeners = append(listeners, l)
+		addrs[id] = l.Addr().String()
 	}
+
 	return addrs
 }
 
@@ -45,17 +60,31 @@ func TestRealProcessThreeNodeClusterPutGet(t *testing.T) {
 	}
 	t.Cleanup(func() { stopAll(t, nodes...) })
 
-	_, leaderStatus := waitForAnyLeader(t, qkvPath, []string{addrs[1], addrs[2], addrs[3]}, 10*time.Second)
+	leaderAddr, leaderStatus := waitForAnyLeader(t, qkvPath, []string{addrs[1], addrs[2], addrs[3]}, 10*time.Second)
 	if !strings.Contains(leaderStatus, "voters:") {
 		t.Fatalf("leader status missing voter list:\n%s", leaderStatus)
 	}
 
-	out, stderr, code := runQkv(t, qkvPath, "--addr", addrs[1], "--addr", addrs[2], "--addr", addrs[3], "put", "hello", "world")
+	// Put followers before the observed leader. Each qkv invocation creates
+	// a fresh client, so GET must discover the leader independently of PUT.
+	var seeds []string
+	for _, id := range []int{1, 2, 3} {
+		if addrs[id] != leaderAddr {
+			seeds = append(seeds, addrs[id])
+		}
+	}
+	seeds = append(seeds, leaderAddr)
+	status, stderr, code := runQkv(t, qkvPath, "--addr", seeds[0], "status")
+	if code != 0 || !strings.Contains(status, "role:           follower") {
+		t.Fatalf("first seed is not a follower: code=%d status=%q stderr=%q", code, status, stderr)
+	}
+	args := addrJoin(seeds, "--addr")
+	out, stderr, code := runQkv(t, qkvPath, append(args, "put", "hello", "world")...)
 	if code != 0 || strings.TrimSpace(out) != "OK" {
 		t.Fatalf("put: code=%d out=%q stderr=%q", code, out, stderr)
 	}
 
-	out, stderr, code = runQkv(t, qkvPath, "--addr", addrs[1], "--addr", addrs[2], "--addr", addrs[3], "get", "hello")
+	out, stderr, code = runQkv(t, qkvPath, append(args, "get", "hello")...)
 	if code != 0 || strings.TrimSpace(out) != "world" {
 		t.Fatalf("get: code=%d out=%q stderr=%q", code, out, stderr)
 	}
@@ -65,7 +94,7 @@ func TestRealProcessThreeNodeClusterPutGet(t *testing.T) {
 	// isn't reachable from here; the value is part of qkv's documented,
 	// stable exit-code contract (see docs/operations.md).
 	const qkvExitNotFound = 3
-	out, _, code = runQkv(t, qkvPath, "--addr", addrs[1], "get", "does-not-exist")
+	out, _, code = runQkv(t, qkvPath, append(args, "get", "does-not-exist")...)
 	if code != qkvExitNotFound || strings.TrimSpace(out) != "not found" {
 		t.Fatalf("get(missing key): code=%d out=%q, want code=%d out=\"not found\"", code, out, qkvExitNotFound)
 	}
