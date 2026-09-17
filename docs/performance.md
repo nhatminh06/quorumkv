@@ -257,3 +257,14 @@ See [docs/replication-performance.md](replication-performance.md) §19
 for the full list (no request pipelining beyond window 1, no transport
 connection pooling, no replication-specific stats, snapshot chunking
 unchanged).
+
+## Persistent peer transport
+
+Raft peer RPCs now reuse sequential TCP sessions; external clients retain
+fresh connections. The same-machine before/after measurements, raw benchmark
+output, CPU profiles, connection counters, and correctness evidence are in
+[transport-performance.md](transport-performance.md). The focused sequential
+RPC benchmark used one connection for 1,000 exchanges instead of 1,000 and
+improved mean time from 42.6 µs to 10.2 µs. Same-peer concurrent RPC throughput
+regressed under serialization, and total dial/close CPU did not demonstrably
+decrease. The report includes those tradeoffs and service workload results.

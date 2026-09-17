@@ -192,7 +192,9 @@ top-level map; [docs/operations.md](docs/operations.md) and the
 - No repair tooling for corrupted persistent storage — a corrupted node
   is replaced via the normal membership procedure, not patched in
   place. See [docs/runbook-failover.md](docs/runbook-failover.md).
-- One TCP connection per RPC — no persistent connection pooling.
+- Raft peer RPCs reuse sequential TCP sessions; CLI/client RPCs still use
+  fresh connections. No request multiplexing. See
+  [transport measurements](docs/transport-performance.md).
 - No sharding, multi-Raft, transactions, CAS, TTL, follower reads, or
   leader leases.
 

@@ -181,7 +181,8 @@ CLI/runbook detail in [operations.md](operations.md).
 - Snapshot creation is manually triggered; no scheduling policy.
 - No repair tooling for corrupted persistent storage — see
   [runbook-failover.md](runbook-failover.md#corrupted-node-storage).
-- One TCP connection per RPC (no persistent connection pooling); no
+- Sequential persistent TCP sessions for Raft peers, fresh connections for
+  CLI/client RPCs (see [transport](transport.md)); no
   request pipelining across proposals beyond the batching in section 7.
 - No sharding, no multi-Raft, no transactions, no CAS, no TTL, no
   follower reads, no leader leases.
