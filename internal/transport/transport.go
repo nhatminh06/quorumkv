@@ -8,16 +8,16 @@ import (
 
 // Handler processes one inbound Message and produces the response to send
 // back on the same connection. Handler knows nothing about transport
-// framing or connection lifecycle — Transport calls it once per accepted
-// connection, after successfully decoding exactly one request frame. ctx
+// framing or connection lifecycle — Transport calls it sequentially for each
+// complete request frame on a connection. ctx
 // is canceled when the owning Transport's Close is called, so a handler
 // that wants to return promptly during shutdown should observe ctx.Done().
 type Handler func(ctx context.Context, m Message) (Message, error)
 
 // Transport listens for inbound connections and dispatches each decoded
-// request to a Handler. Each TCP connection carries exactly one request
-// and one response: this keeps connection lifecycle deterministic and easy
-// to test, and callers needing a new exchange simply call Send again.
+// request to a Handler. A connection carries sequential request/response
+// exchanges until EOF, an error, or shutdown. Fresh-connection clients remain
+// compatible: their EOF simply ends the session.
 //
 // Transport does not retry, pool connections, reconnect, or interpret
 // message contents — it only frames and delivers bytes.
@@ -28,9 +28,11 @@ type Transport struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu     sync.Mutex
-	closed bool
-	conns  map[net.Conn]struct{}
+	mu        sync.Mutex
+	closed    bool
+	closeOnce sync.Once
+	closeErr  error
+	conns     map[net.Conn]struct{}
 }
 
 // Listen starts accepting TCP connections on addr and dispatching decoded
@@ -76,15 +78,14 @@ func (t *Transport) acceptLoop() {
 			return
 		}
 		t.conns[conn] = struct{}{}
+		t.wg.Add(1) // registered under the same lock as shutdown
 		t.mu.Unlock()
-
-		t.wg.Add(1)
 		go t.handleConn(conn)
 	}
 }
 
-// handleConn reads exactly one request frame, dispatches it to the
-// handler, and writes exactly one response frame. A malformed request or
+// handleConn exchanges frames sequentially; it never pipelines handlers.
+// A malformed request or
 // a handler error closes this connection only — the listener and all
 // other connections are unaffected.
 func (t *Transport) handleConn(conn net.Conn) {
@@ -96,17 +97,20 @@ func (t *Transport) handleConn(conn net.Conn) {
 		conn.Close()
 	}()
 
-	msg, err := ReadFrame(conn)
-	if err != nil {
-		return
+	for t.ctx.Err() == nil {
+		msg, err := ReadFrame(conn)
+		if err != nil {
+			return
+		}
+		resp, err := t.h(t.ctx, msg)
+		if err != nil {
+			return
+		}
+		if err := WriteFrame(conn, resp); err != nil {
+			return
+		}
 	}
 
-	resp, err := t.h(t.ctx, msg)
-	if err != nil {
-		return
-	}
-
-	_ = WriteFrame(conn, resp)
 }
 
 // Close stops accepting new connections, cancels the context passed to any
@@ -120,21 +124,18 @@ func (t *Transport) handleConn(conn net.Conn) {
 // until that handler returns — Close waits for handlers rather than
 // abandoning them.
 func (t *Transport) Close() error {
-	t.mu.Lock()
-	if t.closed {
+	t.closeOnce.Do(func() {
+		t.mu.Lock()
+		t.closed = true
+		t.cancel()
+		for c := range t.conns {
+			c.Close()
+		}
 		t.mu.Unlock()
-		return nil
-	}
-	t.closed = true
-	t.cancel()
-	for c := range t.conns {
-		c.Close()
-	}
-	t.mu.Unlock()
-
-	err := t.ln.Close()
-	t.wg.Wait()
-	return err
+		t.closeErr = t.ln.Close()
+		t.wg.Wait()
+	})
+	return t.closeErr
 }
 
 // Send dials addr, writes m as a single request frame, and reads back the

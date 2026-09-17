@@ -1,0 +1,108 @@
+Measured on Linux/amd64, Go 1.26.5, Intel i5-11400H, GOMAXPROCS=12.
+Before: e7a365d. After production code: b706851.
+
+=== before sequential ===
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    216345 ns/op	       201.0 p50-us	       250.0 p95-us	       370.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    272507 ns/op	       241.0 p50-us	       447.0 p95-us	       494.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    235138 ns/op	       215.0 p50-us	       286.0 p95-us	       390.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    430601 ns/op	       406.0 p50-us	       648.0 p95-us	       799.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    484690 ns/op	       447.0 p50-us	       835.0 p95-us	       878.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    421030 ns/op	       401.0 p50-us	       606.0 p95-us	       674.0 p99-us
+PASS
+ok  	quorumkv/internal/service	2.568s
+
+=== before concurrent ===
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     79224 ns/op	      1826 p50-us	      8244 p95-us	      8657 p99-us
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     63317 ns/op	      1846 p50-us	      2855 p95-us	      3208 p99-us
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     72140 ns/op	      2148 p50-us	      3621 p95-us	      4715 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	    215604 ns/op	      6521 p50-us	      9885 p95-us	     11309 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	    165162 ns/op	      4868 p50-us	      7511 p95-us	      8103 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	    183754 ns/op	      4864 p50-us	      9472 p95-us	     10815 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     52924 ns/op	       764.0 p50-us	      8820 p95-us	      9031 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     32107 ns/op	       862.0 p50-us	      1838 p95-us	      2138 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     30031 ns/op	       792.0 p50-us	      1738 p95-us	      2034 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     38510 ns/op	      1058 p50-us	      2396 p95-us	      2914 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     42168 ns/op	       988.0 p50-us	      2997 p95-us	      3633 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     43428 ns/op	      1145 p50-us	      3101 p95-us	      3907 p99-us
+PASS
+ok  	quorumkv/internal/service	5.237s
+
+=== before catchup ===
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkFollowerCatchUp-12    	       3	 175089929 ns/op	         0.1874 catchup-sec	     26684 entries/sec
+PASS
+ok  	quorumkv/internal/service	58.987s
+
+=== after sequential ===
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    205683 ns/op	       178.0 p50-us	       242.0 p95-us	       461.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    214859 ns/op	       190.0 p50-us	       268.0 p95-us	       449.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    210210 ns/op	       193.0 p50-us	       272.0 p95-us	       370.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    328406 ns/op	       287.0 p50-us	       493.0 p95-us	       530.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    353002 ns/op	       332.0 p50-us	       550.0 p95-us	       572.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    352740 ns/op	       337.0 p50-us	       537.0 p95-us	       615.0 p99-us
+PASS
+ok  	quorumkv/internal/service	2.544s
+
+=== after concurrent ===
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     74942 ns/op	      1915 p50-us	      5542 p95-us	      6143 p99-us
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     62181 ns/op	      1690 p50-us	      3429 p95-us	      4344 p99-us
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     64400 ns/op	      1774 p50-us	      3370 p95-us	      3610 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	    208925 ns/op	      5503 p50-us	     12118 p95-us	     13264 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	    162336 ns/op	      5112 p50-us	      8061 p95-us	      9098 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	    175793 ns/op	      5294 p50-us	      9703 p95-us	     10237 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     28339 ns/op	       798.0 p50-us	      1509 p95-us	      1587 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     29440 ns/op	       833.0 p50-us	      1442 p95-us	      1521 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     32978 ns/op	       995.0 p50-us	      1358 p95-us	      1385 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     33529 ns/op	      1005 p50-us	      1572 p95-us	      1921 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     35236 ns/op	       967.0 p50-us	      1912 p95-us	      2265 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     31558 ns/op	       905.0 p50-us	      1686 p95-us	      1854 p99-us
+PASS
+ok  	quorumkv/internal/service	5.209s
+
+=== after catchup ===
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkFollowerCatchUp-12    	       3	 141891947 ns/op	         0.1339 catchup-sec	     37335 entries/sec
+PASS
+ok  	quorumkv/internal/service	63.861s
+
+=== focused transport comparison ===
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/transport
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkTransportSequentialRPC/fresh-12         	    1000	     42858 ns/op	     23333 RPC/s	      1000 connections	         1.000 connections/op	    1408 B/op	      34 allocs/op
+BenchmarkTransportSequentialRPC/fresh-12         	    1000	     41877 ns/op	     23880 RPC/s	      1000 connections	         1.000 connections/op	    1402 B/op	      34 allocs/op
+BenchmarkTransportSequentialRPC/fresh-12         	    1000	     43179 ns/op	     23160 RPC/s	      1000 connections	         1.000 connections/op	    1397 B/op	      34 allocs/op
+BenchmarkTransportSequentialRPC/persistent-12    	    1000	      9564 ns/op	    104557 RPC/s	         1.000 connections	         0.001000 connections/op	    1418 B/op	      27 allocs/op
+BenchmarkTransportSequentialRPC/persistent-12    	    1000	     10895 ns/op	     91786 RPC/s	         1.000 connections	         0.001000 connections/op	    1418 B/op	      27 allocs/op
+BenchmarkTransportSequentialRPC/persistent-12    	    1000	     10102 ns/op	     98986 RPC/s	         1.000 connections	         0.001000 connections/op	    1418 B/op	      27 allocs/op
+BenchmarkTransportConcurrentRPC/fresh-12         	    1000	      9215 ns/op	    108521 RPC/s	      1000 connections	         1.000 connections/op	    1645 B/op	      34 allocs/op
+BenchmarkTransportConcurrentRPC/fresh-12         	    1000	      9127 ns/op	    109565 RPC/s	      1000 connections	         1.000 connections/op	    1397 B/op	      34 allocs/op
+BenchmarkTransportConcurrentRPC/fresh-12         	    1000	     11155 ns/op	     89645 RPC/s	      1000 connections	         1.000 connections/op	    1404 B/op	      34 allocs/op
+BenchmarkTransportConcurrentRPC/persistent-12    	    1000	     20054 ns/op	     49865 RPC/s	         1.000 connections	         0.001000 connections/op	    1422 B/op	      27 allocs/op
+BenchmarkTransportConcurrentRPC/persistent-12    	    1000	     16017 ns/op	     62435 RPC/s	         1.000 connections	         0.001000 connections/op	    1424 B/op	      27 allocs/op
+BenchmarkTransportConcurrentRPC/persistent-12    	    1000	     14011 ns/op	     71372 RPC/s	         1.000 connections	         0.001000 connections/op	    1423 B/op	      27 allocs/op
+PASS
+ok  	quorumkv/internal/transport	0.257s

@@ -65,10 +65,29 @@ treated as a valid message.
 
 ## Connection model
 
-Each TCP connection carries exactly one request and one response, then is
-closed. This keeps connection lifecycle deterministic and easy to test.
-There is no connection pooling or persistent connection reuse in this
-milestone.
+A server connection handles a sequence of request frame → handler → response
+frame exchanges until EOF, framing/handler/I/O error, or server shutdown.
+The wire format, checksum, payload bound, and protocol version are unchanged.
+
+Each Raft node owns a `transport.PeerClient` through typed RPC adapters. The
+client reuses one healthy socket per peer address for RequestVote, PreVote,
+AppendEntries (including heartbeats and ReadIndex probes), InstallSnapshot,
+and TimeoutNow. Core Raft still accepts injectable typed sender functions;
+no raw socket state enters consensus logic. `Node.Close` closes its peer
+client before joining background work. CLI/client/admin requests continue
+using the fresh-connection `transport.Send` function.
+
+One RPC owns a peer stream at a time. A channel gate serializes the complete
+write/read/response-validation exchange; waiting for that gate observes the
+caller context and client shutdown. Different peers proceed independently.
+There is no multiplexing, pipelining, reconnect worker, or background reader.
+Incoming sessions are independent from outgoing sessions, and no Raft state
+mutex is held while waiting for a stream or doing network I/O.
+
+At most 256 address/session slots are retained per peer client. An idle slot
+is evicted at capacity; if every slot is active or has waiters, admission
+returns `ErrPeerLimit`. Removed peers can retain idle sockets until eviction
+or node shutdown. Waiters are caller-owned goroutines, not spawned workers.
 
 ## Request/response and timeouts
 
@@ -76,6 +95,21 @@ milestone.
 frame, and closes the connection. `ctx` bounds the entire exchange: if it
 is canceled or its deadline passes while blocked on I/O, the connection is
 closed to unblock the operation and `ctx.Err()` is returned.
+
+`PeerClient.Send(ctx, addr, msg, validate)` uses the same framing but retains
+a successful socket. An optional bounded protocol validator runs before
+releasing the stream; the Raft adapters validate both response type and
+payload. Any write/read/EOF/frame/validation failure or in-flight cancellation
+discards the socket. A later Send dials once; the failed Send is never
+silently retried. A cancellation while waiting for the gate does not disturb
+the active owner. Cancellation callbacks are joined before gate release so a
+late callback cannot close the next RPC's connection.
+
+Callers should set deadlines: a silent peer can otherwise block until client
+shutdown or caller cancellation. Reusing a stale connection may cost one
+failed RPC before Raft's existing retry cadence reconnects. Quorum completion
+can cancel outstanding probes, deliberately sacrificing those streams rather
+than risking request/response misalignment.
 
 On the server side, `Transport.Close` cancels the context passed to any
 handler still running, so a handler that checks `ctx.Done()` can return
@@ -91,6 +125,18 @@ unblocks any handler blocked on reading or writing that connection), and
 waits for the accept loop and every connection-handling goroutine to
 finish before returning. No transport goroutines remain running once
 `Close` returns.
+
+`PeerClient.Close` rejects new work, cancels dialing, gate waits, and active
+socket I/O, waits for registered Sends and cancellation callbacks, and closes
+idle sockets. Admission and WaitGroup registration share the shutdown lock.
+Concurrent Close calls on both server and client wait for the same cleanup.
+Server accept/session registration is also performed under its shutdown lock.
+
+`PeerClient.Stats` and `Node.TransportStats` expose successful connection dials,
+reuse attempts, failed Sends (including cancellation/admission failures), and
+closed owned sockets. Snapshots are observational, not transactionally atomic,
+and never influence correctness. See [transport-performance.md](transport-performance.md)
+for measurements and tradeoffs.
 
 ## Malformed peers
 
