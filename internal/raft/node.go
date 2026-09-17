@@ -45,16 +45,9 @@ func randomElectionTimeout() time.Duration {
 // and real-socket integration tests.
 type sender func(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error)
 
-func sendOverTransport(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
+func (p *peerRPC) sendOverTransport(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
 	msg := transport.NewMessage(transport.MessageRequestVote, EncodeRequestVote(req))
-	resp, err := transport.Send(ctx, addr, msg)
-	if err != nil {
-		return RequestVoteResponse{}, err
-	}
-	if resp.Type != transport.MessageRequestVoteResponse {
-		return RequestVoteResponse{}, fmt.Errorf("raft: unexpected response message type %d", resp.Type)
-	}
-	return DecodeRequestVoteResponse(resp.Payload)
+	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageRequestVoteResponse, DecodeRequestVoteResponse)
 }
 
 // appendSender issues an AppendEntries RPC to addr and returns the
@@ -62,20 +55,13 @@ func sendOverTransport(ctx context.Context, addr string, req RequestVoteRequest)
 // substitutability.
 type appendSender func(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error)
 
-func sendAppendOverTransport(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
+func (p *peerRPC) sendAppendOverTransport(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
 	payload, err := EncodeAppendEntries(req)
 	if err != nil {
 		return AppendEntriesResponse{}, err
 	}
 	msg := transport.NewMessage(transport.MessageAppendEntries, payload)
-	resp, err := transport.Send(ctx, addr, msg)
-	if err != nil {
-		return AppendEntriesResponse{}, err
-	}
-	if resp.Type != transport.MessageAppendEntriesResponse {
-		return AppendEntriesResponse{}, fmt.Errorf("raft: unexpected response message type %d", resp.Type)
-	}
-	return DecodeAppendEntriesResponse(resp.Payload)
+	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageAppendEntriesResponse, DecodeAppendEntriesResponse)
 }
 
 // preVoteSender issues a PreVote RPC to addr and returns the decoded
@@ -83,16 +69,9 @@ func sendAppendOverTransport(ctx context.Context, addr string, req AppendEntries
 // substitutability.
 type preVoteSender func(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error)
 
-func sendPreVoteOverTransport(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
+func (p *peerRPC) sendPreVoteOverTransport(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
 	msg := transport.NewMessage(transport.MessagePreVote, EncodePreVote(req))
-	resp, err := transport.Send(ctx, addr, msg)
-	if err != nil {
-		return PreVoteResponse{}, err
-	}
-	if resp.Type != transport.MessagePreVoteResponse {
-		return PreVoteResponse{}, fmt.Errorf("raft: unexpected response message type %d", resp.Type)
-	}
-	return DecodePreVoteResponse(resp.Payload)
+	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessagePreVoteResponse, DecodePreVoteResponse)
 }
 
 // timeoutNowSender issues a TimeoutNow RPC to addr and returns the
@@ -100,16 +79,9 @@ func sendPreVoteOverTransport(ctx context.Context, addr string, req PreVoteReque
 // substitutability.
 type timeoutNowSender func(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error)
 
-func sendTimeoutNowOverTransport(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error) {
+func (p *peerRPC) sendTimeoutNowOverTransport(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error) {
 	msg := transport.NewMessage(transport.MessageTimeoutNow, EncodeTimeoutNow(req))
-	resp, err := transport.Send(ctx, addr, msg)
-	if err != nil {
-		return TimeoutNowResponse{}, err
-	}
-	if resp.Type != transport.MessageTimeoutNowResponse {
-		return TimeoutNowResponse{}, fmt.Errorf("raft: unexpected response message type %d", resp.Type)
-	}
-	return DecodeTimeoutNowResponse(resp.Payload)
+	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageTimeoutNowResponse, DecodeTimeoutNowResponse)
 }
 
 // Node is a single Raft participant: persistent term/vote/log, volatile
@@ -129,6 +101,7 @@ type Node struct {
 	snapshotStore       *SnapshotStore
 	peers               map[NodeID]string // NodeID -> address, excluding self
 	selfAddr            string            // this node's own dialable address, for Configuration entries other nodes need to resolve it by
+	peerClient          *transport.PeerClient
 	send                sender
 	sendAppend          appendSender
 	sendInstallSnapshot installSnapshotSender
@@ -399,18 +372,21 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		restoreFn = func([]byte) error { return nil }
 	}
 	bgCtx, bgCancel := context.WithCancel(context.Background())
+	peerClient := transport.NewPeerClient()
+	rpc := &peerRPC{client: peerClient}
 	n := &Node{
+		peerClient:          peerClient,
 		id:                  id,
 		store:               store,
 		log:                 log,
 		commitStore:         commitStore,
 		snapshotStore:       snapshotStore,
 		peers:               peers,
-		send:                sendOverTransport,
-		sendAppend:          sendAppendOverTransport,
-		sendInstallSnapshot: sendInstallSnapshotOverTransport,
-		sendPreVote:         sendPreVoteOverTransport,
-		sendTimeoutNow:      sendTimeoutNowOverTransport,
+		send:                rpc.sendOverTransport,
+		sendAppend:          rpc.sendAppendOverTransport,
+		sendInstallSnapshot: rpc.sendInstallSnapshotOverTransport,
+		sendPreVote:         rpc.sendPreVoteOverTransport,
+		sendTimeoutNow:      rpc.sendTimeoutNowOverTransport,
 		timeoutFunc:         randomElectionTimeout,
 		heartbeatInterval:   defaultHeartbeatInterval,
 		resetCh:             make(chan struct{}, 1),
@@ -437,6 +413,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 	}
 	if snap != nil {
 		if err := restoreFn(snap.Data); err != nil {
+			peerClient.Close()
 			return nil, fmt.Errorf("raft: restoring snapshot at startup: %w", err)
 		}
 		n.lastApplied = snap.LastIncludedIndex
@@ -507,6 +484,7 @@ func (n *Node) Close() {
 	n.mu.Unlock()
 
 	n.bgCancel()
+	n.peerClient.Close()
 	n.bgWG.Wait()
 }
 

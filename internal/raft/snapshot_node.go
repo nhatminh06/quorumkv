@@ -34,20 +34,13 @@ type RestoreFunc func(data []byte) error
 // transport/fake-network substitutability.
 type installSnapshotSender func(ctx context.Context, addr string, req InstallSnapshotRequest) (InstallSnapshotResponse, error)
 
-func sendInstallSnapshotOverTransport(ctx context.Context, addr string, req InstallSnapshotRequest) (InstallSnapshotResponse, error) {
+func (p *peerRPC) sendInstallSnapshotOverTransport(ctx context.Context, addr string, req InstallSnapshotRequest) (InstallSnapshotResponse, error) {
 	payload, err := EncodeInstallSnapshot(req)
 	if err != nil {
 		return InstallSnapshotResponse{}, err
 	}
 	msg := transport.NewMessage(transport.MessageInstallSnapshot, payload)
-	resp, err := transport.Send(ctx, addr, msg)
-	if err != nil {
-		return InstallSnapshotResponse{}, err
-	}
-	if resp.Type != transport.MessageInstallSnapshotResponse {
-		return InstallSnapshotResponse{}, fmt.Errorf("raft: unexpected response message type %d", resp.Type)
-	}
-	return DecodeInstallSnapshotResponse(resp.Payload)
+	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageInstallSnapshotResponse, DecodeInstallSnapshotResponse)
 }
 
 // incomingSnapshot tracks one in-progress InstallSnapshot transfer this
