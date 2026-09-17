@@ -134,7 +134,7 @@ func TestClientRetriesWriteAfterTransportFailureWithSameIdentity(t *testing.T) {
 
 // TestClientWriteRetriesNotLeaderWithoutHint proves a write facing a
 // NOT_LEADER response with no hint (e.g. mid-election) retries — rather
-// than giving up immediately the way GET still does — bounded by ctx.
+// than ending after one seed pass as GET does — bounded by ctx.
 func TestClientWriteRetriesNotLeaderWithoutHint(t *testing.T) {
 	var calls atomic.Int64
 	tr := startFakeServer(t, func(req clientproto.Request) clientproto.Response {
@@ -154,8 +154,8 @@ func TestClientWriteRetriesNotLeaderWithoutHint(t *testing.T) {
 }
 
 // TestClientGetUnknownLeaderNoHintFailsImmediately proves GET keeps the
-// original (Milestone 5-8) conservative behavior: no hint means no
-// retry, immediate ErrNoLeaderKnown.
+// bounded behavior with one seed: no hint and no remaining seeds means
+// ErrNoLeaderKnown.
 func TestClientGetUnknownLeaderNoHintFailsImmediately(t *testing.T) {
 	tr := startFakeServer(t, func(req clientproto.Request) clientproto.Response {
 		return clientproto.Response{Status: clientproto.StatusNotLeader}
@@ -169,7 +169,7 @@ func TestClientGetUnknownLeaderNoHintFailsImmediately(t *testing.T) {
 	}
 }
 
-func TestClientGetDoesNotRetryAfterTransportFailure(t *testing.T) {
+func TestClientGetDoesNotRepeatFailedAddress(t *testing.T) {
 	var calls atomic.Int64
 	tr, err := transport.Listen("127.0.0.1:0", func(ctx context.Context, m transport.Message) (transport.Message, error) {
 		calls.Add(1)
@@ -187,7 +187,7 @@ func TestClientGetDoesNotRetryAfterTransportFailure(t *testing.T) {
 		t.Fatalf("Get succeeded despite handler failure, want error")
 	}
 	if got := calls.Load(); got != 1 {
-		t.Fatalf("handler called %d times, want exactly 1 (GET is not retried)", got)
+		t.Fatalf("handler called %d times, want exactly 1 (addresses are not repeated)", got)
 	}
 }
 
