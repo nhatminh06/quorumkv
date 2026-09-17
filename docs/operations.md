@@ -74,8 +74,8 @@ Each `qkv` invocation is a fresh process with a fresh client identity:
 there is no session persistence across invocations. A `put`/`delete`
 retried by running `qkv` again is a genuinely new request as far as the
 cluster's dedup table is concerned — see
-[request-dedup.md](request-dedup.md). Within a single invocation, a
-write that times out is safe to simply re-run.
+[request-dedup.md](request-dedup.md). Within a single invocation, automatic
+write retries retain the same request identity.
 
 ### put / get / delete
 
@@ -89,9 +89,20 @@ qkv --addr 127.0.0.1:7001 delete x
 on a missing key it prints `not found` and exits with status 3 (see
 Exit codes below), rather than printing anything ambiguous.
 
-`get` follows a `NOT_LEADER` redirect but does **not** fail over to a
-different `--addr` on a connection failure — if the first reachable
-seed is down, provide only currently-reachable addresses.
+`get` prefers its cached leader, follows up to three leader hints, and
+tries remaining `--addr` seeds in supplied order when a connection fails
+or a hint is missing, unusable, repeated, or stale. Each address is tried
+at most once per GET; a successful leader is cached within that client.
+The bound is the configured seed count plus one cached address plus three
+hint attempts. All attempts share the command deadline. A silent peer can
+consume that deadline before other seeds are reached. Exhaustion returns
+the last discovery/transport error; server TIMEOUT, BUSY, and other terminal
+statuses are returned immediately. This is a finite discovery pass, not a
+guarantee of success during elections or loss of quorum.
+
+Failover locates a leader; it does not permit follower reads. GET still
+uses the leader's quorum-confirmed `ReadIndex` path. PUT/DELETE retain the
+same request identity across automatic retries.
 
 ### status
 

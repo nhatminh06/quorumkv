@@ -10,9 +10,10 @@
 // effect. This lets the client safely retry a PUT/DELETE after a
 // transport failure, a server-reported TIMEOUT, or a NOT_LEADER
 // redirect — cases Milestone 5-8 conservatively treated as unretryable
-// because the outcome was ambiguous. GET is unaffected: it carries no
-// request identity and is not retried by this client (it is already
-// side-effect-free and quorum-confirmed — see docs/read-index.md).
+// because the outcome was ambiguous. GET carries no
+// request identity and searches seeds and bounded leader hints on discovery
+// or transport failures. Consistency remains quorum-confirmed on the server
+// (see docs/read-index.md).
 //
 // A default Client (New) generates a fresh, process-lifetime ClientID
 // and keeps its next-sequence counter in memory: it preserves safe retry
@@ -59,8 +60,7 @@ var (
 	// with the same request identity (see the package doc).
 	ErrTimeout = errors.New("client: server-side wait timed out; outcome is uncertain")
 	// ErrTooManyRedirects means maxRedirects NOT_LEADER hints were
-	// followed without success (GET only — PUT/DELETE fall back to seed
-	// rotation instead of failing outright, see the package doc).
+	// followed without success and all seeds were exhausted (GET only).
 	ErrTooManyRedirects = errors.New("client: too many leader redirects")
 	// ErrBadRequest means the request was rejected as malformed/oversized
 	// before ever reaching Raft. Not retried.
@@ -87,9 +87,8 @@ var (
 	// proposed or applied. For PUT/DELETE this Client already retries a
 	// BUSY response automatically with the same request identity (see
 	// doWrite); ErrBusy from Get is returned to the caller instead,
-	// since a read carries no request identity and this package's GET
-	// path has always been a single conservative attempt (see doRead) —
-	// GET is safe to retry as-is, at the caller's discretion.
+	// preserving terminal server-status semantics. GET is safe to retry
+	// as-is, at the caller's discretion.
 	ErrBusy = errors.New("client: server reported it is busy")
 )
 
@@ -277,11 +276,9 @@ func (c *Client) nextSeed(idx *int) string {
 }
 
 // Get returns (value, true, nil) if key is present, (nil, false, nil) if
-// it is not found, or a non-nil error otherwise. Unlike PUT/DELETE, GET
-// carries no request identity and is not retried by this Client — it is
-// already side-effect-free (a caller may simply call Get again), and its
-// consistency comes from raft.Node.ReadIndex on the server, unrelated to
-// this milestone's write-dedup mechanism (see docs/read-index.md).
+// it is not found, or a non-nil error otherwise. GET carries no request
+// identity. Seed failover only discovers a leader; consistency still comes
+// from raft.Node.ReadIndex on that server (see docs/read-index.md).
 func (c *Client) Get(ctx context.Context, key []byte) ([]byte, bool, error) {
 	resp, err := c.doRead(ctx, clientproto.Request{Operation: clientproto.OpGet, Key: key})
 	if err != nil {
@@ -293,45 +290,73 @@ func (c *Client) Get(ctx context.Context, key []byte) ([]byte, bool, error) {
 	return resp.Value, true, nil
 }
 
-// doRead is the original (Milestone 5-8) conservative single-attempt
-// request path, preserved unchanged for GET: it follows NOT_LEADER
-// redirects up to maxRedirects times but never retries after a
-// transport-level failure.
+// doRead searches the cached leader, configured seeds in order, and at
+// most maxRedirects hints total. Each address is contacted at most once:
+// missing, stale, malformed or cyclic hints cannot prevent seed fallback.
+// The bound is len(seeds) + 1 cached address + maxRedirects, with no sleeps
+// or retry passes. Network exchanges share the caller's context; callers
+// should set a deadline to bound a peer that accepts but never responds.
+// Terminal server statuses retain their meaning; only discovery and
+// transport failures trigger failover. On exhaustion return the last
+// failure (or ErrTooManyRedirects if the last hint exceeded the budget).
 func (c *Client) doRead(ctx context.Context, req clientproto.Request) (clientproto.Response, error) {
 	c.mu.Lock()
 	addr := c.leader
 	c.mu.Unlock()
-	if addr == "" && len(c.seeds) > 0 {
-		addr = c.seeds[0]
-	}
 	tried := make(map[string]bool)
-
-	for attempt := 0; attempt <= maxRedirects; attempt++ {
-		if addr == "" {
-			return clientproto.Response{}, ErrNoLeaderKnown
-		}
-		tried[addr] = true
-
-		resp, err := c.attempt(ctx, addr, req)
-		if err != nil {
+	seedIdx, redirects := 0, 0
+	var lastErr error = ErrNoLeaderKnown
+	for {
+		if err := ctx.Err(); err != nil {
 			return clientproto.Response{}, err
 		}
-
-		if resp.Status == clientproto.StatusNotLeader {
-			hint := string(resp.LeaderHint)
-			if hint == "" || tried[hint] {
-				return clientproto.Response{}, ErrNoLeaderKnown
+		if addr == "" || tried[addr] {
+			addr = ""
+			for seedIdx < len(c.seeds) {
+				candidate := c.seeds[seedIdx]
+				seedIdx++
+				if candidate != "" && !tried[candidate] {
+					addr = candidate
+					break
+				}
 			}
-			addr = hint
+			if addr == "" {
+				return clientproto.Response{}, lastErr
+			}
+		}
+		tried[addr] = true
+		resp, err := c.attempt(ctx, addr, req)
+		if ctx.Err() != nil {
+			return clientproto.Response{}, ctx.Err()
+		}
+		if err != nil {
+			if errors.Is(err, ErrBadRequest) {
+				return clientproto.Response{}, err
+			}
+			lastErr, addr = err, ""
 			continue
 		}
-
+		if resp.Status == clientproto.StatusNotLeader {
+			hint := string(resp.LeaderHint)
+			lastErr, addr = ErrNoLeaderKnown, ""
+			if hint != "" && !tried[hint] {
+				if redirects < maxRedirects {
+					redirects++
+					addr = hint
+				} else {
+					lastErr = ErrTooManyRedirects
+				}
+			}
+			continue
+		}
+		if err := statusErr(resp.Status); err != nil {
+			return resp, err
+		}
 		c.mu.Lock()
 		c.leader = addr
 		c.mu.Unlock()
-		return resp, statusErr(resp.Status)
+		return resp, nil
 	}
-	return clientproto.Response{}, ErrTooManyRedirects
 }
 
 // attempt sends req to addr once and returns the decoded response, or a
