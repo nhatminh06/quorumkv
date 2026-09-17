@@ -223,3 +223,19 @@ these are goals of this project.
   binaries as OS processes and simulate a leader crash with `SIGKILL`,
   not `Node.Close()` — proving the on-disk recovery path, not just the
   in-memory one.
+
+## Client seed failover
+
+Clients accept multiple seed nodes and cache the successful leader for
+subsequent calls. GET first tries that cache, follows bounded leader hints,
+and falls back to untried seeds in configured order after missing/stale/
+cyclic hints or transport failures. Each address is contacted at most once,
+with at most three hint attempts in addition to seeds and a cached address.
+All attempts respect the caller's context; use a deadline to bound silent
+peers. A finite search can still fail during an election or without quorum.
+Server TIMEOUT/BUSY and other terminal responses are not retried by GET.
+
+PUT/DELETE retain stable request identity across their automatic retries.
+GET remains linearizable through server-side `ReadIndex`: seed failover
+only discovers a leader and never enables follower reads. See
+[operations](docs/operations.md) for details.
