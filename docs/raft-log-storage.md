@@ -205,3 +205,8 @@ The evidence suggests a future milestone should focus on reducing decoded
 entry cloning and per-record allocation during open and catch-up, after fresh
 profiles establish whether that work is more important than transport or
 state-machine apply costs.
+
+Milestone 21 subsequently replaced per-record body/wrapper allocations with
+one exact-size batch buffer while preserving this byte format and crash model.
+See [allocation-performance.md](allocation-performance.md) for the ownership
+proof and measured allocation reduction.

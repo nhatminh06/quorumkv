@@ -113,6 +113,11 @@ active log batch is discarded on recovery, proven with real subprocess
 crashes. See [raft-log-storage.md](raft-log-storage.md), [wal.md](wal.md), and
 [crash-consistency.md](crash-consistency.md).
 
+Internal producers may explicitly transfer freshly allocated byte slices
+across command, proposal, log, and transport boundaries. Public APIs continue
+to clone caller-owned input. The full ownership map and retained-copy rationale
+are documented in [allocation-performance.md](allocation-performance.md).
+
 ## 9. Snapshot and compaction
 
 Snapshotting is caller-triggered (`qkv snapshot` / `Node.CreateSnapshot`)

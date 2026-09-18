@@ -1,0 +1,231 @@
+Milestone 21 post-optimization focused allocation results
+Command: go test ./internal/kv ./internal/raft -run '^$' -bench 'BenchmarkAllocation|BenchmarkRaftLogScalingAppendOne|BenchmarkRaftLogScalingMutations|BenchmarkRaftLogScalingRead|BenchmarkFollowerLogPersistenceCatchUp' -benchmem -benchtime=5x -count=3
+
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/kv
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkAllocationFingerprint/value=16B-12         	       5	       835.0 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAllocationFingerprint/value=16B-12         	       5	       727.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAllocationFingerprint/value=16B-12         	       5	       593.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAllocationFingerprint/value=1024B-12       	       5	       792.6 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAllocationFingerprint/value=1024B-12       	       5	       791.2 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAllocationFingerprint/value=1024B-12       	       5	      1127 ns/op	       3 B/op	       0 allocs/op
+BenchmarkAllocationFingerprint/value=16384B-12      	       5	      9674 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAllocationFingerprint/value=16384B-12      	       5	     11179 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAllocationFingerprint/value=16384B-12      	       5	      9624 ns/op	       0 B/op	       0 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=16B-12 	       5	       909.4 ns/op	      64 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=16B-12 	       5	      1056 ns/op	      64 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=16B-12 	       5	       764.6 ns/op	      64 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=16B-12 	       5	       754.0 ns/op	      19 B/op	       2 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=16B-12 	       5	       828.6 ns/op	      19 B/op	       2 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=16B-12 	       5	       738.0 ns/op	      19 B/op	       2 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=1024B-12         	       5	      1038 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=1024B-12         	       5	      3987 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=1024B-12         	       5	      2626 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=1024B-12         	       5	      1094 ns/op	    1027 B/op	       2 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=1024B-12         	       5	       986.6 ns/op	    1027 B/op	       2 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=1024B-12         	       5	       975.0 ns/op	    1027 B/op	       2 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=16384B-12        	       5	      5146 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=16384B-12        	       5	      2072 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/encode/value=16384B-12        	       5	      4187 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=16384B-12        	       5	      3644 ns/op	   16387 B/op	       2 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=16384B-12        	       5	      1665 ns/op	   16387 B/op	       2 allocs/op
+BenchmarkAllocationCommandCodec/decode/value=16384B-12        	       5	      3159 ns/op	   16387 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=16B-12               	       5	       244.8 ns/op	      19 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=16B-12               	       5	       264.0 ns/op	      19 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=16B-12               	       5	       156.8 ns/op	      19 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=1024B-12             	       5	       206.4 ns/op	    1027 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=1024B-12             	       5	       207.0 ns/op	    1027 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=1024B-12             	       5	       175.4 ns/op	    1027 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=16384B-12            	       5	      4059 ns/op	   16387 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=16384B-12            	       5	      2120 ns/op	   16387 B/op	       2 allocs/op
+BenchmarkAllocationStateMachinePut/value=16384B-12            	       5	      3030 ns/op	   16387 B/op	       2 allocs/op
+PASS
+ok  	quorumkv/internal/kv	0.014s
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/raft
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkAllocationEntryRecord/command=16B-12         	       5	       265.2 ns/op	      48 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=16B-12         	       5	       264.0 ns/op	      48 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=16B-12         	       5	       204.0 ns/op	      48 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=1024B-12       	       5	       278.4 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=1024B-12       	       5	       360.6 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=1024B-12       	       5	       297.0 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=16384B-12      	       5	      3403 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=16384B-12      	       5	      3219 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=16384B-12      	       5	      1998 ns/op	   18432 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=262144B-12     	       5	     32542 ns/op	  270336 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=262144B-12     	       5	     80292 ns/op	  270336 B/op	       1 allocs/op
+BenchmarkAllocationEntryRecord/command=262144B-12     	       5	     53709 ns/op	  270336 B/op	       1 allocs/op
+BenchmarkAllocationReplicationEncoding/entries-range-64-12         	       5	     13230 ns/op	   68224 B/op	      65 allocs/op
+BenchmarkAllocationReplicationEncoding/entries-range-64-12         	       5	      7067 ns/op	   68224 B/op	      65 allocs/op
+BenchmarkAllocationReplicationEncoding/entries-range-64-12         	       5	     45230 ns/op	   68224 B/op	      65 allocs/op
+BenchmarkAllocationReplicationEncoding/encode-append-entries-64-12 	       5	      6846 ns/op	   73728 B/op	       1 allocs/op
+BenchmarkAllocationReplicationEncoding/encode-append-entries-64-12 	       5	     10862 ns/op	   73728 B/op	       1 allocs/op
+BenchmarkAllocationReplicationEncoding/encode-append-entries-64-12 	       5	      9850 ns/op	   73728 B/op	       1 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=16B-12          	       5	      3622 ns/op	       965.0 fsync-ns	       185.0 logical-B	     17394 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=16B-12          	       5	      5020 ns/op	      1441 fsync-ns	       185.0 logical-B	     24033 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=16B-12          	       5	      3187 ns/op	       970.0 fsync-ns	       185.0 logical-B	     15280 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=16B-12         	       5	      3339 ns/op	      1013 fsync-ns	       185.0 logical-B	     15968 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=16B-12         	       5	      3164 ns/op	       921.0 fsync-ns	       185.0 logical-B	     15151 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=16B-12         	       5	      3381 ns/op	      1024 fsync-ns	       185.0 logical-B	     16199 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=16B-12         	       5	      3402 ns/op	       985.0 fsync-ns	       185.0 logical-B	     16223 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=16B-12         	       5	      3430 ns/op	       941.0 fsync-ns	       185.0 logical-B	     16214 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=16B-12         	       5	      3298 ns/op	       957.0 fsync-ns	       185.0 logical-B	     15737 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=10000/value=16B-12        	       5	      3458 ns/op	      1009 fsync-ns	       185.0 logical-B	     16306 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=10000/value=16B-12        	       5	      3198 ns/op	       973.0 fsync-ns	       185.0 logical-B	     15129 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=10000/value=16B-12        	       5	      3441 ns/op	       904.0 fsync-ns	       185.0 logical-B	     16495 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=25000/value=16B-12        	       5	      3257 ns/op	       881.0 fsync-ns	       185.0 logical-B	     15219 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=25000/value=16B-12        	       5	      3611 ns/op	       895.0 fsync-ns	       185.0 logical-B	     16838 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=25000/value=16B-12        	       5	      3491 ns/op	       914.0 fsync-ns	       185.0 logical-B	     16470 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=50000/value=16B-12        	       5	      3747 ns/op	       909.0 fsync-ns	       185.0 logical-B	     17474 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=50000/value=16B-12        	       5	      3511 ns/op	       933.0 fsync-ns	       185.0 logical-B	     16258 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=50000/value=16B-12        	       5	      3852 ns/op	       919.0 fsync-ns	       185.0 logical-B	     18107 persist-ns	       310.0 physical-B	         1.676 write-amplification	     376 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=1024B-12        	       5	      5647 ns/op	      1058 fsync-ns	      5225 logical-B	     27309 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=1024B-12        	       5	      4540 ns/op	       979.0 fsync-ns	      5225 logical-B	     21993 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=1024B-12        	       5	      4769 ns/op	       963.0 fsync-ns	      5225 logical-B	     23091 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=1024B-12       	       5	      3905 ns/op	       974.0 fsync-ns	      5225 logical-B	     18430 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=1024B-12       	       5	      7766 ns/op	      2998 fsync-ns	      5225 logical-B	     35847 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=1024B-12       	       5	      4474 ns/op	       973.0 fsync-ns	      5225 logical-B	     21407 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=1024B-12       	       5	      4379 ns/op	       955.0 fsync-ns	      5225 logical-B	     20589 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=1024B-12       	       5	      4354 ns/op	       949.0 fsync-ns	      5225 logical-B	     20334 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=1024B-12       	       5	      5645 ns/op	       977.0 fsync-ns	      5225 logical-B	     27061 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=10000/value=1024B-12      	       5	      4499 ns/op	       951.0 fsync-ns	      5225 logical-B	     21250 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=10000/value=1024B-12      	       5	      4109 ns/op	       988.0 fsync-ns	      5225 logical-B	     19320 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=10000/value=1024B-12      	       5	      4976 ns/op	      1100 fsync-ns	      5225 logical-B	     23774 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=25000/value=1024B-12      	       5	      4985 ns/op	       918.0 fsync-ns	      5225 logical-B	     18949 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=25000/value=1024B-12      	       5	      3558 ns/op	       879.0 fsync-ns	      5225 logical-B	     16501 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=25000/value=1024B-12      	       5	      6578 ns/op	       878.0 fsync-ns	      5225 logical-B	     18946 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=50000/value=1024B-12      	       5	      4024 ns/op	       902.0 fsync-ns	      5225 logical-B	     18837 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=50000/value=1024B-12      	       5	      4460 ns/op	       937.0 fsync-ns	      5225 logical-B	     21088 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=50000/value=1024B-12      	       5	      3974 ns/op	       987.0 fsync-ns	      5225 logical-B	     18671 persist-ns	      5350 physical-B	         1.024 write-amplification	    2472 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=16384B-12       	       5	     10747 ns/op	      1043 fsync-ns	     82025 logical-B	     52676 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=16384B-12       	       5	     12440 ns/op	      1814 fsync-ns	     82025 logical-B	     60466 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=100/value=16384B-12       	       5	     18823 ns/op	      1050 fsync-ns	     82025 logical-B	     93024 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=16384B-12      	       5	      9815 ns/op	      1052 fsync-ns	     82025 logical-B	     47832 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=16384B-12      	       5	     10691 ns/op	      1001 fsync-ns	     82025 logical-B	     52130 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=1000/value=16384B-12      	       5	      9861 ns/op	       993.0 fsync-ns	     82025 logical-B	     48115 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=16384B-12      	       5	      8976 ns/op	       978.0 fsync-ns	     82025 logical-B	     43762 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=16384B-12      	       5	      9253 ns/op	       917.0 fsync-ns	     82025 logical-B	     45182 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingAppendOne/entries=5000/value=16384B-12      	       5	      8604 ns/op	       988.0 fsync-ns	     82025 logical-B	     41791 persist-ns	     82150 physical-B	         1.002 write-amplification	   35112 B/op	       6 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=100-12       	       5	      6990 ns/op	       243.0 fsync-ns	     66880 logical-B	     34493 persist-ns	     66905 physical-B	         1.000 write-amplification	   30897 B/op	      14 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=100-12       	       5	      8712 ns/op	       223.0 fsync-ns	     66880 logical-B	     43265 persist-ns	     66905 physical-B	         1.000 write-amplification	   30897 B/op	      14 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=100-12       	       5	      5933 ns/op	       247.0 fsync-ns	     66880 logical-B	     29379 persist-ns	     66905 physical-B	         1.000 write-amplification	   30897 B/op	      14 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=100-12      	       5	     18377 ns/op	         0 fsync-ns	     10450 logical-B	     89705 persist-ns	        33.00 physical-B	         0.003158 write-amplification	   50177 B/op	      43 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=100-12      	       5	     19035 ns/op	         0 fsync-ns	     10450 logical-B	     93087 persist-ns	        33.00 physical-B	         0.003158 write-amplification	   50177 B/op	      43 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=100-12      	       5	     18800 ns/op	         0 fsync-ns	     10450 logical-B	     91847 persist-ns	        33.00 physical-B	         0.003158 write-amplification	   50177 B/op	      43 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=100-12      	       5	     31705 ns/op	         0 fsync-ns	     10450 logical-B	    156435 persist-ns	     63176 physical-B	         6.046 write-amplification	   64553 B/op	      67 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=100-12      	       5	     40387 ns/op	         0 fsync-ns	     10450 logical-B	    198805 persist-ns	     63176 physical-B	         6.046 write-amplification	   64553 B/op	      67 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=100-12      	       5	     33284 ns/op	         0 fsync-ns	     10450 logical-B	    163854 persist-ns	     63176 physical-B	         6.046 write-amplification	   64553 B/op	      67 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=100-12            	       5	     30151 ns/op	         0 fsync-ns	        16.00 logical-B	    149862 persist-ns	     53546 physical-B	      3347 write-amplification	   59462 B/op	      61 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=100-12            	       5	     31900 ns/op	         0 fsync-ns	        16.00 logical-B	    158736 persist-ns	     53546 physical-B	      3347 write-amplification	   59465 B/op	      61 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=100-12            	       5	     30083 ns/op	         0 fsync-ns	        16.00 logical-B	    149691 persist-ns	     53546 physical-B	      3347 write-amplification	   59452 B/op	      61 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=1000-12      	       5	     12938 ns/op	       411.0 fsync-ns	     66880 logical-B	     63702 persist-ns	     66905 physical-B	         1.000 write-amplification	   41547 B/op	      14 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=1000-12      	       5	      7878 ns/op	       267.0 fsync-ns	     66880 logical-B	     38907 persist-ns	     66905 physical-B	         1.000 write-amplification	   41547 B/op	      14 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=1000-12      	       5	     10349 ns/op	       244.0 fsync-ns	     66880 logical-B	     51246 persist-ns	     66905 physical-B	         1.000 write-amplification	   41547 B/op	      14 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=1000-12     	       5	    167232 ns/op	         0 fsync-ns	     10450 logical-B	    827005 persist-ns	        33.00 physical-B	         0.003158 write-amplification	  453235 B/op	     226 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=1000-12     	       5	    138931 ns/op	         0 fsync-ns	     10450 logical-B	    688801 persist-ns	        33.00 physical-B	         0.003158 write-amplification	  453235 B/op	     226 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=1000-12     	       5	    204108 ns/op	         0 fsync-ns	     10450 logical-B	   1001939 persist-ns	        33.00 physical-B	         0.003158 write-amplification	  449948 B/op	     225 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=1000-12     	       5	    337438 ns/op	         0 fsync-ns	     10450 logical-B	   1680112 persist-ns	    544676 physical-B	        52.12 write-amplification	  567972 B/op	     429 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=1000-12     	       5	    308279 ns/op	         0 fsync-ns	     10450 logical-B	   1531113 persist-ns	    544676 physical-B	        52.12 write-amplification	  566283 B/op	     428 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=1000-12     	       5	    256840 ns/op	         0 fsync-ns	     10450 logical-B	   1274513 persist-ns	    544676 physical-B	        52.12 write-amplification	  566283 B/op	     428 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=1000-12           	       5	    312708 ns/op	         0 fsync-ns	        16.00 logical-B	   1559027 persist-ns	    535046 physical-B	     33440 write-amplification	  565396 B/op	     424 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=1000-12           	       5	    240538 ns/op	         0 fsync-ns	        16.00 logical-B	   1196372 persist-ns	    535046 physical-B	     33440 write-amplification	  563691 B/op	     423 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=1000-12           	       5	    286729 ns/op	         0 fsync-ns	        16.00 logical-B	   1427032 persist-ns	    535046 physical-B	     33440 write-amplification	  565419 B/op	     425 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=5000-12      	       5	     16499 ns/op	       261.0 fsync-ns	     66880 logical-B	     81871 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=5000-12      	       5	      7696 ns/op	       273.0 fsync-ns	     66880 logical-B	     37823 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=5000-12      	       5	      7728 ns/op	       284.0 fsync-ns	     66880 logical-B	     38011 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=5000-12     	       5	    900149 ns/op	         0 fsync-ns	     10450 logical-B	   4481643 persist-ns	   1156716 physical-B	       110.7 write-amplification	 2536208 B/op	    1466 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=5000-12     	       5	    889223 ns/op	         0 fsync-ns	     10450 logical-B	   4425334 persist-ns	   1156716 physical-B	       110.7 write-amplification	 2534518 B/op	    1465 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=5000-12     	       5	   1067882 ns/op	         0 fsync-ns	     10450 logical-B	   5297695 persist-ns	   1156716 physical-B	       110.7 write-amplification	 2534518 B/op	    1465 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=5000-12     	       5	   1474020 ns/op	         0 fsync-ns	     10450 logical-B	   7349469 persist-ns	   2684676 physical-B	       256.9 write-amplification	 2854966 B/op	    2036 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=5000-12     	       5	   1317836 ns/op	         0 fsync-ns	     10450 logical-B	   6576477 persist-ns	   2684676 physical-B	       256.9 write-amplification	 2852916 B/op	    2035 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=5000-12     	       5	   1516989 ns/op	         0 fsync-ns	     10450 logical-B	   7566087 persist-ns	   2684676 physical-B	       256.9 write-amplification	 2854966 B/op	    2036 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=5000-12           	       5	    953849 ns/op	         0 fsync-ns	        16.00 logical-B	   4761483 persist-ns	   1518376 physical-B	     94898 write-amplification	 2592758 B/op	    1598 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=5000-12           	       5	    956868 ns/op	         0 fsync-ns	        16.00 logical-B	   4775814 persist-ns	   1518376 physical-B	     94898 write-amplification	 2594428 B/op	    1599 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=5000-12           	       5	   1021952 ns/op	         0 fsync-ns	        16.00 logical-B	   5093834 persist-ns	   1518376 physical-B	     94898 write-amplification	 2592758 B/op	    1598 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=10000-12     	       5	     16148 ns/op	       268.0 fsync-ns	     66880 logical-B	     79945 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=10000-12     	       5	     10442 ns/op	       562.0 fsync-ns	     66880 logical-B	     51428 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=10000-12     	       5	      8196 ns/op	       406.0 fsync-ns	     66880 logical-B	     40272 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=10000-12    	       5	   1790782 ns/op	         0 fsync-ns	     10450 logical-B	   8911566 persist-ns	   2313386 physical-B	       221.4 write-amplification	 5048504 B/op	    2905 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=10000-12    	       5	   1821927 ns/op	         0 fsync-ns	     10450 logical-B	   9040209 persist-ns	   2313386 physical-B	       221.4 write-amplification	 5050193 B/op	    2906 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=10000-12    	       5	   1863139 ns/op	         0 fsync-ns	     10450 logical-B	   9270574 persist-ns	   2313386 physical-B	       221.4 write-amplification	 5050168 B/op	    2906 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=10000-12    	       5	   1478797 ns/op	         0 fsync-ns	     10450 logical-B	   7353490 persist-ns	   1166346 physical-B	       111.6 write-amplification	 4756872 B/op	    2475 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=10000-12    	       5	   1569874 ns/op	         0 fsync-ns	     10450 logical-B	   7801657 persist-ns	   1166346 physical-B	       111.6 write-amplification	 4757961 B/op	    2476 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=10000-12    	       5	   1366391 ns/op	         0 fsync-ns	     10450 logical-B	   6807837 persist-ns	   1166346 physical-B	       111.6 write-amplification	 4756872 B/op	    2475 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=10000-12          	       5	   1935112 ns/op	         0 fsync-ns	        16.00 logical-B	   9661601 persist-ns	   3036706 physical-B	    189794 write-amplification	 5168638 B/op	    3172 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=10000-12          	       5	   1970626 ns/op	         0 fsync-ns	        16.00 logical-B	   9825084 persist-ns	   3036706 physical-B	    189794 write-amplification	 5168635 B/op	    3172 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=10000-12          	       5	   1885587 ns/op	         0 fsync-ns	        16.00 logical-B	   9404150 persist-ns	   3036706 physical-B	    189794 write-amplification	 5166945 B/op	    3171 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=25000-12     	       5	     11287 ns/op	       246.0 fsync-ns	     66880 logical-B	     55726 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=25000-12     	       5	     11782 ns/op	       268.0 fsync-ns	     66880 logical-B	     58205 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=25000-12     	       5	      8247 ns/op	       261.0 fsync-ns	     66880 logical-B	     40414 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=25000-12    	       5	   3786804 ns/op	         0 fsync-ns	     10450 logical-B	  18600203 persist-ns	   1590066 physical-B	       152.2 write-amplification	11703518 B/op	    5662 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=25000-12    	       5	   3661595 ns/op	         0 fsync-ns	     10450 logical-B	  17973520 persist-ns	   1590066 physical-B	       152.2 write-amplification	11703518 B/op	    5662 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=25000-12    	       5	   3638435 ns/op	         0 fsync-ns	     10450 logical-B	  17870273 persist-ns	   1590066 physical-B	       152.2 write-amplification	11703492 B/op	    5662 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=25000-12    	       5	   3334006 ns/op	         0 fsync-ns	     10450 logical-B	  16609592 persist-ns	    804686 physical-B	        77.00 write-amplification	11429310 B/op	    5363 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=25000-12    	       5	   3410690 ns/op	         0 fsync-ns	     10450 logical-B	  16988043 persist-ns	    804686 physical-B	        77.00 write-amplification	11429336 B/op	    5363 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=25000-12    	       5	   3326331 ns/op	         0 fsync-ns	     10450 logical-B	  16559620 persist-ns	    804686 physical-B	        77.00 write-amplification	11429336 B/op	    5363 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=25000-12          	       5	   3888458 ns/op	         0 fsync-ns	        16.00 logical-B	  19370280 persist-ns	   3398366 physical-B	    212398 write-amplification	12001176 B/op	    6331 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=25000-12          	       5	   3732207 ns/op	         0 fsync-ns	        16.00 logical-B	  18494001 persist-ns	   3398366 physical-B	    212398 write-amplification	12001176 B/op	    6331 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=25000-12          	       5	   3807947 ns/op	         0 fsync-ns	        16.00 logical-B	  18875192 persist-ns	   3398366 physical-B	    212398 write-amplification	12001176 B/op	    6331 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=50000-12     	       5	     13057 ns/op	       264.0 fsync-ns	     66880 logical-B	     64330 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=50000-12     	       5	     12921 ns/op	       254.0 fsync-ns	     66880 logical-B	     63888 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/append-batch/entries=50000-12     	       5	      8015 ns/op	       249.0 fsync-ns	     66880 logical-B	     39332 persist-ns	     66905 physical-B	         1.000 write-amplification	   28440 B/op	      13 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=50000-12    	       5	   7019798 ns/op	         0 fsync-ns	     10450 logical-B	  34745512 persist-ns	   3180086 physical-B	       304.3 write-amplification	23409491 B/op	   11296 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=50000-12    	       5	   7190087 ns/op	         0 fsync-ns	     10450 logical-B	  35607347 persist-ns	   3180086 physical-B	       304.3 write-amplification	23409491 B/op	   11296 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-tail/entries=50000-12    	       5	   7695984 ns/op	         0 fsync-ns	     10450 logical-B	  37838380 persist-ns	   3180086 physical-B	       304.3 write-amplification	23409491 B/op	   11296 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=50000-12    	       5	   6400408 ns/op	         0 fsync-ns	     10450 logical-B	  31831666 persist-ns	   1599696 physical-B	       153.1 write-amplification	22858843 B/op	   10696 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=50000-12    	       5	   6049386 ns/op	         0 fsync-ns	     10450 logical-B	  30082304 persist-ns	   1599696 physical-B	       153.1 write-amplification	22858843 B/op	   10696 allocs/op
+BenchmarkRaftLogScalingMutations/truncate-deep/entries=50000-12    	       5	   6360342 ns/op	         0 fsync-ns	     10450 logical-B	  31604359 persist-ns	   1599696 physical-B	       153.1 write-amplification	22858843 B/op	   10696 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=50000-12          	       5	   6783521 ns/op	         0 fsync-ns	        16.00 logical-B	  33749943 persist-ns	   2603356 physical-B	    162710 write-amplification	23078801 B/op	   11069 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=50000-12          	       5	   6606802 ns/op	         0 fsync-ns	        16.00 logical-B	  32844049 persist-ns	   2603356 physical-B	    162710 write-amplification	23078798 B/op	   11069 allocs/op
+BenchmarkRaftLogScalingMutations/compact/entries=50000-12          	       5	   7053010 ns/op	         0 fsync-ns	        16.00 logical-B	  35050397 persist-ns	   2603356 physical-B	    162710 write-amplification	23078798 B/op	   11069 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=100-12                    	       5	     46449 ns/op	  235808 B/op	     137 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=100-12                    	       5	     41667 ns/op	  235840 B/op	     137 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=100-12                    	       5	     45679 ns/op	  235840 B/op	     137 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=100-12                   	       5	      5145 ns/op	   54272 B/op	      52 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=100-12                   	       5	     18580 ns/op	   54272 B/op	      52 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=100-12                   	       5	      5789 ns/op	   54272 B/op	      52 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=1000-12                   	       5	    517471 ns/op	 2236707 B/op	    1046 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=1000-12                   	       5	    621326 ns/op	 2235782 B/op	    1046 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=1000-12                   	       5	    689483 ns/op	 2238979 B/op	    1047 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=1000-12                  	       5	     13664 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=1000-12                  	       5	     64456 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=1000-12                  	       5	     20456 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=5000-12                   	       5	   3096909 ns/op	11556468 B/op	    5078 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=5000-12                   	       5	   3023375 ns/op	11552900 B/op	    5074 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=5000-12                   	       5	   2902664 ns/op	11556528 B/op	    5078 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=5000-12                  	       5	     19459 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=5000-12                  	       5	     19201 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=5000-12                  	       5	     19875 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=10000-12                  	       5	   5714591 ns/op	23240680 B/op	   10107 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=10000-12                  	       5	   5697490 ns/op	23239033 B/op	   10107 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=10000-12                  	       5	   6149822 ns/op	23239009 B/op	   10107 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=10000-12                 	       5	     37041 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=10000-12                 	       5	     34116 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=10000-12                 	       5	     28478 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=25000-12                  	       5	  16433669 ns/op	59650257 B/op	   25219 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=25000-12                  	       5	  15672678 ns/op	59649131 B/op	   25217 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=25000-12                  	       5	  16769820 ns/op	59649801 B/op	   25218 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=25000-12                 	       5	     19218 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=25000-12                 	       5	     76797 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=25000-12                 	       5	     28957 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=50000-12                  	       5	  34040265 ns/op	121071728 B/op	   50383 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=50000-12                  	       5	  33293258 ns/op	121068628 B/op	   50378 allocs/op
+BenchmarkRaftLogScalingRead/open/entries=50000-12                  	       5	  32995979 ns/op	121070049 B/op	   50379 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=50000-12                 	       5	     19943 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=50000-12                 	       5	     20254 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkRaftLogScalingRead/range/entries=50000-12                 	       5	     48472 ns/op	  136448 B/op	     129 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=5000-12             	       5	    367653 ns/op	   2719955 entries/sec	      9450 fsync-ns	        40.00 log-writes	 753427415 logical-B/sec	   1781360 persist-ns	   1386033 physical-B	         1.001 write-amplification	  769718 B/op	    1054 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=5000-12             	       5	    241630 ns/op	   4138556 entries/sec	      8213 fsync-ns	        40.00 log-writes	1146379881 logical-B/sec	   1154714 persist-ns	   1386033 physical-B	         1.001 write-amplification	  769715 B/op	    1054 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=5000-12             	       5	    240801 ns/op	   4152807 entries/sec	      8590 fsync-ns	        40.00 log-writes	1150327449 logical-B/sec	   1156211 persist-ns	   1386033 physical-B	         1.001 write-amplification	  768062 B/op	    1053 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=10000-12            	       5	    561761 ns/op	   3560235 entries/sec	     17323 fsync-ns	        79.00 log-writes	 986185218 logical-B/sec	   2738101 persist-ns	   2772008 physical-B	         1.001 write-amplification	 1609233 B/op	    2094 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=10000-12            	       5	    603697 ns/op	   3312920 entries/sec	     23142 fsync-ns	        79.00 log-writes	 917678902 logical-B/sec	   2946486 persist-ns	   2772008 physical-B	         1.001 write-amplification	 1609211 B/op	    2093 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=10000-12            	       5	    773639 ns/op	   2585186 entries/sec	     19705 fsync-ns	        79.00 log-writes	 716096452 logical-B/sec	   3798595 persist-ns	   2772008 physical-B	         1.001 write-amplification	 1609211 B/op	    2093 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=25000-12            	       5	   1721943 ns/op	   2903696 entries/sec	     46059 fsync-ns	       196.0 log-writes	 804323766 logical-B/sec	   8497982 persist-ns	   6929933 physical-B	         1.001 write-amplification	 4156054 B/op	    5215 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=25000-12            	       5	   1620045 ns/op	   3086334 entries/sec	     45286 fsync-ns	       196.0 log-writes	 854914524 logical-B/sec	   8012522 persist-ns	   6929933 physical-B	         1.001 write-amplification	 4156054 B/op	    5215 allocs/op
+BenchmarkFollowerLogPersistenceCatchUp/entries=25000-12            	       5	   1706723 ns/op	   2929591 entries/sec	     50981 fsync-ns	       196.0 log-writes	 811496747 logical-B/sec	   8453328 persist-ns	   6929933 physical-B	         1.001 write-amplification	 4154411 B/op	    5214 allocs/op
+PASS
+ok  	quorumkv/internal/raft	17.827s
