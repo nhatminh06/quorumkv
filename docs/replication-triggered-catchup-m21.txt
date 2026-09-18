@@ -1,0 +1,21 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkFollowerCatchUpTriggered/entries=5000-12         	       1	  12906048 ns/op	         0.01290 catchup-sec	    387450 entries/sec	17168176 B/op	   45481 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=5000-12         	       1	  12835996 ns/op	         0.01283 catchup-sec	    389571 entries/sec	17167336 B/op	   45490 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=5000-12         	       1	  12844982 ns/op	         0.01284 catchup-sec	    389281 entries/sec	17171720 B/op	   45579 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=5000-12         	       1	  10309322 ns/op	         0.01031 catchup-sec	    485037 entries/sec	17168064 B/op	   45498 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=5000-12         	       1	  13181523 ns/op	         0.01318 catchup-sec	    379347 entries/sec	17172600 B/op	   45567 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=10000-12        	       1	  28533953 ns/op	         0.02853 catchup-sec	    350470 entries/sec	34671168 B/op	   90742 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=10000-12        	       1	  27918529 ns/op	         0.02792 catchup-sec	    358198 entries/sec	34661760 B/op	   90614 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=10000-12        	       1	  28456822 ns/op	         0.02846 catchup-sec	    351426 entries/sec	34670440 B/op	   90744 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=10000-12        	       1	  27395040 ns/op	         0.02739 catchup-sec	    365042 entries/sec	34661784 B/op	   90611 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=10000-12        	       1	  27558833 ns/op	         0.02756 catchup-sec	    362876 entries/sec	34672712 B/op	   90751 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=25000-12        	       1	 105461966 ns/op	         0.1055 catchup-sec	    237054 entries/sec	86301736 B/op	  226124 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=25000-12        	       1	 102953780 ns/op	         0.1030 catchup-sec	    242830 entries/sec	86297312 B/op	  226092 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=25000-12        	       1	 105525184 ns/op	         0.1055 catchup-sec	    236915 entries/sec	86297952 B/op	  226111 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=25000-12        	       1	 104063718 ns/op	         0.1041 catchup-sec	    240241 entries/sec	86298256 B/op	  226101 allocs/op
+BenchmarkFollowerCatchUpTriggered/entries=25000-12        	       1	 105444208 ns/op	         0.1054 catchup-sec	    237095 entries/sec	86297008 B/op	  226091 allocs/op
+PASS
+ok  	quorumkv/internal/service	59.501s

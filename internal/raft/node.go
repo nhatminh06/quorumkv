@@ -60,13 +60,19 @@ func (p *peerRPC) sendOverTransport(ctx context.Context, addr string, req Reques
 // substitutability.
 type appendSender func(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error)
 
+type encodedAppendSender func(context.Context, string, []byte) (AppendEntriesResponse, error)
+
 func (p *peerRPC) sendAppendOverTransport(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
-	start := time.Now()
-	defer p.observe(start, "append_entries")
 	payload, err := EncodeAppendEntries(req)
 	if err != nil {
 		return AppendEntriesResponse{}, err
 	}
+	return p.sendEncodedAppend(ctx, addr, payload)
+}
+
+func (p *peerRPC) sendEncodedAppend(ctx context.Context, addr string, payload []byte) (AppendEntriesResponse, error) {
+	start := time.Now()
+	defer p.observe(start, "append_entries")
 	msg := transport.NewOwnedMessage(transport.MessageAppendEntries, payload)
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageAppendEntriesResponse, DecodeAppendEntriesResponse)
 }
@@ -117,6 +123,7 @@ type Node struct {
 	logger              atomic.Pointer[slog.Logger]
 	send                sender
 	sendAppend          appendSender
+	sendEncodedAppend   encodedAppendSender
 	sendInstallSnapshot installSnapshotSender
 	sendPreVote         preVoteSender
 	sendTimeoutNow      timeoutNowSender
@@ -402,7 +409,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		snapshotStore:       snapshotStore,
 		peers:               peers,
 		send:                rpc.sendOverTransport,
-		sendAppend:          rpc.sendAppendOverTransport,
+		sendEncodedAppend:   rpc.sendEncodedAppend,
 		sendInstallSnapshot: rpc.sendInstallSnapshotOverTransport,
 		sendPreVote:         rpc.sendPreVoteOverTransport,
 		sendTimeoutNow:      rpc.sendTimeoutNowOverTransport,
@@ -729,10 +736,28 @@ func (n *Node) SetVoteSend(fn func(ctx context.Context, addr string, req Request
 	n.send = fn
 }
 
+// SetAppendSend installs a structured fault-injection adapter. Replication
+// decodes its immutable payload after unlock only when this override is set.
+// A nil override restores direct encoded transport. ReadIndex uses the same
+// adapter without changing its probe semantics.
 func (n *Node) SetAppendSend(fn func(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error)) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.sendAppend = fn
+}
+
+func (n *Node) sendAppendRequest(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
+	n.mu.Lock()
+	structured, encoded := n.sendAppend, n.sendEncodedAppend
+	n.mu.Unlock()
+	if structured != nil {
+		return structured(ctx, addr, req)
+	}
+	payload, err := EncodeAppendEntries(req)
+	if err != nil {
+		return AppendEntriesResponse{}, err
+	}
+	return encoded(ctx, addr, payload)
 }
 
 // SetInstallSnapshotSend replaces the function this node uses to send

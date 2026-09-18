@@ -298,3 +298,8 @@ RPC benchmark used one connection for 1,000 exchanges instead of 1,000 and
 improved mean time from 42.6 µs to 10.2 µs. Same-peer concurrent RPC throughput
 regressed under serialization, and total dial/close CPU did not demonstrably
 decrease. The report includes those tradeoffs and service workload results.
+
+M22 reduces 64 × 1 KiB replication construction from 141,952 B / 66 allocations
+to 73,728 B / 1 allocation. See [replication allocation performance](replication-allocation-performance.md)
+for matched catch-up, lock contention, sustained service results and GET tail
+tradeoffs; raw short-run and confirmation measurements are retained alongside it.

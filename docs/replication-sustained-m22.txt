@@ -1,0 +1,21 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	   10000	     19235 ns/op	       536.0 p50-us	      1033 p95-us	      1371 p99-us	    6460 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	   10000	     17609 ns/op	       516.0 p50-us	       898.0 p95-us	      1539 p99-us	    6411 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	   10000	     17235 ns/op	       521.0 p50-us	       891.0 p95-us	      1172 p99-us	    6381 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	   10000	     17110 ns/op	       517.0 p50-us	       883.0 p95-us	      1173 p99-us	    6393 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	   10000	     18371 ns/op	       534.0 p50-us	      1034 p95-us	      1736 p99-us	    6426 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	   10000	     21679 ns/op	       621.0 p50-us	      1179 p95-us	      1813 p99-us	   31725 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	   10000	     20194 ns/op	       592.0 p50-us	      1053 p95-us	      1762 p99-us	   31665 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	   10000	     20632 ns/op	       613.0 p50-us	      1071 p95-us	      1463 p99-us	   31714 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	   10000	     20753 ns/op	       606.0 p50-us	      1050 p95-us	      1834 p99-us	   31734 B/op	      81 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	   10000	     20234 ns/op	       603.0 p50-us	      1011 p95-us	      1560 p99-us	   31685 B/op	      82 allocs/op
+BenchmarkThreeNodeReadUnderWrite-12                  	   10000	     25193 ns/op	       615.0 p50-us	      1170 p95-us	      1777 p99-us	   16703 B/op	     102 allocs/op
+BenchmarkThreeNodeReadUnderWrite-12                  	   10000	     21170 ns/op	       559.0 p50-us	       988.0 p95-us	      1504 p99-us	   16684 B/op	     102 allocs/op
+BenchmarkThreeNodeReadUnderWrite-12                  	   10000	     21724 ns/op	       566.0 p50-us	      1059 p95-us	      1783 p99-us	   16674 B/op	     102 allocs/op
+BenchmarkThreeNodeReadUnderWrite-12                  	   10000	     22017 ns/op	       568.0 p50-us	      1126 p95-us	      2089 p99-us	   16637 B/op	     102 allocs/op
+BenchmarkThreeNodeReadUnderWrite-12                  	   10000	     21716 ns/op	       568.0 p50-us	      1051 p95-us	      1577 p99-us	   16677 B/op	     102 allocs/op
+PASS
+ok  	quorumkv/internal/service	9.437s

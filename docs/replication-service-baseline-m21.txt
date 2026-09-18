@@ -1,0 +1,18 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     47874 ns/op	       428.0 p50-us	      9866 p95-us	     10030 p99-us	    7383 B/op	      94 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     19232 ns/op	       526.0 p50-us	      1060 p95-us	      1380 p99-us	    7146 B/op	      92 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     24280 ns/op	       661.0 p50-us	      1312 p95-us	      1483 p99-us	    7255 B/op	      93 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	     38940 ns/op	      1110 p50-us	      1873 p95-us	      2276 p99-us	   34651 B/op	      93 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	     32672 ns/op	      1021 p50-us	      1752 p95-us	      2039 p99-us	   34642 B/op	      92 allocs/op
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	     33034 ns/op	       938.0 p50-us	      1908 p95-us	      2049 p99-us	   34778 B/op	      94 allocs/op
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     26692 ns/op	       743.0 p50-us	      1228 p95-us	      1254 p99-us	    6871 B/op	     110 allocs/op
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     28997 ns/op	       799.0 p50-us	      1254 p95-us	      1284 p99-us	    6729 B/op	     109 allocs/op
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     36851 ns/op	       938.0 p50-us	      2300 p95-us	      2341 p99-us	    6721 B/op	     109 allocs/op
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     31247 ns/op	       763.0 p50-us	      1674 p95-us	      2285 p99-us	    6930 B/op	     108 allocs/op
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     29640 ns/op	       737.0 p50-us	      1424 p95-us	      1864 p99-us	    6951 B/op	     109 allocs/op
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     29617 ns/op	       797.0 p50-us	      1300 p95-us	      1717 p99-us	    6903 B/op	     109 allocs/op
+PASS
+ok  	quorumkv/internal/service	5.052s

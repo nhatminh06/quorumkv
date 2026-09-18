@@ -1,0 +1,12 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    107074 ns/op	       103.0 p50-us	       123.0 p95-us	       126.0 p99-us	   16540 B/op	     234 allocs/op
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    106605 ns/op	       101.0 p50-us	       114.0 p95-us	       124.0 p99-us	   16477 B/op	     232 allocs/op
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    111023 ns/op	       106.0 p50-us	       124.0 p95-us	       136.0 p99-us	   16284 B/op	     233 allocs/op
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    119287 ns/op	       110.0 p50-us	       131.0 p95-us	       142.0 p99-us	   43576 B/op	     232 allocs/op
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    131266 ns/op	       110.0 p50-us	       258.0 p95-us	       381.0 p99-us	   43703 B/op	     233 allocs/op
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    122900 ns/op	       112.0 p50-us	       138.0 p95-us	       274.0 p99-us	   43319 B/op	     232 allocs/op
+PASS
+ok  	quorumkv/internal/service	2.493s

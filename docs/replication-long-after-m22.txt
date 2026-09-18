@@ -1,0 +1,16 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     21898 ns/op	       593.0 p50-us	      1130 p95-us	      6228 p99-us	    6718 B/op	     107 allocs/op
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     24944 ns/op	       615.0 p50-us	      1976 p95-us	      2847 p99-us	    6412 B/op	     105 allocs/op
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     29860 ns/op	       616.0 p50-us	      2509 p95-us	      2739 p99-us	    6445 B/op	     106 allocs/op
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     31694 ns/op	       609.0 p50-us	      2539 p95-us	      3062 p99-us	    6438 B/op	     106 allocs/op
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     34041 ns/op	       648.0 p50-us	      2776 p95-us	      3673 p99-us	    6424 B/op	     106 allocs/op
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     32756 ns/op	       643.0 p50-us	      2743 p95-us	      3709 p99-us	    6558 B/op	     104 allocs/op
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     33182 ns/op	       637.0 p50-us	      2991 p95-us	      4215 p99-us	    6573 B/op	     105 allocs/op
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     28831 ns/op	       610.0 p50-us	      2638 p95-us	      3506 p99-us	    6583 B/op	     104 allocs/op
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     26826 ns/op	       593.0 p50-us	      2185 p95-us	      3239 p99-us	    6528 B/op	     103 allocs/op
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     28800 ns/op	       609.0 p50-us	      2413 p95-us	      3579 p99-us	    6536 B/op	     104 allocs/op
+PASS
+ok  	quorumkv/internal/service	4.466s

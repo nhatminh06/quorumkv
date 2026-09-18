@@ -310,7 +310,7 @@ func TestApplyAppendEntriesResponseSuccessAdvancesMatchAndNext(t *testing.T) {
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a", "b")}
-	n.applyReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 2})
+	n.applyStructuredReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 2})
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -329,7 +329,7 @@ func TestApplyAppendEntriesResponseFailureBacksOffNextIndex(t *testing.T) {
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 4}
-	n.applyReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: false})
+	n.applyStructuredReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: false})
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -348,7 +348,7 @@ func TestApplyAppendEntriesResponseNextIndexNeverBelowOne(t *testing.T) {
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 0}
-	n.applyReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: false})
+	n.applyStructuredReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: false})
 
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -366,12 +366,12 @@ func TestApplyAppendEntriesResponseMatchIndexNeverRegresses(t *testing.T) {
 	n.mu.Unlock()
 
 	// A newer, higher success arrives first...
-	n.applyReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a", "b", "c")},
+	n.applyStructuredReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a", "b", "c")},
 		AppendEntriesResponse{Term: term, Success: true, MatchIndex: 3})
 	// ...then a stale, older success for a smaller prefix arrives late
 	// (same generation — this proves ordinary out-of-order-arrival
 	// monotonicity, independent of the generation mechanism).
-	n.applyReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a")},
+	n.applyStructuredReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a")},
 		AppendEntriesResponse{Term: term, Success: true, MatchIndex: 1})
 
 	n.mu.Lock()
@@ -389,7 +389,7 @@ func TestApplyAppendEntriesResponseHigherTermStepsDown(t *testing.T) {
 	gen := n.replicationGeneration[2]
 	n.mu.Unlock()
 
-	n.applyReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term}, AppendEntriesResponse{Term: term + 5, Success: false})
+	n.applyStructuredReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term}, AppendEntriesResponse{Term: term + 5, Success: false})
 
 	if n.Role() != Follower {
 		t.Fatalf("Role() = %v, want Follower", n.Role())
@@ -413,7 +413,7 @@ func TestApplyAppendEntriesResponseStaleTermIgnored(t *testing.T) {
 	n.persistent.CurrentTerm = staleTerm + 1
 	n.mu.Unlock()
 
-	n.applyReplicationResponse(2, staleTerm, gen, AppendEntriesRequest{Term: staleTerm, PrevLogIndex: 0, Entries: entriesOf("a")},
+	n.applyStructuredReplicationResponse(2, staleTerm, gen, AppendEntriesRequest{Term: staleTerm, PrevLogIndex: 0, Entries: entriesOf("a")},
 		AppendEntriesResponse{Term: staleTerm, Success: true, MatchIndex: 1})
 
 	n.mu.Lock()

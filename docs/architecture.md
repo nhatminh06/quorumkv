@@ -226,3 +226,8 @@ Each `client.Client` lazily owns up to eight transport sessions per address.
 Concurrent requests use separate checked-out sessions; one connection never
 has more than one in-flight exchange. This transport lifecycle is independent
 of the `ClientID + Sequence` deduplication identity.
+
+Replication now borrows bounded log entries only while `Node.mu` is held and
+encodes a complete independent AppendEntries payload before unlocking. Network
+I/O consumes that payload after unlock; response handling retains scalar
+metadata. See [M22 ownership and measurements](replication-allocation-performance.md).

@@ -1,0 +1,15 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkFollowerCatchUp/entries=5000-12         	       1	  29751278 ns/op	         0.02975 catchup-sec	    168068 entries/sec	15334384 B/op	   40299 allocs/op
+BenchmarkFollowerCatchUp/entries=5000-12         	       1	  37857018 ns/op	         0.03786 catchup-sec	    132080 entries/sec	15331800 B/op	   40288 allocs/op
+BenchmarkFollowerCatchUp/entries=5000-12         	       1	  47317160 ns/op	         0.04732 catchup-sec	    105672 entries/sec	15331768 B/op	   40287 allocs/op
+BenchmarkFollowerCatchUp/entries=10000-12        	       1	  28386388 ns/op	         0.02839 catchup-sec	    352297 entries/sec	31010504 B/op	   80369 allocs/op
+BenchmarkFollowerCatchUp/entries=10000-12        	       1	  31357892 ns/op	         0.03136 catchup-sec	    318911 entries/sec	31010520 B/op	   80371 allocs/op
+BenchmarkFollowerCatchUp/entries=10000-12        	       1	  52384209 ns/op	         0.05238 catchup-sec	    190904 entries/sec	31009896 B/op	   80364 allocs/op
+BenchmarkFollowerCatchUp/entries=25000-12        	       1	 123733896 ns/op	         0.1237 catchup-sec	    202049 entries/sec	77187448 B/op	  200602 allocs/op
+BenchmarkFollowerCatchUp/entries=25000-12        	       1	 108399456 ns/op	         0.1084 catchup-sec	    230631 entries/sec	77185544 B/op	  200611 allocs/op
+BenchmarkFollowerCatchUp/entries=25000-12        	       1	 128425054 ns/op	         0.1284 catchup-sec	    194668 entries/sec	77183872 B/op	  200587 allocs/op
+PASS
+ok  	quorumkv/internal/service	35.921s
