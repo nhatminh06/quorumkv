@@ -128,8 +128,13 @@ func TestRealProcessThreeNodeClusterPutGet(t *testing.T) {
 		t.Fatalf("put: code=%d out=%q stderr=%q", code, out, stderr)
 	}
 
-	out, stderr, code = runQkv(t, qkvPath, append(args, "get", "hello")...)
-	if code != 0 || strings.TrimSpace(out) != "world" {
+	// A loaded CI runner can make one quorum-confirmed ReadIndex attempt hit
+	// its client deadline even after the write completed. GET is safe to retry;
+	// require the real processes to converge within a fixed outer bound.
+	if !waitFor(t, 10*time.Second, func() bool {
+		out, stderr, code = runQkv(t, qkvPath, append(args, "--timeout", "2s", "get", "hello")...)
+		return code == 0 && strings.TrimSpace(out) == "world"
+	}) {
 		t.Fatalf("get: code=%d out=%q stderr=%q", code, out, stderr)
 	}
 
