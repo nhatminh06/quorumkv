@@ -24,6 +24,8 @@ runnable system with its own CLI and operational tooling.
   isolated node.
 - Log replication with per-peer event-driven catch-up and bounded
   batching.
+- Append-oriented, checksummed Raft-log segments with torn-tail recovery and
+  atomic conflict-repair/compaction generations.
 - Snapshotting and chunked `InstallSnapshot` catch-up for followers
   behind a compacted log.
 - Joint-consensus membership changes (add/remove one voter at a time).
@@ -91,9 +93,13 @@ and commands — do not extrapolate these numbers to other hardware):
   3.95s to 0.27s (~14.7x) after event-driven per-peer replication
   workers replaced fixed-heartbeat-interval catch-up, with no observed
   regression to steady-state throughput.
+- Follower persistence for 25,000 entries dropped from 1.036s and 98.84x
+  write amplification to 13-14ms and 1.001x after segmented Raft-log storage.
 
 Full methodology in [docs/performance.md](docs/performance.md) and
-[docs/replication-performance.md](docs/replication-performance.md).
+[docs/replication-performance.md](docs/replication-performance.md); the storage
+format and scaling evidence are in
+[docs/raft-log-storage.md](docs/raft-log-storage.md).
 
 ## Quick start
 

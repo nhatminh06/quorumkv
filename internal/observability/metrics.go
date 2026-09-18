@@ -143,6 +143,8 @@ type Metrics struct {
 	snapshotsCreated, snapshotInstalls, snapshotInstallFailures, snapshotInstallBytes atomic.Uint64
 	snapshotDuration                                                                  histogram
 	snapshotSize, snapshotLastIndex                                                   atomic.Uint64
+	raftLogLogicalBytes, raftLogPhysicalBytes, raftLogRotations, raftLogTruncations   atomic.Uint64
+	raftLogSegments                                                                   atomic.Int64
 	peersMu                                                                           sync.RWMutex
 	peers                                                                             map[uint64]*peerMetrics
 }
@@ -213,6 +215,18 @@ func (m *Metrics) SnapshotInstalled(bytes int, index uint64, failed bool) {
 		m.snapshotLastIndex.Store(index)
 	}
 }
+
+func (m *Metrics) RecordRaftLogWrite(logical, physical int) {
+	if logical > 0 {
+		m.raftLogLogicalBytes.Add(uint64(logical))
+	}
+	if physical > 0 {
+		m.raftLogPhysicalBytes.Add(uint64(physical))
+	}
+}
+func (m *Metrics) RaftLogRotated()                { m.raftLogRotations.Add(1) }
+func (m *Metrics) RaftLogTruncated()              { m.raftLogTruncations.Add(1) }
+func (m *Metrics) SetRaftLogSegments(count int64) { m.raftLogSegments.Store(count) }
 
 func (m *Metrics) peer(id uint64) *peerMetrics {
 	m.peersMu.RLock()
@@ -307,9 +321,13 @@ func (m *Metrics) WritePrometheus(w io.Writer, n NodeSnapshot) error {
 		value uint64
 	}{
 		{"quorumkv_raft_elections_total", m.elections.Load()}, {"quorumkv_raft_leadership_changes_total", m.leadershipChanges.Load()}, {"quorumkv_raft_term_changes_total", m.termChanges.Load()},
+		{"quorumkv_raft_log_logical_bytes_appended_total", m.raftLogLogicalBytes.Load()}, {"quorumkv_raft_log_physical_bytes_written_total", m.raftLogPhysicalBytes.Load()}, {"quorumkv_raft_log_rotations_total", m.raftLogRotations.Load()}, {"quorumkv_raft_log_truncations_total", m.raftLogTruncations.Load()},
 		{"quorumkv_proposals_admitted_total", n.ProposalAdmitted}, {"quorumkv_proposals_busy_total", n.ProposalBusy}, {"quorumkv_proposal_batches_total", n.ProposalBatches}, {"quorumkv_proposal_batch_entries_total", n.ProposalBatchEntries}, {"quorumkv_requests_busy_total", m.requestsBusy.Load()},
 		{"quorumkv_transport_connections_dialed_total", n.ConnectionsDialed}, {"quorumkv_transport_connections_reused_total", n.ConnectionsReused}, {"quorumkv_transport_connections_closed_total", n.ConnectionsClosed}, {"quorumkv_transport_send_failures_total", n.SendFailures},
 		{"quorumkv_readindex_total", m.readIndexTotal.Load()}, {"quorumkv_readindex_failures_total", m.readIndexFailures.Load()}, {"quorumkv_snapshots_created_total", m.snapshotsCreated.Load()}, {"quorumkv_snapshot_install_total", m.snapshotInstalls.Load()}, {"quorumkv_snapshot_install_failures_total", m.snapshotInstallFailures.Load()}, {"quorumkv_snapshot_install_bytes_total", m.snapshotInstallBytes.Load()},
+	}
+	if err := write("# TYPE quorumkv_raft_log_segments gauge\nquorumkv_raft_log_segments %d\n", m.raftLogSegments.Load()); err != nil {
+		return err
 	}
 	for _, c := range counters {
 		if err := write("# TYPE %s counter\n%s %d\n", c.name, c.name, c.value); err != nil {

@@ -19,6 +19,10 @@ func TestMetricsRepresentativeValuesAndBoundedLabels(t *testing.T) {
 	m.RecordRPC("append_entries", time.Millisecond)
 	m.RecordReadIndex(3*time.Millisecond, true)
 	m.RecordPersistence("log", 123, 4*time.Millisecond, 2*time.Millisecond)
+	m.RecordRaftLogWrite(100, 125)
+	m.RaftLogRotated()
+	m.RaftLogTruncated()
+	m.SetRaftLogSegments(3)
 	m.SnapshotCreated(5*time.Millisecond, 42, 7)
 	m.SnapshotInstalled(99, 11, false)
 	m.RecordReplication(2, 5, 6, 80, false, false)
@@ -34,6 +38,10 @@ func TestMetricsRepresentativeValuesAndBoundedLabels(t *testing.T) {
 		`quorumkv_raft_peer_replication_lag{peer="2"} 5`, `quorumkv_persistence_writes_total{domain="log"} 1`,
 		"quorumkv_readindex_failures_total 1", "quorumkv_snapshot_install_total 1",
 		"quorumkv_snapshot_size_bytes 99", "quorumkv_snapshot_last_index 11",
+		"quorumkv_raft_log_logical_bytes_appended_total 100",
+		"quorumkv_raft_log_physical_bytes_written_total 125",
+		"quorumkv_raft_log_rotations_total 1", "quorumkv_raft_log_truncations_total 1",
+		"quorumkv_raft_log_segments 3",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q", want)

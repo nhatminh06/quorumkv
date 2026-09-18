@@ -53,10 +53,8 @@ own failure mode beyond the log's and the snapshot's.
 
 ## The durability primitive
 
-Every durable file this package owns — `Store`, `Log`, `CommitStore`,
-`SnapshotStore` — funnels through exactly one function,
-`atomicWriteFile` (`internal/raft/atomic_file.go`). There is a single
-publication contract for the whole package:
+`Store`, `CommitStore`, `SnapshotStore`, and the Raft log's small generation
+manifest use `atomicWriteFile` (`internal/raft/atomic_file.go`):
 
 1. write to a temp file in the same directory
 2. fsync the temp file
@@ -64,16 +62,20 @@ publication contract for the whole package:
 4. rename it over the target path (atomic replace on POSIX)
 5. fsync the containing directory (so the rename itself survives a crash)
 
-A reader — including a freshly restarted process — always observes
-either the complete previous file or the complete new file. There is no
-append-only log format in this codebase to reason about separately: the
-Raft log is rewritten as a whole file on every mutation, so the exact
-same guarantee covers it.
+A reader — including a freshly restarted process — observes either the
+complete previous file or the complete new file. The Raft log's entry data is
+the exception: ordinary records append to an active segment and are fsynced
+before success. Recovery truncates an incomplete active tail to its last
+complete record. Conflict repair and compaction construct a synced generation
+and atomically publish its manifest, so recovery selects the complete old or
+new logical history. See [raft-log-storage.md](raft-log-storage.md) for the
+segment, generation, migration, and corruption rules.
 
 **Checksums are not durability.** Every file format here also carries a
 CRC32C checksum, but that only detects corruption after the fact — it is
-`atomicWriteFile`'s write/fsync/rename/dir-fsync ordering that decides
-*which* version (old or new) is the one a reader ever sees. **Rename
+the write/fsync ordering and, for metadata, `atomicWriteFile`'s
+write/fsync/rename/dir-fsync ordering that decide *which* durable state a
+reader sees. **Rename
 alone is not enough** either: without the preceding fsync, a rename can
 be durable while the data it points at is not; without the trailing
 directory fsync, the rename itself might not survive a crash on some

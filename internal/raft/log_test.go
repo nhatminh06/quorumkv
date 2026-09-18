@@ -295,22 +295,27 @@ func TestKnownLogByteVector(t *testing.T) {
 		t.Fatalf("Append: %v", err)
 	}
 
-	got, err := os.ReadFile(path)
+	got, err := os.ReadFile(l.activeSegment)
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
 
 	want := []byte{
-		'R', 'L', 'G', '1', // magic
-		0x03,                   // version
-		0, 0, 0, 0, 0, 0, 0, 0, // baseIndex = 0 (never compacted)
-		0, 0, 0, 0, 0, 0, 0, 0, // baseTerm = 0
+		'R', 'S', 'G', '1', // segment magic
+		0x01,                   // segment version
+		0, 0, 0, 0, 0, 0, 0, 1, // start index = 1
 		0x00, 0x00, 0x00, 0x14, // record length = 20
 		0, 0, 0, 0, 0, 0, 0, 5, // term = 5
 		0x00,       // kind = EntryApplication (0)
 		0, 0, 0, 3, // command length = 3
 		'a', 'b', 'c', // command
 		0x5c, 0x8c, 0x9b, 0x65, // CRC32C(term|kind|commandLength|command)
+		0x00, 0x00, 0x00, 0x15, // batch-commit record length = 21
+		0, 0, 0, 0, 0, 0, 0, 0, // reserved term
+		0xff,       // internal batch-commit kind
+		0, 0, 0, 4, // count field length
+		0, 0, 0, 1, // one committed entry
+		0x5f, 0x66, 0x2a, 0xd0, // CRC32C
 	}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("log bytes:\n got  % x\n want % x", got, want)
@@ -326,17 +331,9 @@ func writeRawLog(t *testing.T, path string, b []byte) {
 
 func validLogBytes(t *testing.T) []byte {
 	t.Helper()
-	path := tempLogPath(t)
-	l, err := OpenLog(path)
+	b, err := encodeLogFile(0, 0, []LogEntry{{Term: 1, Command: []byte("a")}, {Term: 2, Command: []byte("b")}})
 	if err != nil {
-		t.Fatalf("OpenLog: %v", err)
-	}
-	if err := l.Append([]LogEntry{{Term: 1, Command: []byte("a")}, {Term: 2, Command: []byte("b")}}); err != nil {
-		t.Fatalf("Append: %v", err)
-	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+		t.Fatalf("encodeLogFile: %v", err)
 	}
 	return b
 }
@@ -442,16 +439,20 @@ func TestLogV1FileStillLoads(t *testing.T) {
 		t.Fatalf("Entry(1) = %+v, ok=%v, want {5 abc}, true", e, ok)
 	}
 
-	// A subsequent mutation silently upgrades the file to v3.
+	// A subsequent mutation safely migrates the legacy file to segmented
+	// storage without discarding it.
 	if err := l.Append([]LogEntry{{Term: 5, Command: []byte("d")}}); err != nil {
 		t.Fatalf("Append: %v", err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	if _, err := os.Stat(manifestPath(path)); err != nil {
+		t.Fatalf("segmented manifest after migration: %v", err)
 	}
-	if data[4] != logFileVersion3 {
-		t.Fatalf("version after rewrite = %d, want %d", data[4], logFileVersion3)
+	reopened, err := OpenLog(path)
+	if err != nil {
+		t.Fatalf("OpenLog after migration: %v", err)
+	}
+	if reopened.LastIndex() != 2 {
+		t.Fatalf("last index after migration = %d, want 2", reopened.LastIndex())
 	}
 }
 

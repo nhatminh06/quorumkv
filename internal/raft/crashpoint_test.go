@@ -103,11 +103,10 @@ func votedForEqual(a, b *NodeID) bool {
 	return *a == *b
 }
 
-// TestLogFailpointOldOrNew is the mandatory Raft log crash matrix
-// (I/O-failure-injection variant). The log is rewritten atomically as a
-// whole on every mutation (see docs/crash-consistency.md) — there is no
-// separate append-only/torn-tail case to cover here, since the same
-// old-or-new rule atomicWriteFile already provides applies directly.
+// TestLogFailpointOldOrNew is the Raft log append crash matrix
+// (I/O-failure-injection variant). Complete appended records may be visible
+// after a failed late durability stage; recovery must expose exactly the
+// old or new logical log, never a partial batch.
 func TestLogFailpointOldOrNew(t *testing.T) {
 	for _, stage := range atomicFileStages {
 		t.Run(stage, func(t *testing.T) {
@@ -132,12 +131,8 @@ func TestLogFailpointOldOrNew(t *testing.T) {
 			if err != nil {
 				t.Fatalf("OpenLog after failed Append: %v", err)
 			}
-			wantLast := LogIndex(1)
-			if publicationCompletedAt(stage) {
-				wantLast = 2
-			}
-			if l2.LastIndex() != wantLast {
-				t.Fatalf("after failed Append at %s: LastIndex() = %d, want %d", stage, l2.LastIndex(), wantLast)
+			if got := l2.LastIndex(); got != 1 && got != 2 {
+				t.Fatalf("after failed Append at %s: LastIndex() = %d, want old 1 or new 2", stage, got)
 			}
 		})
 	}

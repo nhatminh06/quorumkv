@@ -32,6 +32,13 @@ of 1,000. Pool-width evidence, tail latency, connection counts, CPU profiles,
 and the one-shot redirect regression are recorded in
 [client-transport-performance.md](client-transport-performance.md).
 
+Milestone 20 measured whole-log persistence scaling before changing storage.
+A 1 KiB append at 50,000 retained entries fell from 81.1 ms, 50,001x write
+amplification, and 340.9 MiB allocated to roughly 6-7 µs, 1.024x, and 4.8 KiB.
+Follower persistence for 25,000 entries fell from 1.036 s at 98.84x to
+13.3-14.2 ms at 1.001x. Methodology, raw results, crash behavior, profiles,
+and tradeoffs are in [raft-log-storage.md](raft-log-storage.md).
+
 ## Environment
 
 ```text

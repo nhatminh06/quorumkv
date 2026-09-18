@@ -1,0 +1,45 @@
+Milestone 20 Phase A baseline
+Environment: linux/amd64, Intel i5-11400H, Go 1.26.5, GOMAXPROCS=12
+Command: go test ./internal/raft -run '^$' -bench '^BenchmarkRaftLogScalingAppendOne$' -benchtime=1x -count=3
+Values below are means of three runs. Setup is outside the timed region.
+
+Append one 1 KiB entry:
+retained  file_bytes  ns/op       physical_B  logical_B  amplification  bytes/op    allocs/op
+100       104,521     136,114     105,566     1,045      101x           627,664     134
+1,000     1,045,021   1,919,688   1,046,066   1,045      1,001x         6,357,493   1,036
+5,000     5,225,021   7,657,782   5,226,066   1,045      5,001x         37,425,621  5,038
+10,000    10,450,021  15,924,526  10,451,066  1,045      10,001x        69,850,651  10,039
+25,000    26,125,021  35,907,173  26,126,066  1,045      25,001x        171,672,016 25,038
+50,000    52,250,021  81,110,620  52,251,066  1,045      50,001x        340,907,472 50,038
+
+The exact 50,000-entry runs were 89,922,212; 75,477,083; and 77,932,564 ns/op
+(mean 81,110,620 ns/op).
+
+Append one 16 B entry:
+retained  mean_ns/op  physical_B  logical_B  amplification
+100       35,303      3,758       37         101.6x
+1,000     88,991      37,058      37         1,002x
+5,000     248,884     185,058     37         5,002x
+10,000    474,442     370,058     37         10,002x
+25,000    1,920,398   925,058     37         25,002x
+50,000    3,602,992   1,850,058   37         50,002x
+
+Append one 16 KiB entry (practical subset):
+retained  mean_ns/op  physical_B  logical_B  amplification  bytes/op
+100       2,401,236   1,656,926   16,405     101x           10,187,472
+1,000     19,982,693  16,421,426  16,405     1,001x         100,412,752
+5,000     139,159,315 82,041,426  16,405     5,001x         564,628,816
+
+Follower persistence catch-up, 256 B entries, production 128-entry batches:
+lag       mean_wall    entries/s  writes  physical_B  amplification  bytes/op
+5,000     47.4 ms      105,775    40      29,041,520  20.97x         189,677,499
+10,000    174.3 ms     57,445     79      112,011,595 40.44x         730,773,155
+25,000    1.036 s      24,137     196     684,493,276 98.84x         4,368,393,792
+
+Filesystem note: the workspace filesystem reported very small fsync syscall
+durations (microseconds in aggregate), so these runs primarily expose encoding,
+copying, allocation, and physical-byte scaling. They do not represent durable
+media latency; adding slower storage would increase the cost of amplification.
+
+Decision: Phase B is justified. Append latency, bytes written, allocation, and
+follower persistence all scale with retained history rather than new data.

@@ -104,11 +104,13 @@ or a full service-level admission bound fails fast with a retryable
 
 Every persisted file uses an explicit, checksummed, bounds-validated
 binary format — no `gob` or other opaque serialization for
-correctness-critical state. Writes that must be durable before an
+correctness-critical state. The Raft log uses immutable 4 MiB segments and
+one appendable active segment; conflict repair and snapshot compaction publish
+atomic generations while reusing unaffected segments. Writes that must be durable before an
 externally visible action (e.g. a vote) are fsynced first. Every
-persisted file recovers as exactly its old content or exactly its new
-content after a process killed at any point mid-write, proven with real
-subprocess crashes. See [wal.md](wal.md) and
+atomic metadata update recovers as its old or new content, and an incomplete
+active log batch is discarded on recovery, proven with real subprocess
+crashes. See [raft-log-storage.md](raft-log-storage.md), [wal.md](wal.md), and
 [crash-consistency.md](crash-consistency.md).
 
 ## 9. Snapshot and compaction
