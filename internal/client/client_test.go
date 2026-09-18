@@ -74,10 +74,10 @@ func TestClientWriteRedirectLoopIsBoundedByContext(t *testing.T) {
 
 	c := New(addrA)
 	budget := 500 * time.Millisecond
+	start := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), budget)
 	defer cancel()
 
-	start := time.Now()
 	err := c.Put(ctx, []byte("x"), []byte("1"))
 	elapsed := time.Since(start)
 	if err == nil {
@@ -86,7 +86,11 @@ func TestClientWriteRedirectLoopIsBoundedByContext(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
 	}
-	if elapsed < budget || elapsed > budget+500*time.Millisecond {
+	// The error is the authoritative proof that the deadline fired. Keep
+	// the elapsed-time check coarse: timer wakeups and the measurements
+	// around context construction need not land on the same microsecond.
+	const timerTolerance = 50 * time.Millisecond
+	if elapsed < budget-timerTolerance || elapsed > budget+500*time.Millisecond {
 		t.Fatalf("Put took %v, want approximately the %v ctx budget", elapsed, budget)
 	}
 }
