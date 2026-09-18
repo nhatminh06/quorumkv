@@ -68,6 +68,16 @@ func TestPutDoesNotAliasCallerSlice(t *testing.T) {
 	}
 }
 
+func TestCommandConstructorOwnsCallerSlices(t *testing.T) {
+	key := []byte("key")
+	value := []byte("value")
+	cmd := NewPutCommand(key, value)
+	key[0], value[0] = 'X', 'X'
+	if string(cmd.Key) != "key" || string(cmd.Value) != "value" {
+		t.Fatalf("command changed through caller aliases: key=%q value=%q", cmd.Key, cmd.Value)
+	}
+}
+
 func TestGetDoesNotExposeInternalState(t *testing.T) {
 	m := NewStateMachine()
 	m.Put([]byte("x"), []byte("hello"))

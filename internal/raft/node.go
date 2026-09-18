@@ -51,7 +51,7 @@ type sender func(ctx context.Context, addr string, req RequestVoteRequest) (Requ
 func (p *peerRPC) sendOverTransport(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
 	start := time.Now()
 	defer p.observe(start, "request_vote")
-	msg := transport.NewMessage(transport.MessageRequestVote, EncodeRequestVote(req))
+	msg := transport.NewOwnedMessage(transport.MessageRequestVote, EncodeRequestVote(req))
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageRequestVoteResponse, DecodeRequestVoteResponse)
 }
 
@@ -67,7 +67,7 @@ func (p *peerRPC) sendAppendOverTransport(ctx context.Context, addr string, req 
 	if err != nil {
 		return AppendEntriesResponse{}, err
 	}
-	msg := transport.NewMessage(transport.MessageAppendEntries, payload)
+	msg := transport.NewOwnedMessage(transport.MessageAppendEntries, payload)
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageAppendEntriesResponse, DecodeAppendEntriesResponse)
 }
 
@@ -79,7 +79,7 @@ type preVoteSender func(ctx context.Context, addr string, req PreVoteRequest) (P
 func (p *peerRPC) sendPreVoteOverTransport(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
 	start := time.Now()
 	defer p.observe(start, "pre_vote")
-	msg := transport.NewMessage(transport.MessagePreVote, EncodePreVote(req))
+	msg := transport.NewOwnedMessage(transport.MessagePreVote, EncodePreVote(req))
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessagePreVoteResponse, DecodePreVoteResponse)
 }
 
@@ -91,7 +91,7 @@ type timeoutNowSender func(ctx context.Context, addr string, req TimeoutNowReque
 func (p *peerRPC) sendTimeoutNowOverTransport(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error) {
 	start := time.Now()
 	defer p.observe(start, "timeout_now")
-	msg := transport.NewMessage(transport.MessageTimeoutNow, EncodeTimeoutNow(req))
+	msg := transport.NewOwnedMessage(transport.MessageTimeoutNow, EncodeTimeoutNow(req))
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageTimeoutNowResponse, DecodeTimeoutNowResponse)
 }
 
@@ -770,7 +770,7 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 		if err != nil {
 			return transport.Message{}, err
 		}
-		return transport.NewMessage(transport.MessageRequestVoteResponse, EncodeRequestVoteResponse(resp)), nil
+		return transport.NewOwnedMessage(transport.MessageRequestVoteResponse, EncodeRequestVoteResponse(resp)), nil
 	case transport.MessageAppendEntries:
 		req, err := DecodeAppendEntries(m.Payload)
 		if err != nil {
@@ -780,7 +780,7 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 		if err != nil {
 			return transport.Message{}, err
 		}
-		return transport.NewMessage(transport.MessageAppendEntriesResponse, EncodeAppendEntriesResponse(resp)), nil
+		return transport.NewOwnedMessage(transport.MessageAppendEntriesResponse, EncodeAppendEntriesResponse(resp)), nil
 	case transport.MessageInstallSnapshot:
 		req, err := DecodeInstallSnapshot(m.Payload)
 		if err != nil {
@@ -790,7 +790,7 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 		if err != nil {
 			return transport.Message{}, err
 		}
-		return transport.NewMessage(transport.MessageInstallSnapshotResponse, EncodeInstallSnapshotResponse(resp)), nil
+		return transport.NewOwnedMessage(transport.MessageInstallSnapshotResponse, EncodeInstallSnapshotResponse(resp)), nil
 	case transport.MessagePreVote:
 		req, err := DecodePreVote(m.Payload)
 		if err != nil {
@@ -800,7 +800,7 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 		if err != nil {
 			return transport.Message{}, err
 		}
-		return transport.NewMessage(transport.MessagePreVoteResponse, EncodePreVoteResponse(resp)), nil
+		return transport.NewOwnedMessage(transport.MessagePreVoteResponse, EncodePreVoteResponse(resp)), nil
 	case transport.MessageTimeoutNow:
 		req, err := DecodeTimeoutNow(m.Payload)
 		if err != nil {
@@ -810,7 +810,7 @@ func (n *Node) handleMessage(_ context.Context, m transport.Message) (transport.
 		if err != nil {
 			return transport.Message{}, err
 		}
-		return transport.NewMessage(transport.MessageTimeoutNowResponse, EncodeTimeoutNowResponse(resp)), nil
+		return transport.NewOwnedMessage(transport.MessageTimeoutNowResponse, EncodeTimeoutNowResponse(resp)), nil
 	default:
 		return transport.Message{}, fmt.Errorf("raft: unexpected message type %d", m.Type)
 	}
@@ -1560,7 +1560,18 @@ func (n *Node) Propose(command []byte) (LogIndex, Term, error) {
 	if len(command) == 0 {
 		return 0, 0, ErrReservedCommand
 	}
-	return n.propose(command)
+	return n.proposeOwned(cloneBytes(command))
+}
+
+// ProposeOwned transfers exclusive ownership of command to the proposal
+// queue. The caller must not access or mutate command after calling it,
+// including when an error is returned. It exists for internal producers that
+// have just encoded a fresh command; ordinary callers should use Propose.
+func (n *Node) ProposeOwned(command []byte) (LogIndex, Term, error) {
+	if len(command) == 0 {
+		return 0, 0, ErrReservedCommand
+	}
+	return n.proposeOwned(command)
 }
 
 // CommitIndex returns the highest log index this node currently

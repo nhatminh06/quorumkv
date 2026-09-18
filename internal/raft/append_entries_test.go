@@ -205,6 +205,22 @@ func TestEncodeAppendEntriesRejectsTooManyEntries(t *testing.T) {
 	}
 }
 
+func TestEncodedAppendEntriesDoesNotAliasRequest(t *testing.T) {
+	command := []byte("value")
+	encoded, err := EncodeAppendEntries(AppendEntriesRequest{Term: 1, LeaderID: 2, Entries: []LogEntry{{Term: 1, Command: command}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command[0] = 'X'
+	decoded, err := DecodeAppendEntries(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(decoded.Entries[0].Command) != "value" {
+		t.Fatalf("encoded request changed through source alias: %q", decoded.Entries[0].Command)
+	}
+}
+
 func TestEncodeAppendEntriesRejectsOversizedCommand(t *testing.T) {
 	oversized := make([]byte, maxCommandSize+1)
 	_, err := EncodeAppendEntries(AppendEntriesRequest{Term: 1, LeaderID: 1, Entries: []LogEntry{{Term: 1, Command: oversized}}})

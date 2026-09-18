@@ -39,6 +39,13 @@ Follower persistence for 25,000 entries fell from 1.036 s at 98.84x to
 13.3-14.2 ms at 1.001x. Methodology, raw results, crash behavior, profiles,
 and tradeoffs are in [raft-log-storage.md](raft-log-storage.md).
 
+Milestone 21 removes redundant record, fingerprint, proposal, command, and
+transport intermediates while preserving public defensive-copy behavior. A
+25,000-entry follower persistence run fell from 11.44 MB/15,802 allocations to
+4.16 MB/5,215 allocations with unchanged 1.001x write amplification. Full
+ownership analysis, before/after tables, profiles, startup findings, and noisy
+service results are in [allocation-performance.md](allocation-performance.md).
+
 ## Environment
 
 ```text

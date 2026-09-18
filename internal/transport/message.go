@@ -67,6 +67,14 @@ func NewMessage(typ MessageType, payload []byte) Message {
 	return Message{Type: typ, Payload: cloneBytes(payload)}
 }
 
+// NewOwnedMessage constructs a message by taking exclusive ownership of
+// payload. The caller must not access or mutate payload afterward. It is for
+// internal encoders that have just allocated a fresh payload; NewMessage
+// remains the safe defensive-copy API.
+func NewOwnedMessage(typ MessageType, payload []byte) Message {
+	return Message{Type: typ, Payload: payload}
+}
+
 func cloneBytes(b []byte) []byte {
 	if b == nil {
 		return nil

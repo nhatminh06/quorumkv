@@ -1,0 +1,18 @@
+Milestone 21 longer GET/mixed noise check: benchtime=1000x, count=5
+
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     30537 ns/op	       619.0 p50-us	      1567 p95-us	     10998 p99-us
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     21705 ns/op	       625.0 p50-us	      1026 p95-us	      1086 p99-us
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     30914 ns/op	       620.0 p50-us	      2498 p95-us	      2885 p99-us
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     25646 ns/op	       640.0 p50-us	      1882 p95-us	      2329 p99-us
+BenchmarkThreeNodeConcurrentGet-12     	    1000	     26724 ns/op	       621.0 p50-us	      2229 p95-us	      2545 p99-us
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     30963 ns/op	       603.0 p50-us	      2515 p95-us	      3603 p99-us
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     33555 ns/op	       662.0 p50-us	      2839 p95-us	      3737 p99-us
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     24958 ns/op	       587.0 p50-us	      1999 p95-us	      2875 p99-us
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     26065 ns/op	       576.0 p50-us	      2297 p95-us	      3275 p99-us
+BenchmarkThreeNodeMixedReadWrite-12    	    1000	     32629 ns/op	       697.0 p50-us	      2776 p95-us	      4601 p99-us
+PASS
+ok  	quorumkv/internal/service	4.453s

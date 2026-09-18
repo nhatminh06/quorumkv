@@ -56,6 +56,19 @@ func TestSegmentedLogRotationAndReopenPreservesKinds(t *testing.T) {
 	}
 }
 
+func TestAppendEntryRecordUsesProvidedCapacity(t *testing.T) {
+	entry := LogEntry{Term: 7, Kind: EntryApplication, Command: make([]byte, 16*1024)}
+	dst := make([]byte, 0, entryRecordSize(entry))
+	if got := testing.AllocsPerRun(100, func() {
+		out, err := appendEntryRecord(dst[:0], entry)
+		if err != nil || len(out) != entryRecordSize(entry) {
+			panic("record encoding failed")
+		}
+	}); got > 1 {
+		t.Fatalf("appendEntryRecord allocations = %.1f, want <= 1 with sufficient capacity", got)
+	}
+}
+
 func TestSegmentedLogRecoversOnlyTornActiveTail(t *testing.T) {
 	l, path := largeSegmentedLog(t)
 	before := l.LastIndex()

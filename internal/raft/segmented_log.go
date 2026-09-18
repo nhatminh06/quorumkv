@@ -21,27 +21,44 @@ const segmentHeaderSize = 4 + 1 + 8
 const manifestSize = 4 + 1 + 8 + 8 + 8 + 4
 const segmentBatchCommitKind EntryKind = 0xff
 
-func encodeEntryRecord(e LogEntry) ([]byte, error) {
+func entryRecordSize(e LogEntry) int {
+	return logLengthPrefixSize + logEntryHeaderSizeV3 + len(e.Command) + logChecksumSize
+}
+
+// appendEntryRecord appends the exact version-1 segment record for e directly
+// to dst. It does not retain dst or alias e.Command.
+func appendEntryRecord(dst []byte, e LogEntry) ([]byte, error) {
 	if len(e.Command) > maxCommandSize {
 		return nil, fmt.Errorf("raft: command length %d exceeds max %d", len(e.Command), maxCommandSize)
 	}
-	body := make([]byte, logEntryHeaderSizeV3+len(e.Command)+logChecksumSize)
-	binary.BigEndian.PutUint64(body[0:8], uint64(e.Term))
-	body[8] = byte(e.Kind)
-	binary.BigEndian.PutUint32(body[9:13], uint32(len(e.Command)))
-	copy(body[logEntryHeaderSizeV3:], e.Command)
-	checksumStart := logEntryHeaderSizeV3 + len(e.Command)
-	binary.BigEndian.PutUint32(body[checksumStart:], crc32.Checksum(body[:checksumStart], crc32cTable))
-	record := make([]byte, logLengthPrefixSize+len(body))
-	binary.BigEndian.PutUint32(record[:4], uint32(len(body)))
-	copy(record[4:], body)
-	return record, nil
+	start := len(dst)
+	recordSize := entryRecordSize(e)
+	dst = append(dst, make([]byte, recordSize)...)
+	bodyStart := start + logLengthPrefixSize
+	bodyEnd := bodyStart + logEntryHeaderSizeV3 + len(e.Command)
+	binary.BigEndian.PutUint32(dst[start:bodyStart], uint32(recordSize-logLengthPrefixSize))
+	binary.BigEndian.PutUint64(dst[bodyStart:bodyStart+8], uint64(e.Term))
+	dst[bodyStart+8] = byte(e.Kind)
+	binary.BigEndian.PutUint32(dst[bodyStart+9:bodyStart+13], uint32(len(e.Command)))
+	copy(dst[bodyStart+logEntryHeaderSizeV3:bodyEnd], e.Command)
+	binary.BigEndian.PutUint32(dst[bodyEnd:], crc32.Checksum(dst[bodyStart:bodyEnd], crc32cTable))
+	return dst, nil
+}
+
+func encodeEntryRecord(e LogEntry) ([]byte, error) {
+	return appendEntryRecord(make([]byte, 0, entryRecordSize(e)), e)
 }
 
 func encodeBatchCommit(count int) ([]byte, error) {
 	var command [4]byte
 	binary.BigEndian.PutUint32(command[:], uint32(count))
 	return encodeEntryRecord(LogEntry{Kind: segmentBatchCommitKind, Command: command[:]})
+}
+
+func appendBatchCommit(dst []byte, count int) ([]byte, error) {
+	var command [4]byte
+	binary.BigEndian.PutUint32(command[:], uint32(count))
+	return appendEntryRecord(dst, LogEntry{Kind: segmentBatchCommitKind, Command: command[:]})
 }
 
 func decodeSegmentRecords(data []byte, allowTornTail bool) ([]LogEntry, int, error) {
@@ -363,25 +380,32 @@ func (l *Log) segmentCount() int {
 	return l.segmentFiles
 }
 
-func (l *Log) appendSegmented(entries []LogEntry) error {
+func (l *Log) appendSegmented(entries []LogEntry, owned bool) error {
 	if !l.segmented {
 		return fmt.Errorf("raft: segmented append without layout")
 	}
 	l.appendFsync = 0
 	l.appendBytes = 0
-	var encoded []byte
+	encodedSize := logLengthPrefixSize + logEntryHeaderSizeV3 + 4 + logChecksumSize
 	for _, entry := range entries {
-		record, err := encodeEntryRecord(entry)
+		if len(entry.Command) > maxCommandSize {
+			return fmt.Errorf("raft: command length %d exceeds max %d", len(entry.Command), maxCommandSize)
+		}
+		encodedSize += entryRecordSize(entry)
+	}
+	encoded := make([]byte, 0, encodedSize)
+	for _, entry := range entries {
+		var err error
+		encoded, err = appendEntryRecord(encoded, entry)
 		if err != nil {
 			return err
 		}
-		encoded = append(encoded, record...)
 	}
-	commit, err := encodeBatchCommit(len(entries))
+	var err error
+	encoded, err = appendBatchCommit(encoded, len(entries))
 	if err != nil {
 		return err
 	}
-	encoded = append(encoded, commit...)
 	l.appendBytes = len(encoded)
 	if int64(len(encoded))+segmentHeaderSize > raftLogSegmentBytes {
 		combined := append(cloneEntries(l.entries), cloneEntries(entries)...)
@@ -471,7 +495,11 @@ func (l *Log) appendSegmented(entries []LogEntry) error {
 		return err
 	}
 	l.activeSize += int64(len(encoded))
-	l.entries = append(l.entries, cloneEntries(entries)...)
+	if owned {
+		l.entries = append(l.entries, entries...)
+	} else {
+		l.entries = append(l.entries, cloneEntries(entries)...)
+	}
 	return nil
 }
 

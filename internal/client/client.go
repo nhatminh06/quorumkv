@@ -384,7 +384,7 @@ func (c *Client) attempt(ctx context.Context, addr string, req clientproto.Reque
 	if err != nil {
 		return clientproto.Response{}, fmt.Errorf("%w: %v", ErrBadRequest, err)
 	}
-	respMsg, err := c.pool.Send(ctx, addr, transport.NewMessage(transport.MessageClientRequest, payload), func(m transport.Message) error {
+	respMsg, err := c.pool.Send(ctx, addr, transport.NewOwnedMessage(transport.MessageClientRequest, payload), func(m transport.Message) error {
 		if m.Type != transport.MessageClientResponse {
 			return fmt.Errorf("client: unexpected response type %d", m.Type)
 		}

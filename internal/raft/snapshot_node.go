@@ -42,7 +42,7 @@ func (p *peerRPC) sendInstallSnapshotOverTransport(ctx context.Context, addr str
 	if err != nil {
 		return InstallSnapshotResponse{}, err
 	}
-	msg := transport.NewMessage(transport.MessageInstallSnapshot, payload)
+	msg := transport.NewOwnedMessage(transport.MessageInstallSnapshot, payload)
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageInstallSnapshotResponse, DecodeInstallSnapshotResponse)
 }
 

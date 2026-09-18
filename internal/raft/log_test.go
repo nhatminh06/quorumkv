@@ -226,6 +226,22 @@ func TestEntriesRangeDoesNotExposeInternalState(t *testing.T) {
 	}
 }
 
+func TestLogAppendOwnsCallerCommand(t *testing.T) {
+	l, err := OpenLog(tempLogPath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := []byte("value")
+	if err := l.Append([]LogEntry{{Term: 1, Command: command}}); err != nil {
+		t.Fatal(err)
+	}
+	command[0] = 'X'
+	entry, ok := l.Entry(1)
+	if !ok || string(entry.Command) != "value" {
+		t.Fatalf("stored entry changed through caller alias: %+v, %v", entry, ok)
+	}
+}
+
 func TestEntriesRangeAtSnapshotBoundary(t *testing.T) {
 	l, err := OpenLog(tempLogPath(t))
 	if err != nil {
