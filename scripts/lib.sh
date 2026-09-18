@@ -16,10 +16,19 @@ NODE_IDS=(1 2 3)
 NODE_ADDR_1="127.0.0.1:7001"
 NODE_ADDR_2="127.0.0.1:7002"
 NODE_ADDR_3="127.0.0.1:7003"
+NODE_METRICS_1="127.0.0.1:9101"
+NODE_METRICS_2="127.0.0.1:9102"
+NODE_METRICS_3="127.0.0.1:9103"
 
 node_addr() {
 	local id="$1"
 	local var="NODE_ADDR_${id}"
+	echo "${!var}"
+}
+
+node_metrics_addr() {
+	local id="$1"
+	local var="NODE_METRICS_${id}"
 	echo "${!var}"
 }
 
@@ -47,7 +56,7 @@ node_running() {
 # restarts) node $1 from its fixed address/data directory/peer set.
 start_node() {
 	local id="$1"
-	local args=(node --id "$id" --listen "$(node_addr "$id")" --data "$DATA_DIR/node$id")
+	local args=(node --id "$id" --listen "$(node_addr "$id")" --metrics-listen "$(node_metrics_addr "$id")" --data "$DATA_DIR/node$id")
 	for peer in "${NODE_IDS[@]}"; do
 		if [[ "$peer" != "$id" ]]; then
 			args+=(--peer "$peer=$(node_addr "$peer")")

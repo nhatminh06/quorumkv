@@ -1,0 +1,24 @@
+{
+  "title": "QuorumKV",
+  "uid": "quorumkv-overview",
+  "schemaVersion": 39,
+  "time": {"from": "now-1h", "to": "now"},
+  "refresh": "5s",
+  "panels": [
+    {"id": 1, "type": "stat", "title": "Cluster leadership", "targets": [{"expr": "quorumkv_raft_leader", "legendFormat": "{{instance}}"}], "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4}},
+    {"id": 2, "type": "timeseries", "title": "Current terms", "targets": [{"expr": "quorumkv_raft_term", "legendFormat": "{{instance}}"}], "gridPos": {"x": 6, "y": 0, "w": 6, "h": 4}},
+    {"id": 3, "type": "timeseries", "title": "Commit index / last applied", "targets": [{"expr": "quorumkv_raft_commit_index", "legendFormat": "commit {{instance}}"}, {"expr": "quorumkv_raft_last_applied", "legendFormat": "applied {{instance}}"}], "gridPos": {"x": 12, "y": 0, "w": 6, "h": 4}},
+    {"id": 4, "type": "timeseries", "title": "Apply lag", "targets": [{"expr": "quorumkv_raft_apply_lag", "legendFormat": "{{instance}}"}], "gridPos": {"x": 18, "y": 0, "w": 6, "h": 4}},
+    {"id": 5, "type": "timeseries", "title": "Request rate", "targets": [{"expr": "sum by (operation, status) (rate(quorumkv_requests_total[5m]))", "legendFormat": "{{operation}} {{status}}"}], "gridPos": {"x": 0, "y": 4, "w": 8, "h": 6}},
+    {"id": 6, "type": "timeseries", "title": "Request p95 latency", "targets": [{"expr": "histogram_quantile(0.95, sum by (le, operation) (rate(quorumkv_request_duration_seconds_bucket[5m])))", "legendFormat": "{{operation}}"}], "gridPos": {"x": 8, "y": 4, "w": 8, "h": 6}},
+    {"id": 7, "type": "timeseries", "title": "BUSY rate", "targets": [{"expr": "sum(rate(quorumkv_requests_busy_total[5m]))"}], "gridPos": {"x": 16, "y": 4, "w": 8, "h": 6}},
+    {"id": 8, "type": "timeseries", "title": "Replication rate", "targets": [{"expr": "sum by (instance, peer) (rate(quorumkv_raft_replication_rpcs_total[5m]))", "legendFormat": "{{instance}} -> {{peer}}"}], "gridPos": {"x": 0, "y": 10, "w": 8, "h": 6}},
+    {"id": 9, "type": "timeseries", "title": "Replication failures", "targets": [{"expr": "sum by (instance, peer) (rate(quorumkv_raft_replication_failures_total[5m]))", "legendFormat": "{{instance}} -> {{peer}}"}], "gridPos": {"x": 8, "y": 10, "w": 8, "h": 6}},
+    {"id": 10, "type": "timeseries", "title": "Peer connection reuse", "targets": [{"expr": "rate(quorumkv_transport_connections_reused_total[5m])", "legendFormat": "reuse {{instance}}"}, {"expr": "rate(quorumkv_transport_connections_dialed_total[5m])", "legendFormat": "dial {{instance}}"}], "gridPos": {"x": 16, "y": 10, "w": 8, "h": 6}},
+    {"id": 11, "type": "timeseries", "title": "Peer send failures", "targets": [{"expr": "rate(quorumkv_transport_send_failures_total[5m])", "legendFormat": "{{instance}}"}], "gridPos": {"x": 0, "y": 16, "w": 8, "h": 6}},
+    {"id": 12, "type": "timeseries", "title": "Persistence p95 latency", "targets": [{"expr": "histogram_quantile(0.95, sum by (le, domain) (rate(quorumkv_persistence_duration_seconds_bucket[5m])))", "legendFormat": "{{domain}}"}], "gridPos": {"x": 8, "y": 16, "w": 8, "h": 6}},
+    {"id": 13, "type": "timeseries", "title": "Snapshot activity", "targets": [{"expr": "rate(quorumkv_snapshots_created_total[15m])", "legendFormat": "created {{instance}}"}, {"expr": "rate(quorumkv_snapshot_install_total[15m])", "legendFormat": "installed {{instance}}"}], "gridPos": {"x": 16, "y": 16, "w": 8, "h": 6}},
+    {"id": 14, "type": "timeseries", "title": "Follower replication lag", "targets": [{"expr": "quorumkv_raft_peer_replication_lag", "legendFormat": "{{instance}} -> {{peer}}"}], "gridPos": {"x": 0, "y": 22, "w": 12, "h": 6}},
+    {"id": 15, "type": "timeseries", "title": "Transport queue pressure", "targets": [{"expr": "quorumkv_transport_waiters", "legendFormat": "{{instance}}"}], "gridPos": {"x": 12, "y": 22, "w": 12, "h": 6}}
+  ]
+}

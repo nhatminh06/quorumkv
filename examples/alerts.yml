@@ -1,0 +1,27 @@
+groups:
+  - name: quorumkv-example
+    rules:
+      - alert: NoLeader
+        expr: sum(quorumkv_raft_leader) == 0
+        for: 30s
+      - alert: FrequentLeaderChanges
+        expr: sum(rate(quorumkv_raft_leadership_changes_total[5m])) > 0.1
+        for: 5m
+      - alert: FollowerReplicationLag
+        expr: max(quorumkv_raft_peer_replication_lag) > 1000
+        for: 5m
+      - alert: HighApplyLag
+        expr: max(quorumkv_raft_apply_lag) > 100
+        for: 5m
+      - alert: HighBusyRate
+        expr: sum(rate(quorumkv_requests_busy_total[5m])) > 1
+        for: 5m
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.95, sum by (le, operation) (rate(quorumkv_request_duration_seconds_bucket[5m]))) > 0.25
+        for: 10m
+      - alert: PeerReconnectStorm
+        expr: sum(rate(quorumkv_transport_connections_dialed_total[5m])) > 5
+        for: 5m
+      - alert: HighPersistenceLatency
+        expr: histogram_quantile(0.95, sum by (le, domain) (rate(quorumkv_persistence_duration_seconds_bucket[5m]))) > 0.1
+        for: 10m
