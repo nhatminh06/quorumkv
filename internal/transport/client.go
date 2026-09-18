@@ -41,6 +41,7 @@ type PeerClient struct {
 	closeOnce                             sync.Once
 	dial                                  func(context.Context, string, string) (net.Conn, error)
 	dialed, reused, failures, closedConns atomic.Uint64
+	activeConnections                     atomic.Int64
 }
 
 type peerSession struct {
@@ -58,6 +59,8 @@ type ClientStats struct {
 	ConnectionsReused uint64
 	SendFailures      uint64
 	ConnectionsClosed uint64
+	ActiveConnections int64
+	Waiters           int64
 }
 
 func NewPeerClient() *PeerClient {
@@ -66,7 +69,19 @@ func NewPeerClient() *PeerClient {
 }
 
 func (c *PeerClient) Stats() ClientStats {
-	return ClientStats{c.dialed.Load(), c.reused.Load(), c.failures.Load(), c.closedConns.Load()}
+	c.mu.Lock()
+	var waiters int64
+	for _, p := range c.peers {
+		if p.users > 1 {
+			waiters += int64(p.users - 1)
+		}
+	}
+	c.mu.Unlock()
+	return ClientStats{
+		ConnectionsDialed: c.dialed.Load(), ConnectionsReused: c.reused.Load(),
+		SendFailures: c.failures.Load(), ConnectionsClosed: c.closedConns.Load(),
+		ActiveConnections: c.activeConnections.Load(), Waiters: waiters,
+	}
 }
 
 func (c *PeerClient) acquire(addr string) (*peerSession, error) {
@@ -113,6 +128,7 @@ func (c *PeerClient) discard(p *peerSession) {
 		p.conn.Close()
 		p.conn = nil
 		c.closedConns.Add(1)
+		c.activeConnections.Add(-1)
 	}
 }
 
@@ -164,6 +180,7 @@ func (c *PeerClient) Send(ctx context.Context, addr string, m Message, validate 
 			return Message{}, c.sendError(ctx, err)
 		}
 		c.dialed.Add(1)
+		c.activeConnections.Add(1)
 	} else {
 		c.reused.Add(1)
 	}

@@ -183,11 +183,31 @@ func (n *Node) replicationStep(ctx context.Context, id NodeID) bool {
 	n.mu.Unlock()
 
 	resp, err := n.sendAppend(ctx, addr, req)
+	bytes := 0
+	for _, entry := range entries {
+		bytes += len(entry.Command)
+	}
 	if err != nil {
+		if m := n.observerMetrics(); m != nil {
+			m.RecordReplication(uint64(id), uint64(n.matchIndexForMetrics(id)), uint64(next), bytes, true, false)
+		}
 		return false // transient failure; the next wake (heartbeat or new entry) retries
 	}
 
-	return n.applyReplicationResponse(id, term, generation, req, resp)
+	more := n.applyReplicationResponse(id, term, generation, req, resp)
+	n.mu.Lock()
+	match, nextNow := n.matchIndex[id], n.nextIndex[id]
+	n.mu.Unlock()
+	if m := n.observerMetrics(); m != nil {
+		m.RecordReplication(uint64(id), uint64(match), uint64(nextNow), bytes, false, false)
+	}
+	return more
+}
+
+func (n *Node) matchIndexForMetrics(id NodeID) LogIndex {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.matchIndex[id]
 }
 
 // applyReplicationResponse validates and applies one AppendEntries
@@ -208,12 +228,21 @@ func (n *Node) applyReplicationResponse(id NodeID, sentTerm Term, sentGeneration
 		return false
 	}
 	if n.role != Leader || n.persistent.CurrentTerm != sentTerm {
+		if m := n.observerMetrics(); m != nil {
+			m.RecordStaleReplication(uint64(id))
+		}
 		return false
 	}
 	if _, ok := n.workers[id]; !ok {
+		if m := n.observerMetrics(); m != nil {
+			m.RecordStaleReplication(uint64(id))
+		}
 		return false // peer removed since this request was sent
 	}
 	if n.replicationGeneration[id] != sentGeneration {
+		if m := n.observerMetrics(); m != nil {
+			m.RecordStaleReplication(uint64(id))
+		}
 		return false // superseded by a conflict backtrack, a snapshot takeover, or a worker recreation
 	}
 

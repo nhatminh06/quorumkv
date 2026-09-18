@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"hash/crc32"
 	"os"
+	"sync/atomic"
+	"time"
+
+	"quorumkv/internal/observability"
 )
 
 // PersistentState is the Raft state that must survive a restart:
@@ -43,8 +47,11 @@ var ErrCorruptState = errors.New("raft: corrupt persistent state")
 //
 // Store is not safe for concurrent use; Node serializes access to it.
 type Store struct {
-	path string
+	path     string
+	observer atomic.Pointer[observability.Metrics]
 }
+
+func (s *Store) setObserver(m *observability.Metrics) { s.observer.Store(m) }
 
 func NewStore(path string) *Store {
 	return &Store{path: path}
@@ -105,6 +112,7 @@ func (s *Store) Load() (PersistentState, error) {
 // treat a successful Save as a completed persist step for Raft's
 // persist-before-respond ordering.
 func (s *Store) Save(state PersistentState) error {
+	start := time.Now()
 	data := make([]byte, stateFileSize)
 	copy(data[0:4], stateFileMagic[:])
 	data[4] = stateFileVersion
@@ -117,5 +125,9 @@ func (s *Store) Save(state PersistentState) error {
 	checksum := crc32.Checksum(data[4:checksumStart], crc32cTable)
 	binary.BigEndian.PutUint32(data[checksumStart:], checksum)
 
-	return atomicWriteFile("stable", s.path, data)
+	err, fsync := atomicWriteFileMeasured("stable", s.path, data)
+	if m := s.observer.Load(); m != nil {
+		m.RecordPersistence("stable", len(data), time.Since(start), fsync)
+	}
+	return err
 }

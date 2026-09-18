@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"hash/crc32"
 	"os"
+	"sync/atomic"
+	"time"
+
+	"quorumkv/internal/observability"
 )
 
 // CommitStore persists commitIndex separately from currentTerm/votedFor
@@ -17,8 +21,11 @@ import (
 // CommitStore is not safe for concurrent use; Node serializes access to
 // it under its own mutex, the same convention as Store and Log.
 type CommitStore struct {
-	path string
+	path     string
+	observer atomic.Pointer[observability.Metrics]
 }
+
+func (s *CommitStore) setObserver(m *observability.Metrics) { s.observer.Store(m) }
 
 func NewCommitStore(path string) *CommitStore {
 	return &CommitStore{path: path}
@@ -71,6 +78,7 @@ func (s *CommitStore) Load() (LogIndex, error) {
 // Save atomically replaces the commit-metadata file with index, using the
 // same temp-file/fsync/rename/directory-fsync sequence as Store and Log.
 func (s *CommitStore) Save(index LogIndex) error {
+	start := time.Now()
 	data := make([]byte, commitMetaFileSize)
 	copy(data[0:4], commitMetaMagic[:])
 	data[4] = commitMetaVersion
@@ -78,5 +86,9 @@ func (s *CommitStore) Save(index LogIndex) error {
 	checksumStart := commitMetaFileSize - 4
 	checksum := crc32.Checksum(data[4:checksumStart], crc32cTable)
 	binary.BigEndian.PutUint32(data[checksumStart:], checksum)
-	return atomicWriteFile("commit", s.path, data)
+	err, fsync := atomicWriteFileMeasured("commit", s.path, data)
+	if m := s.observer.Load(); m != nil {
+		m.RecordPersistence("commit", len(data), time.Since(start), fsync)
+	}
+	return err
 }

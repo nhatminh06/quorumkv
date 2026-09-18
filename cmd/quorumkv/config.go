@@ -11,10 +11,12 @@ import (
 
 // nodeConfig is the validated result of parsing "quorumkv node" flags.
 type nodeConfig struct {
-	id     raft.NodeID
-	listen string
-	data   string
-	peers  map[raft.NodeID]string
+	id            raft.NodeID
+	listen        string
+	metricsListen string
+	logLevel      string
+	data          string
+	peers         map[raft.NodeID]string
 }
 
 // peerFlag implements flag.Value for a repeated "--peer ID=ADDR" flag.
@@ -67,10 +69,12 @@ func (p *peerFlag) Set(s string) error {
 func parseNodeConfig(args []string) (nodeConfig, error) {
 	fs := flag.NewFlagSet("quorumkv node", flag.ContinueOnError)
 	var idRaw uint64
-	var listen, data string
+	var listen, metricsListen, logLevel, data string
 	var peers peerFlag
 	fs.Uint64Var(&idRaw, "id", 0, "this node's ID (positive integer, required)")
 	fs.StringVar(&listen, "listen", "", "address to listen on, e.g. 127.0.0.1:7001 (required)")
+	fs.StringVar(&metricsListen, "metrics-listen", "", "optional HTTP metrics/health address, e.g. 127.0.0.1:9101")
+	fs.StringVar(&logLevel, "log-level", "info", "structured log level: debug, info, warn, or error")
 	fs.StringVar(&data, "data", "", "directory for this node's persistent state (required)")
 	fs.Var(&peers, "peer", "peer as ID=ADDRESS; repeat for each peer")
 	fs.Usage = func() {
@@ -79,6 +83,8 @@ func parseNodeConfig(args []string) (nodeConfig, error) {
   --id      this node's ID (positive integer, required)
   --listen  address to listen on, e.g. 127.0.0.1:7001 (required)
   --data    directory for this node's persistent state (required)
+  --metrics-listen  optional HTTP metrics/health address
+  --log-level       debug, info, warn, or error (default info)
   --peer    a peer as ID=ADDRESS; repeat once per peer
 
 Example:
@@ -101,9 +107,14 @@ Example:
 	if data == "" {
 		return nodeConfig{}, fmt.Errorf("--data is required")
 	}
+	switch logLevel {
+	case "debug", "info", "warn", "error":
+	default:
+		return nodeConfig{}, fmt.Errorf("invalid --log-level %q: want debug, info, warn, or error", logLevel)
+	}
 	if _, ok := peers.peers[id]; ok {
 		return nodeConfig{}, fmt.Errorf("--peer includes this node's own --id (%d); a node is never its own peer", id)
 	}
 
-	return nodeConfig{id: id, listen: listen, data: data, peers: peers.peers}, nil
+	return nodeConfig{id: id, listen: listen, metricsListen: metricsListen, logLevel: logLevel, data: data, peers: peers.peers}, nil
 }

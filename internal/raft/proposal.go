@@ -80,11 +80,15 @@ type NodeStats struct {
 	ProposalBatchEntries  int64
 	MaxQueueDepth         int64
 	MaxQueueBytes         int64
+	QueueDepth            int64
 }
 
 // Stats returns a snapshot of this node's observational counters. Purely
 // diagnostic — nothing in this package reads it back to make decisions.
 func (n *Node) Stats() NodeStats {
+	n.queueMu.Lock()
+	depth := n.queuedProposals
+	n.queueMu.Unlock()
 	return NodeStats{
 		ProposalsAdmitted:     n.stats.proposalsAdmitted.Load(),
 		ProposalsRejectedBusy: n.stats.proposalsRejectedBusy.Load(),
@@ -92,6 +96,7 @@ func (n *Node) Stats() NodeStats {
 		ProposalBatchEntries:  n.stats.proposalBatchEntries.Load(),
 		MaxQueueDepth:         n.stats.maxQueueDepth.Load(),
 		MaxQueueBytes:         n.stats.maxQueueBytes.Load(),
+		QueueDepth:            int64(depth),
 	}
 }
 
