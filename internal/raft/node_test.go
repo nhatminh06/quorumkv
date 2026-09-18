@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func newTestNode(t *testing.T, id NodeID, initial PersistentState, peers map[NodeID]string) *Node {
+func newTestNode(t testing.TB, id NodeID, initial PersistentState, peers map[NodeID]string) *Node {
 	t.Helper()
 	dir := t.TempDir()
 	store := NewStore(filepath.Join(dir, "state"))

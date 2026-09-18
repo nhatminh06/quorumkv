@@ -6,6 +6,11 @@ import (
 	"time"
 )
 
+// Keep existing structured fault vectors while exercising scalar bookkeeping.
+func (n *Node) applyStructuredReplicationResponse(id NodeID, term Term, generation uint64, req AppendEntriesRequest, resp AppendEntriesResponse) bool {
+	return n.applyReplicationResponse(id, term, generation, replicationAttempt{prevLogIndex: req.PrevLogIndex, entryCount: len(req.Entries)}, resp)
+}
+
 // --- Generation safety (see applyReplicationResponse) ---
 
 // TestStaleReplicationSuccessDoesNotAdvanceProgress proves a success
@@ -23,7 +28,7 @@ func TestStaleReplicationSuccessDoesNotAdvanceProgress(t *testing.T) {
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a", "b")}
-	more := n.applyReplicationResponse(2, term, staleGen, req, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 2})
+	more := n.applyStructuredReplicationResponse(2, term, staleGen, req, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 2})
 	if more {
 		t.Fatalf("applyReplicationResponse(stale generation) reported more work, want false (discarded)")
 	}
@@ -52,7 +57,7 @@ func TestStaleReplicationFailureDoesNotBacktrackProgress(t *testing.T) {
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 4}
-	more := n.applyReplicationResponse(2, term, staleGen, req, AppendEntriesResponse{Term: term, Success: false})
+	more := n.applyStructuredReplicationResponse(2, term, staleGen, req, AppendEntriesResponse{Term: term, Success: false})
 	if more {
 		t.Fatalf("applyReplicationResponse(stale generation failure) reported more work, want false (discarded)")
 	}
@@ -80,7 +85,7 @@ func TestConflictInvalidatesInflightGeneration(t *testing.T) {
 
 	// The current-generation failure arrives first.
 	failReq := AppendEntriesRequest{Term: term, PrevLogIndex: 4}
-	if more := n.applyReplicationResponse(2, term, genBeforeFailure, failReq, AppendEntriesResponse{Term: term, Success: false}); !more {
+	if more := n.applyStructuredReplicationResponse(2, term, genBeforeFailure, failReq, AppendEntriesResponse{Term: term, Success: false}); !more {
 		t.Fatalf("applyReplicationResponse(current-generation failure) reported no more work, want true (retry)")
 	}
 	n.mu.Lock()
@@ -98,7 +103,7 @@ func TestConflictInvalidatesInflightGeneration(t *testing.T) {
 	// before the failure was known, arrives late — using the OLD
 	// generation.
 	staleReq := AppendEntriesRequest{Term: term, PrevLogIndex: 4, Entries: entriesOf("would-have-been-wrong")}
-	if more := n.applyReplicationResponse(2, term, genBeforeFailure, staleReq, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 5}); more {
+	if more := n.applyStructuredReplicationResponse(2, term, genBeforeFailure, staleReq, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 5}); more {
 		t.Fatalf("applyReplicationResponse(stale in-flight success after conflict) reported more work, want false")
 	}
 
@@ -120,7 +125,7 @@ func TestHigherTermInvalidatesReplicationGeneration(t *testing.T) {
 	gen := n.replicationGeneration[2]
 	n.mu.Unlock()
 
-	n.applyReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term}, AppendEntriesResponse{Term: term + 3, Success: false})
+	n.applyStructuredReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term}, AppendEntriesResponse{Term: term + 3, Success: false})
 	if n.Role() != Follower {
 		t.Fatalf("Role() = %v, want Follower after a higher-term response", n.Role())
 	}
@@ -130,7 +135,7 @@ func TestHigherTermInvalidatesReplicationGeneration(t *testing.T) {
 
 	// A late success for the old term/generation must not resurrect
 	// leader-only state on a node that is now a Follower.
-	more := n.applyReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a")}, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 1})
+	more := n.applyStructuredReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a")}, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 1})
 	if more {
 		t.Fatalf("applyReplicationResponse(old term, now a Follower) reported more work, want false")
 	}
@@ -161,7 +166,7 @@ func TestRemovedPeerResponseIgnored(t *testing.T) {
 	n.mu.Unlock()
 
 	req := AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a")}
-	more := n.applyReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 1})
+	more := n.applyStructuredReplicationResponse(2, term, gen, req, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 1})
 	if more {
 		t.Fatalf("applyReplicationResponse(removed peer) reported more work, want false")
 	}

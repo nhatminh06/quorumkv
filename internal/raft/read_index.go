@@ -219,7 +219,7 @@ func (n *Node) ReadIndex(ctx context.Context) (index LogIndex, err error) {
 		id, addr := id, addr
 		n.spawnBackground(func() {
 			defer n.bgWG.Done()
-			resp, err := n.sendAppend(probeCtx, addr, req)
+			resp, err := n.sendAppendRequest(probeCtx, addr, req)
 			resultCh <- readProbeResult{id: id, resp: resp, err: err}
 		})
 	}

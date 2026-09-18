@@ -398,6 +398,18 @@ func (l *Log) EntriesFrom(from LogIndex) []LogEntry {
 // clone an entire multi-thousand-entry retained suffix just to form one
 // small replication batch.
 func (l *Log) EntriesRange(from LogIndex, maxEntries int, maxEncodedBytes int) []LogEntry {
+	view := l.entriesRangeView(from, maxEntries, maxEncodedBytes)
+	if len(view) == 0 {
+		return nil
+	}
+	return cloneEntries(view)
+}
+
+// entriesRangeView borrows Log-owned entries for immediate synchronous encoding.
+// The caller must hold the enclosing Node.mu (or provide exclusive access),
+// must not mutate entries or commands, and must not retain the view beyond that
+// synchronization boundary. Only an independently encoded payload may escape.
+func (l *Log) entriesRangeView(from LogIndex, maxEntries int, maxEncodedBytes int) []LogEntry {
 	if from <= l.baseIndex {
 		from = l.baseIndex + 1
 	}
@@ -422,7 +434,7 @@ func (l *Log) EntriesRange(from LogIndex, maxEntries int, maxEncodedBytes int) [
 		total += next
 		count++
 	}
-	return cloneEntries(avail[:count])
+	return avail[:count:count]
 }
 
 func cloneEntries(entries []LogEntry) []LogEntry {

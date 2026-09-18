@@ -173,35 +173,61 @@ func (n *Node) replicationStep(ctx context.Context, id NodeID) bool {
 
 	prevIndex := next - 1
 	prevTerm, _ := n.log.Term(prevIndex)
-	entries := n.log.EntriesRange(next, maxEntriesPerAppend, MaxAppendEntriesBytes)
-	leaderCommit := n.commitIndex
-	req := AppendEntriesRequest{
+	payload, attempt, err := n.encodeReplicationLocked(next, AppendEntriesRequest{
 		Term: term, LeaderID: n.id,
 		PrevLogIndex: prevIndex, PrevLogTerm: prevTerm,
-		Entries: entries, LeaderCommit: leaderCommit,
-	}
+		LeaderCommit: n.commitIndex,
+	})
+	structured, encoded := n.sendAppend, n.sendEncodedAppend
 	n.mu.Unlock()
 
-	resp, err := n.sendAppend(ctx, addr, req)
-	bytes := 0
-	for _, entry := range entries {
-		bytes += len(entry.Command)
+	var resp AppendEntriesResponse
+	if err == nil && structured != nil {
+		// Test-only adapter owns decoded commands; no borrowed log memory escapes.
+		var req AppendEntriesRequest
+		req, err = DecodeAppendEntries(payload)
+		if err == nil {
+			resp, err = structured(ctx, addr, req)
+		}
+	} else if err == nil {
+		resp, err = encoded(ctx, addr, payload)
 	}
 	if err != nil {
 		if m := n.observerMetrics(); m != nil {
-			m.RecordReplication(uint64(id), uint64(n.matchIndexForMetrics(id)), uint64(next), bytes, true, false)
+			m.RecordReplication(uint64(id), uint64(n.matchIndexForMetrics(id)), uint64(next), attempt.logicalBytes, true, false)
 		}
 		return false // transient failure; the next wake (heartbeat or new entry) retries
 	}
 
-	more := n.applyReplicationResponse(id, term, generation, req, resp)
+	more := n.applyReplicationResponse(id, term, generation, attempt, resp)
 	n.mu.Lock()
 	match, nextNow := n.matchIndex[id], n.nextIndex[id]
 	n.mu.Unlock()
 	if m := n.observerMetrics(); m != nil {
-		m.RecordReplication(uint64(id), uint64(match), uint64(nextNow), bytes, false, false)
+		m.RecordReplication(uint64(id), uint64(match), uint64(nextNow), attempt.logicalBytes, false, false)
 	}
 	return more
+}
+
+// replicationAttempt contains only immutable response and metric bookkeeping.
+// It never retains command buffers or a borrowed log view.
+type replicationAttempt struct {
+	prevLogIndex LogIndex
+	entryCount   int
+	logicalBytes int
+}
+
+// encodeReplicationLocked consumes the borrowed view entirely under Node.mu.
+// EncodeAppendEntries is also the direct encoder: it validates sizes and copies
+// into one final independent payload, with no intermediate command allocation.
+func (n *Node) encodeReplicationLocked(next LogIndex, req AppendEntriesRequest) ([]byte, replicationAttempt, error) {
+	req.Entries = n.log.entriesRangeView(next, maxEntriesPerAppend, MaxAppendEntriesBytes)
+	attempt := replicationAttempt{prevLogIndex: req.PrevLogIndex, entryCount: len(req.Entries)}
+	for _, e := range req.Entries {
+		attempt.logicalBytes += len(e.Command)
+	}
+	payload, err := EncodeAppendEntries(req)
+	return payload, attempt, err
 }
 
 func (n *Node) matchIndexForMetrics(id NodeID) LogIndex {
@@ -219,7 +245,7 @@ func (n *Node) matchIndexForMetrics(id NodeID) LogIndex {
 // longer a target) is discarded with no effect, exactly like a response
 // that never arrived. See docs/replication-performance.md's generation
 // model.
-func (n *Node) applyReplicationResponse(id NodeID, sentTerm Term, sentGeneration uint64, req AppendEntriesRequest, resp AppendEntriesResponse) bool {
+func (n *Node) applyReplicationResponse(id NodeID, sentTerm Term, sentGeneration uint64, attempt replicationAttempt, resp AppendEntriesResponse) bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
@@ -247,7 +273,7 @@ func (n *Node) applyReplicationResponse(id NodeID, sentTerm Term, sentGeneration
 	}
 
 	if resp.Success {
-		newMatch := req.PrevLogIndex + LogIndex(len(req.Entries))
+		newMatch := attempt.prevLogIndex + LogIndex(attempt.entryCount)
 		if newMatch > n.matchIndex[id] {
 			n.matchIndex[id] = newMatch
 			n.nextIndex[id] = newMatch + 1
