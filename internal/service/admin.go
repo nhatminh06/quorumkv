@@ -134,9 +134,12 @@ func (s *Service) adminTransferLeadership(ctx context.Context, target raft.NodeI
 	if s.node.Role() != raft.Leader {
 		return s.adminNotLeaderResponse()
 	}
+	s.logAdmin("leadership_transfer_started", "target_node_id", uint64(target))
 	if err := s.node.TransferLeadership(ctx, target); err != nil {
+		s.logAdmin("leadership_transfer_failed", "target_node_id", uint64(target), "error", err)
 		return adminErrorResponse(err)
 	}
+	s.logAdmin("leadership_transfer_completed", "target_node_id", uint64(target))
 	return adminproto.Response{Status: adminproto.StatusOK}
 }
 
@@ -144,9 +147,12 @@ func (s *Service) adminAddVoter(ctx context.Context, id raft.NodeID, addr string
 	if s.node.Role() != raft.Leader {
 		return s.adminNotLeaderResponse()
 	}
+	s.logAdmin("membership_change_started", "operation", "add_voter", "peer_id", uint64(id))
 	if err := s.node.AddVoter(ctx, id, addr); err != nil {
+		s.logAdmin("membership_change_failed", "operation", "add_voter", "peer_id", uint64(id), "error", err)
 		return adminErrorResponse(err)
 	}
+	s.logAdmin("membership_change_completed", "operation", "add_voter", "peer_id", uint64(id))
 	return adminproto.Response{Status: adminproto.StatusOK}
 }
 
@@ -154,10 +160,19 @@ func (s *Service) adminRemoveVoter(ctx context.Context, id raft.NodeID) adminpro
 	if s.node.Role() != raft.Leader {
 		return s.adminNotLeaderResponse()
 	}
+	s.logAdmin("membership_change_started", "operation", "remove_voter", "peer_id", uint64(id))
 	if err := s.node.RemoveVoter(ctx, id); err != nil {
+		s.logAdmin("membership_change_failed", "operation", "remove_voter", "peer_id", uint64(id), "error", err)
 		return adminErrorResponse(err)
 	}
+	s.logAdmin("membership_change_completed", "operation", "remove_voter", "peer_id", uint64(id))
 	return adminproto.Response{Status: adminproto.StatusOK}
+}
+
+func (s *Service) logAdmin(event string, args ...any) {
+	if logger := s.logger.Load(); logger != nil {
+		logger.Info(event, append([]any{"event", event}, args...)...)
+	}
 }
 
 // adminErrorResponse maps a real raft.Node error to the admin protocol's

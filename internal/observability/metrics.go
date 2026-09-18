@@ -31,6 +31,7 @@ func (h *histogram) observe(d time.Duration) {
 	for i, bound := range durationBounds {
 		if seconds <= bound {
 			h.buckets[i].Add(1)
+			break
 		}
 	}
 }
@@ -42,8 +43,10 @@ type histSnapshot struct {
 
 func (h *histogram) snapshot() (s histSnapshot) {
 	s.count, s.sumNS = h.count.Load(), h.sumNS.Load()
+	var cumulative uint64
 	for i := range s.buckets {
-		s.buckets[i] = h.buckets[i].Load()
+		cumulative += h.buckets[i].Load()
+		s.buckets[i] = cumulative
 	}
 	return s
 }
@@ -197,13 +200,17 @@ func (m *Metrics) SnapshotCreated(d time.Duration, size int, index uint64) {
 	}
 	m.snapshotLastIndex.Store(index)
 }
-func (m *Metrics) SnapshotInstalled(bytes int, failed bool) {
+func (m *Metrics) SnapshotInstalled(bytes int, index uint64, failed bool) {
 	m.snapshotInstalls.Add(1)
 	if failed {
 		m.snapshotInstallFailures.Add(1)
 	}
 	if bytes > 0 {
 		m.snapshotInstallBytes.Add(uint64(bytes))
+	}
+	if !failed {
+		m.snapshotSize.Store(uint64(max(bytes, 0)))
+		m.snapshotLastIndex.Store(index)
 	}
 }
 

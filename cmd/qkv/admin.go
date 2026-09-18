@@ -151,7 +151,9 @@ func printStatus(info adminproto.StatusInfo) {
 	fmt.Printf("commit-index:   %d\n", info.CommitIndex)
 	fmt.Printf("last-applied:   %d\n", info.LastApplied)
 	applyLag := uint64(0)
-	if info.CommitIndex > info.LastApplied { applyLag = info.CommitIndex - info.LastApplied }
+	if info.CommitIndex > info.LastApplied {
+		applyLag = info.CommitIndex - info.LastApplied
+	}
 	fmt.Printf("apply-lag:      %d\n", applyLag)
 	fmt.Printf("snapshot-index: %d\n", info.SnapshotIndex)
 	fmt.Printf("snapshot-term:  %d\n", info.SnapshotTerm)

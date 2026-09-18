@@ -226,12 +226,12 @@ func (n *Node) HandleInstallSnapshot(req InstallSnapshotRequest) (InstallSnapsho
 
 	if err := n.installSnapshot(snap); err != nil {
 		if m := n.observerMetrics(); m != nil {
-			m.SnapshotInstalled(len(snap.Data), true)
+			m.SnapshotInstalled(len(snap.Data), uint64(snap.LastIncludedIndex), true)
 		}
 		return InstallSnapshotResponse{}, err
 	}
 	if m := n.observerMetrics(); m != nil {
-		m.SnapshotInstalled(len(snap.Data), false)
+		m.SnapshotInstalled(len(snap.Data), uint64(snap.LastIncludedIndex), false)
 	}
 	n.logInfo("snapshot_installed", "index", uint64(snap.LastIncludedIndex), "bytes", len(snap.Data))
 	return InstallSnapshotResponse{Term: term, Success: true, NextOffset: uint64(len(snap.Data))}, nil

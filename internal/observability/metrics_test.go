@@ -20,6 +20,7 @@ func TestMetricsRepresentativeValuesAndBoundedLabels(t *testing.T) {
 	m.RecordReadIndex(3*time.Millisecond, true)
 	m.RecordPersistence("log", 123, 4*time.Millisecond, 2*time.Millisecond)
 	m.SnapshotCreated(5*time.Millisecond, 42, 7)
+	m.SnapshotInstalled(99, 11, false)
 	m.RecordReplication(2, 5, 6, 80, false, false)
 	var out strings.Builder
 	err := m.WritePrometheus(&out, NodeSnapshot{Term: 3, Role: "leader", Leader: true, CommitIndex: 5, LastApplied: 9, LastLogIndex: 10})
@@ -31,7 +32,8 @@ func TestMetricsRepresentativeValuesAndBoundedLabels(t *testing.T) {
 		"quorumkv_raft_term 3", `quorumkv_raft_role{role="leader"} 1`,
 		"quorumkv_raft_apply_lag 0", `quorumkv_requests_total{operation="put",status="ok"} 1`,
 		`quorumkv_raft_peer_replication_lag{peer="2"} 5`, `quorumkv_persistence_writes_total{domain="log"} 1`,
-		"quorumkv_readindex_failures_total 1", "quorumkv_snapshot_size_bytes 42",
+		"quorumkv_readindex_failures_total 1", "quorumkv_snapshot_install_total 1",
+		"quorumkv_snapshot_size_bytes 99", "quorumkv_snapshot_last_index 11",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("missing %q", want)

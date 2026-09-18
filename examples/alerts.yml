@@ -22,6 +22,12 @@ groups:
       - alert: PeerReconnectStorm
         expr: sum(rate(quorumkv_transport_connections_dialed_total[5m])) > 5
         for: 5m
+      - alert: TransportQueuePressure
+        expr: max(quorumkv_transport_waiters) > 0
+        for: 5m
       - alert: HighPersistenceLatency
         expr: histogram_quantile(0.95, sum by (le, domain) (rate(quorumkv_persistence_duration_seconds_bucket[5m]))) > 0.1
         for: 10m
+      - alert: MetricsTargetDown
+        expr: up{job="quorumkv"} == 0
+        for: 2m

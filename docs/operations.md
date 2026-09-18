@@ -20,6 +20,16 @@ How to run, inspect, and administer a QuorumKV cluster with the real
 repeated once per other node. A single listener address serves both
 Raft RPCs and the client/admin protocol — there is no separate port.
 
+### Metrics, probes, and logs
+
+Pass `--metrics-listen 127.0.0.1:9101` to start a separate HTTP listener
+serving `/metrics`, `/healthz`, and `/readyz`. It is disabled by default and
+has no TLS or authentication, so bind it only to a trusted interface. A
+follower is ready; `/readyz` fails only after a permanent state-machine apply
+error. Configure JSON log verbosity with `--log-level debug|info|warn|error`.
+See [observability.md](observability.md) for the complete metric contract,
+alerts, dashboards, and diagnostic workflow.
+
 ### Data directory
 
 `--data` owns everything this node persists: Raft state (`state`),

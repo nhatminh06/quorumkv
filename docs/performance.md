@@ -1,7 +1,8 @@
 # Performance
 
-This document records Milestone 13's and Milestone 14's actual, measured
-before/after results, on the environment described below. Both followed
+This document records Milestone 13's, Milestone 14's, and Milestone 18's
+actual, measured before/after results, on the environment described below.
+All followed
 the project's measure-first discipline: the benchmark harness
 (`internal/service/benchmark_test.go`) was written before any
 optimization, a baseline was recorded, the change was implemented, then
@@ -15,6 +16,13 @@ results and environment.
 
 No number here is a hardware-independent throughput claim. Every figure
 below is "on the documented local benchmark environment," nothing more.
+
+Milestone 18 added production instrumentation rather than an optimization.
+Its unchanged before/after workloads show approximately 7-16% representative
+latency overhead, with idle and concurrent-update metric scrapes taking about
+98 and 105 microseconds respectively. The exact table, mixed-workload outlier,
+scrape size, commands, and profile findings are recorded in
+[observability.md](observability.md#instrumentation-overhead).
 
 ## Environment
 
