@@ -239,7 +239,17 @@ all race tests and `make check`, plus ten repetitions each of real-process,
 Raft race/fault and persistence tests. Storage layout, fsync, CRC, migration,
 truncation and compaction code are unchanged.
 
+The first CI run failed on the failover process test's initial PUT, before the
+crash, at roughly the CLI's default five-second deadline. Its previous failure
+message discarded stderr, so the exact error could not be established. Fifty
+local failover repeats with GOMAXPROCS=2 passed with diagnostics added. The
+setup now tries the observed leader first, uses an explicit bounded ten-second
+operation deadline, and prints stderr plus node logs on failure. Follower-first
+discovery remains covered by its separate real-process test. This is a harness
+change, not a consensus or client retry-policy change.
+
 Primary implementation files: `internal/raft/log.go`, `node.go`,
 `replication_worker.go`, and `read_index.go`. Test and benchmark changes are in
 the corresponding Raft tests, `replication_payload_test.go`,
 `replication_allocation_benchmark_test.go` and `internal/service/benchmark_test.go`.
+The CI diagnostic/setup adjustment is in `cmd/quorumkv/process_scenarios_test.go`.

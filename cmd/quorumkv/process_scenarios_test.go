@@ -244,8 +244,16 @@ func TestRealProcessFailover(t *testing.T) {
 	waitForAnyLeader(t, qkvPath, []string{addrs[1], addrs[2], addrs[3]}, 10*time.Second)
 	leaderID := findLeaderID(t, qkvPath, addrs)
 
-	if out, _, code := runQkv(t, qkvPath, "--addr", addrs[1], "--addr", addrs[2], "--addr", addrs[3], "put", "x", "1"); code != 0 {
-		t.Fatalf("put x=1: code=%d out=%q", code, out)
+	// Establish the acknowledged write before testing the crash. Prefer the
+	// observed leader here; follower-first discovery is covered separately by
+	// TestRealProcessThreeNodeClusterPutGet. Give this setup operation the same
+	// bounded budget as leader discovery on a loaded process-test runner.
+	seedArgs := addrJoin(append([]string{addrs[leaderID]}, survivorAddrs(addrs, leaderID)...), "--addr")
+	if out, stderr, code := runQkv(t, qkvPath, append(seedArgs, "--timeout", "10s", "put", "x", "1")...); code != 0 {
+		for id, node := range nodes {
+			t.Logf("node %d:\n%s", id, node.output())
+		}
+		t.Fatalf("put x=1: code=%d out=%q stderr=%q", code, out, stderr)
 	}
 
 	nodes[leaderID].kill(t) // a real crash — SIGKILL, no graceful shutdown
