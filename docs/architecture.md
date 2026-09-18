@@ -94,6 +94,13 @@ superseded RPC response can never regress progress already made. See
 
 ## 7. Proposal batching and backpressure
 
+Segmented Raft-log startup retains immutable segment-sized buffers behind
+compact entry metadata. Public entry accessors remain defensive-copy APIs,
+while M22 replication borrows commands only during locked payload construction.
+Compaction and conflict rewrites release obsolete backing references after
+publishing the new generation. See
+[startup-memory-performance.md](startup-memory-performance.md).
+
 Concurrent `Propose` calls on the leader can share one durable log
 write instead of each paying for its own fsync. A full proposal queue
 or a full service-level admission bound fails fast with a retryable

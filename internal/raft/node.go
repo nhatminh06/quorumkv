@@ -631,7 +631,7 @@ func (n *Node) rebuildMembershipLocked() {
 	var entryIndex, pendingStableIndex LogIndex
 
 	for idx := n.log.BaseIndex() + 1; idx <= n.log.LastIndex(); idx++ {
-		e, ok := n.log.Entry(idx)
+		e, ok := n.log.entryView(idx)
 		if !ok || e.Kind != EntryConfiguration {
 			continue
 		}

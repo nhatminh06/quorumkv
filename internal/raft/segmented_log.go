@@ -61,6 +61,9 @@ func appendBatchCommit(dst []byte, count int) ([]byte, error) {
 	return appendEntryRecord(dst, LogEntry{Kind: segmentBatchCommitKind, Command: command[:]})
 }
 
+// decodeSegmentRecords validates a segment and returns entries whose command
+// slices borrow data. The caller must retain data unchanged for as long as
+// those entries remain live.
 func decodeSegmentRecords(data []byte, allowTornTail bool) ([]LogEntry, int, error) {
 	var entries []LogEntry
 	var pending []LogEntry
@@ -119,7 +122,7 @@ func decodeSegmentRecords(data []byte, allowTornTail bool) ([]LogEntry, int, err
 		}
 		pending = append(pending, LogEntry{
 			Term: Term(binary.BigEndian.Uint64(body[:8])), Kind: kind,
-			Command: cloneBytes(body[logEntryHeaderSizeV3:checksumAt]),
+			Command: body[logEntryHeaderSizeV3:checksumAt],
 		})
 	}
 	if len(pending) != 0 {
@@ -215,6 +218,7 @@ func openSegmentedLog(path string) (*Log, bool, error) {
 			raw = raw[:segmentHeaderSize+valid]
 			log.recoveredTail = true
 		}
+		log.segmentBackings = append(log.segmentBackings, raw)
 		log.entries = append(log.entries, entries...)
 		expected += LogIndex(len(entries))
 		log.activeSegment = name
@@ -364,6 +368,13 @@ func (l *Log) rewriteSegmented() error {
 		return err
 	}
 	old := l.generation
+	if len(l.segmentBackings) != 0 {
+		// The new generation is independently durable. Re-own the logical
+		// entries before releasing old segment buffers; this also preserves
+		// any entries that survived a truncate or compaction boundary.
+		l.entries = cloneEntries(l.entries)
+		l.segmentBackings = nil
+	}
 	l.segmented, l.generation, l.activeSegment, l.activeSize = true, generation, active, size
 	files, _ := filepath.Glob(filepath.Join(generationDir(l.path, generation), "*.seg"))
 	l.segmentFiles = len(files)
@@ -418,6 +429,7 @@ func (l *Log) appendSegmented(entries []LogEntry, owned bool) error {
 		files, _ := filepath.Glob(filepath.Join(generationDir(l.path, generation), "*.seg"))
 		l.segmentFiles = len(files)
 		l.entries = combined
+		l.segmentBackings = nil
 		_ = os.RemoveAll(generationDir(l.path, old))
 		return nil
 	}

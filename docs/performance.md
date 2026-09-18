@@ -46,6 +46,14 @@ transport intermediates while preserving public defensive-copy behavior. A
 ownership analysis, before/after tables, profiles, startup findings, and noisy
 service results are in [allocation-performance.md](allocation-performance.md).
 
+Milestone 23 reduces segmented-log startup allocation by retaining immutable
+segment buffers instead of cloning every decoded command. At 50,000 1 KiB
+entries, the current benchmark reports about 69.9 MB and 372 allocations per
+open, versus the recorded M21 baseline of about 121.1 MB and one command
+allocation per entry. Allocation volume and retained heap are separate; raw
+record bytes remain live while entries reference them. See
+[startup-memory-performance.md](startup-memory-performance.md).
+
 ## Environment
 
 ```text

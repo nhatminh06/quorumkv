@@ -56,6 +56,45 @@ func TestSegmentedLogRotationAndReopenPreservesKinds(t *testing.T) {
 	}
 }
 
+func TestSegmentedLogRetainsBoundedBackingsAndReleasesOnRewrite(t *testing.T) {
+	_, path := largeSegmentedLog(t)
+	reopened, err := OpenLog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened.segmentBackings) != len(segmentFiles(t, reopened)) {
+		t.Fatalf("segment backings = %d, want one per segment", len(reopened.segmentBackings))
+	}
+	if LogIndex(len(reopened.segmentBackings)) >= reopened.LastIndex() {
+		t.Fatalf("segment backings = %d, should be bounded by segments, entries=%d", len(reopened.segmentBackings), reopened.LastIndex())
+	}
+
+	if err := reopened.TruncateAndAppend(2000, []LogEntry{{Term: 99, Command: []byte("replacement")}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(reopened.segmentBackings) != 0 {
+		t.Fatalf("backings after truncate rewrite = %d, want 0 old retained buffers", len(reopened.segmentBackings))
+	}
+
+}
+
+func TestSegmentBackedEntryAPIReturnsCopy(t *testing.T) {
+	_, path := largeSegmentedLog(t)
+	reopened, err := OpenLog(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := reopened.Entry(1)
+	if !ok {
+		t.Fatal("Entry(1) missing")
+	}
+	entry.Command[0] ^= 0xff
+	again, ok := reopened.Entry(1)
+	if !ok || again.Command[0] == entry.Command[0] {
+		t.Fatal("Entry exposed retained segment backing")
+	}
+}
+
 func TestAppendEntryRecordUsesProvidedCapacity(t *testing.T) {
 	entry := LogEntry{Term: 7, Kind: EntryApplication, Command: make([]byte, 16*1024)}
 	dst := make([]byte, 0, entryRecordSize(entry))
