@@ -29,7 +29,9 @@ func cmdPut(gf globalFlags, args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gf.timeout)
 	defer cancel()
-	if err := newClient(gf).Put(ctx, []byte(args[0]), []byte(args[1])); err != nil {
+	c := newClient(gf)
+	defer c.Close()
+	if err := c.Put(ctx, []byte(args[0]), []byte(args[1])); err != nil {
 		fmt.Fprintln(os.Stderr, humanClientError(err))
 		return exitFailure
 	}
@@ -44,7 +46,9 @@ func cmdDelete(gf globalFlags, args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gf.timeout)
 	defer cancel()
-	if err := newClient(gf).Delete(ctx, []byte(args[0])); err != nil {
+	c := newClient(gf)
+	defer c.Close()
+	if err := c.Delete(ctx, []byte(args[0])); err != nil {
 		fmt.Fprintln(os.Stderr, humanClientError(err))
 		return exitFailure
 	}
@@ -59,7 +63,9 @@ func cmdGet(gf globalFlags, args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gf.timeout)
 	defer cancel()
-	value, ok, err := newClient(gf).Get(ctx, []byte(args[0]))
+	c := newClient(gf)
+	defer c.Close()
+	value, ok, err := c.Get(ctx, []byte(args[0]))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, humanClientError(err))
 		return exitFailure

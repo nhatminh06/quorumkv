@@ -46,11 +46,19 @@ func reportClientLatency(b *testing.B, observations []time.Duration) {
 	b.ReportMetric(at(.99), "p99-us")
 }
 
+func reportPoolStats(b *testing.B, c *Client) {
+	b.Helper()
+	stats := c.Stats()
+	b.ReportMetric(float64(stats.ConnectionsDialed)/float64(b.N), "connections/op")
+	b.ReportMetric(float64(stats.ConnectionsReused)/float64(b.N), "reuses/op")
+}
+
 func BenchmarkClientSequentialGet(b *testing.B) {
 	tr := benchmarkClientServer(b, func(clientproto.Request) clientproto.Response {
 		return clientproto.Response{Status: clientproto.StatusOK, Value: []byte("value")}
 	})
 	c := New(tr.Addr())
+	defer c.Close()
 	lat := make([]time.Duration, 0, b.N)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -62,7 +70,7 @@ func BenchmarkClientSequentialGet(b *testing.B) {
 		lat = append(lat, time.Since(start))
 	}
 	b.StopTimer()
-	b.ReportMetric(1, "connections/op")
+	reportPoolStats(b, c)
 	reportClientLatency(b, lat)
 }
 
@@ -71,6 +79,7 @@ func BenchmarkClientSequentialPut(b *testing.B) {
 		return clientproto.Response{Status: clientproto.StatusOK}
 	})
 	c := New(tr.Addr())
+	defer c.Close()
 	lat := make([]time.Duration, 0, b.N)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -82,7 +91,7 @@ func BenchmarkClientSequentialPut(b *testing.B) {
 		lat = append(lat, time.Since(start))
 	}
 	b.StopTimer()
-	b.ReportMetric(1, "connections/op")
+	reportPoolStats(b, c)
 	reportClientLatency(b, lat)
 }
 
@@ -91,6 +100,7 @@ func BenchmarkClientConcurrentGet(b *testing.B) {
 		return clientproto.Response{Status: clientproto.StatusOK, Value: []byte("value")}
 	})
 	c := New(tr.Addr())
+	defer c.Close()
 	var next atomic.Int64
 	lat := make([]time.Duration, b.N)
 	var wg sync.WaitGroup
@@ -116,7 +126,7 @@ func BenchmarkClientConcurrentGet(b *testing.B) {
 	}
 	wg.Wait()
 	b.StopTimer()
-	b.ReportMetric(1, "connections/op")
+	reportPoolStats(b, c)
 	reportClientLatency(b, lat)
 }
 
@@ -128,6 +138,7 @@ func BenchmarkClientMixed(b *testing.B) {
 		return clientproto.Response{Status: clientproto.StatusOK}
 	})
 	c := New(tr.Addr())
+	defer c.Close()
 	lat := make([]time.Duration, 0, b.N)
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -143,7 +154,7 @@ func BenchmarkClientMixed(b *testing.B) {
 		lat = append(lat, time.Since(start))
 	}
 	b.StopTimer()
-	b.ReportMetric(1, "connections/op")
+	reportPoolStats(b, c)
 	reportClientLatency(b, lat)
 }
 
@@ -160,6 +171,7 @@ func BenchmarkClientLeaderRedirect(b *testing.B) {
 		if _, _, err := c.Get(context.Background(), []byte("key")); err != nil {
 			b.Fatal(err)
 		}
+		c.Close()
 	}
 	b.ReportMetric(2, "connections/op")
 }
