@@ -34,6 +34,8 @@ runnable system with its own CLI and operational tooling.
   replicated per-client request identity.
 - Proposal batching and bounded backpressure (`BUSY` instead of
   unbounded queuing).
+- Bounded persistent external-client pooling for long-lived Go clients,
+  with context-aware waiting and deterministic shutdown.
 - Prometheus metrics, health/readiness probes, bounded-cardinality labels,
   and structured JSON operational logs on an optional HTTP listener.
 - A real node executable and a client/admin CLI, driven by real OS
@@ -200,9 +202,10 @@ top-level map; [docs/operations.md](docs/operations.md) and the
 - No repair tooling for corrupted persistent storage — a corrupted node
   is replaced via the normal membership procedure, not patched in
   place. See [docs/runbook-failover.md](docs/runbook-failover.md).
-- Raft peer RPCs reuse sequential TCP sessions; CLI/client RPCs still use
-  fresh connections. No request multiplexing. See
-  [transport measurements](docs/transport-performance.md).
+- Raft peers reuse sequential TCP sessions. Long-lived external Go clients
+  use up to eight sessions per address; one-shot `qkv` processes cannot
+  reuse sockets across invocations. No request multiplexing. See
+  [client transport measurements](docs/client-transport-performance.md).
 - No sharding, multi-Raft, transactions, CAS, TTL, follower reads, or
   leader leases.
 
