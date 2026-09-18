@@ -331,7 +331,7 @@ func (s *Service) respond(r clientproto.Response) (transport.Message, error) {
 	if err != nil {
 		return transport.Message{}, err
 	}
-	return transport.NewMessage(transport.MessageClientResponse, payload), nil
+	return transport.NewOwnedMessage(transport.MessageClientResponse, payload), nil
 }
 
 // dispatch rejects a follower's request before touching Raft at all —
@@ -344,9 +344,9 @@ func (s *Service) dispatch(ctx context.Context, req clientproto.Request) clientp
 	}
 	switch req.Operation {
 	case clientproto.OpPut:
-		return s.write(ctx, kv.NewIdentifiedPutCommand(req.ClientID, req.Sequence, req.Key, req.Value))
+		return s.write(ctx, kv.NewOwnedIdentifiedPutCommand(req.ClientID, req.Sequence, req.Key, req.Value))
 	case clientproto.OpDelete:
-		return s.write(ctx, kv.NewIdentifiedDeleteCommand(req.ClientID, req.Sequence, req.Key))
+		return s.write(ctx, kv.NewOwnedIdentifiedDeleteCommand(req.ClientID, req.Sequence, req.Key))
 	case clientproto.OpGet:
 		return s.get(ctx, req.Key)
 	default:
@@ -466,7 +466,7 @@ func (s *Service) proposeAndWaitIdentified(ctx context.Context, cmd kv.Command) 
 	if err != nil {
 		return clientproto.Response{Status: clientproto.StatusBadRequest}
 	}
-	index, term, err := s.node.Propose(encoded)
+	index, term, err := s.node.ProposeOwned(encoded)
 	if err != nil {
 		if errors.Is(err, raft.ErrNotLeader) {
 			return s.notLeaderResponse()

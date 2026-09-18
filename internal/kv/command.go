@@ -62,6 +62,19 @@ func NewIdentifiedDeleteCommand(id reqid.ClientID, seq reqid.Sequence, key []byt
 	return Command{Type: CommandDelete, ClientID: id, Sequence: seq, Key: cloneBytes(key)}
 }
 
+// NewOwnedIdentifiedPutCommand constructs an internal command by taking
+// exclusive ownership of key and value. The caller must not mutate either
+// slice afterward. Public-facing code should use NewIdentifiedPutCommand.
+func NewOwnedIdentifiedPutCommand(id reqid.ClientID, seq reqid.Sequence, key, value []byte) Command {
+	return Command{Type: CommandPut, ClientID: id, Sequence: seq, Key: key, Value: value}
+}
+
+// NewOwnedIdentifiedDeleteCommand is the DELETE counterpart to
+// NewOwnedIdentifiedPutCommand and takes exclusive ownership of key.
+func NewOwnedIdentifiedDeleteCommand(id reqid.ClientID, seq reqid.Sequence, key []byte) Command {
+	return Command{Type: CommandDelete, ClientID: id, Sequence: seq, Key: key}
+}
+
 func cloneBytes(b []byte) []byte {
 	if b == nil {
 		return nil

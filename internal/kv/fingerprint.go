@@ -20,14 +20,17 @@ import (
 // fmt.Sprintf, JSON, or map serialization, so the result is stable
 // across Go versions and independent of any struct/field ordering.
 func Fingerprint(cmd Command) reqid.Fingerprint {
-	buf := make([]byte, 0, 1+4+len(cmd.Key)+4+len(cmd.Value))
-	buf = append(buf, byte(cmd.Type))
+	h := sha256.New()
+	typeByte := [1]byte{byte(cmd.Type)}
+	_, _ = h.Write(typeByte[:])
 	var lenBuf [4]byte
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(cmd.Key)))
-	buf = append(buf, lenBuf[:]...)
-	buf = append(buf, cmd.Key...)
+	_, _ = h.Write(lenBuf[:])
+	_, _ = h.Write(cmd.Key)
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(cmd.Value)))
-	buf = append(buf, lenBuf[:]...)
-	buf = append(buf, cmd.Value...)
-	return sha256.Sum256(buf)
+	_, _ = h.Write(lenBuf[:])
+	_, _ = h.Write(cmd.Value)
+	var fingerprint reqid.Fingerprint
+	h.Sum(fingerprint[:0])
+	return fingerprint
 }

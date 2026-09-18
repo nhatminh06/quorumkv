@@ -113,10 +113,9 @@ func (n *Node) Stats() NodeStats {
 // Without that, a proposal could be sent to the channel after
 // proposalWorker's on-close drain already ran, leaking the caller
 // forever waiting on a result nothing will ever deliver.
-func (n *Node) propose(command []byte) (LogIndex, Term, error) {
-	cloned := cloneBytes(command)
-	p := &pendingProposal{command: cloned, resultCh: make(chan proposalResult, 1)}
-	if err := n.admitProposal(p, len(cloned)); err != nil {
+func (n *Node) proposeOwned(command []byte) (LogIndex, Term, error) {
+	p := &pendingProposal{command: command, resultCh: make(chan proposalResult, 1)}
+	if err := n.admitProposal(p, len(command)); err != nil {
 		n.stats.proposalsRejectedBusy.Add(1)
 		return 0, 0, err
 	}
@@ -287,7 +286,7 @@ func (n *Node) persistProposalBatch(batch []*pendingProposal) {
 	for i, p := range batch {
 		entries[i] = LogEntry{Term: term, Command: p.command}
 	}
-	if err := n.log.Append(entries); err != nil {
+	if err := n.log.appendOwned(entries); err != nil {
 		n.mu.Unlock()
 		n.failBatch(batch, err)
 		return

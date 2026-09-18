@@ -46,7 +46,7 @@ func (s *Service) respondAdmin(r adminproto.Response) (transport.Message, error)
 	if err != nil {
 		return transport.Message{}, err
 	}
-	return transport.NewMessage(transport.MessageAdminResponse, payload), nil
+	return transport.NewOwnedMessage(transport.MessageAdminResponse, payload), nil
 }
 
 // adminNotLeaderResponse mirrors notLeaderResponse for the admin

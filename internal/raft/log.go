@@ -448,6 +448,17 @@ func equalLogEntries(a, b []LogEntry) bool {
 // Append adds entries to the tail of the log and persists the result
 // before returning. On failure the log is left exactly as it was.
 func (l *Log) Append(entries []LogEntry) error {
+	return l.append(entries, false)
+}
+
+// appendOwned persists entries and takes ownership of their Command slices on
+// success. Callers must not mutate them after the call. On failure ownership
+// remains with the caller.
+func (l *Log) appendOwned(entries []LogEntry) error {
+	return l.append(entries, true)
+}
+
+func (l *Log) append(entries []LogEntry, owned bool) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -460,7 +471,7 @@ func (l *Log) Append(entries []LogEntry) error {
 	}
 	previousSegment := l.activeSegment
 	start := time.Now()
-	if err := l.appendSegmented(entries); err != nil {
+	if err := l.appendSegmented(entries, owned); err != nil {
 		return err
 	}
 	if m := l.observer.Load(); m != nil {
