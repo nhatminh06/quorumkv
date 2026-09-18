@@ -306,3 +306,8 @@ whole-log rewrites; see [raft-log-storage.md](raft-log-storage.md).
 - Snapshot chunk size/protocol (Milestone 7) unchanged — InstallSnapshot
   now runs inside a peer's own worker step, but the chunking mechanism
   itself was not touched.
+
+M22 removes the intermediate command snapshot from production replication.
+The public range API still copies; a private borrowed view is synchronously
+encoded under the Raft mutex. See [allocation, lock-duration and catch-up
+measurements](replication-allocation-performance.md).

@@ -1,0 +1,12 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/raft
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkReplicationStep/entries=0-12         	       5	       833.8 ns/op	     320 B/op	       3 allocs/op
+BenchmarkReplicationStep/entries=1-12         	       5	      1639 ns/op	    2480 B/op	       5 allocs/op
+BenchmarkReplicationStep/entries=64-12        	       5	     17114 ns/op	  142208 B/op	      68 allocs/op
+BenchmarkReplicationStep/entries=5000-12      	       5	   2479758 ns/op	11111601 B/op	    5317 allocs/op
+BenchmarkReplicationStep/entries=10000-12     	       5	   5918888 ns/op	22220246 B/op	   10628 allocs/op
+BenchmarkReplicationStep/entries=25000-12     	       5	  25131176 ns/op	55553280 B/op	   26564 allocs/op
+PASS
+ok  	quorumkv/internal/raft	0.230s

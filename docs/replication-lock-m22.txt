@@ -1,0 +1,27 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/raft
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkReplicationPayload/entries=0/value=0/encode-critical-section-12         	 9994843	        36.84 ns/op	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/encode-critical-section-12         	 9762183	        36.66 ns/op	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/encode-critical-section-12         	 9588762	        36.69 ns/op	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/encode-critical-section-12        	 6489260	        55.42 ns/op	      96 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/encode-critical-section-12        	 6385520	        57.32 ns/op	      96 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/encode-critical-section-12        	 6371836	        56.18 ns/op	      96 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/encode-critical-section-12      	 1869872	       190.2 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/encode-critical-section-12      	 1939155	       189.0 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/encode-critical-section-12      	 1938633	       189.4 ns/op	    1152 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/encode-critical-section-12       	  260115	      1230 ns/op	    2048 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/encode-critical-section-12       	  293162	      1143 ns/op	    2048 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/encode-critical-section-12       	  304057	      1138 ns/op	    2048 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/encode-critical-section-12     	   47175	      7305 ns/op	   73728 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/encode-critical-section-12     	   50665	      7703 ns/op	   73728 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/encode-critical-section-12     	   44317	      8091 ns/op	   73728 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/encode-critical-section-12     	    6168	     62856 ns/op	  524293 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/encode-critical-section-12     	    5614	     55873 ns/op	  524293 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/encode-critical-section-12     	    6787	     55140 ns/op	  524292 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/encode-critical-section-12    	   10000	     30271 ns/op	  270339 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/encode-critical-section-12    	    8073	     37890 ns/op	  270336 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/encode-critical-section-12    	    9472	     36503 ns/op	  270338 B/op	       1 allocs/op
+PASS
+ok  	quorumkv/internal/raft	9.072s

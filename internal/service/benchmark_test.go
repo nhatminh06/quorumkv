@@ -196,6 +196,27 @@ func BenchmarkThreeNodeMixedReadWrite(b *testing.B) {
 	lat.report(b)
 }
 
+// Separate GET tails under the same 32-client mixed workload; combined tails
+// can otherwise hide read stalls behind slower writes.
+func BenchmarkThreeNodeReadUnderWrite(b *testing.B) {
+	_, leader := benchCluster(b, 3)
+	value := valueOfSize(1024)
+	if err := client.New(leader.addr()).Put(context.Background(), []byte("bench-key"), value); err != nil {
+		b.Fatal(err)
+	}
+	all, reads := &latencies{}, &latencies{}
+	runConcurrent(b, leader.addr(), 32, all, func(ctx context.Context, c *client.Client, i int) error {
+		if i%5 == 0 {
+			return c.Put(ctx, []byte("bench-key"), value)
+		}
+		start := time.Now()
+		_, _, err := c.Get(ctx, []byte("bench-key"))
+		reads.add(time.Since(start))
+		return err
+	})
+	reads.report(b)
+}
+
 // --- Workload E: follower falls behind, heal, measure catch-up ---
 
 // BenchmarkFollowerCatchUp is not a throughput/latency micro-benchmark
@@ -206,11 +227,19 @@ func BenchmarkThreeNodeMixedReadWrite(b *testing.B) {
 // multi-thousand-entry catch-up).
 func BenchmarkFollowerCatchUp(b *testing.B) {
 	for _, count := range []int{5000, 10000, 25000} {
-		b.Run(fmt.Sprintf("entries=%d", count), func(b *testing.B) { benchmarkFollowerCatchUp(b, count) })
+		b.Run(fmt.Sprintf("entries=%d", count), func(b *testing.B) { benchmarkFollowerCatchUp(b, count, false) })
 	}
 }
 
-func benchmarkFollowerCatchUp(b *testing.B, laggingEntries int) {
+// Trigger a fresh proposal after healing so the measurement does not depend
+// on which phase of the heartbeat interval SetPeers happened to hit.
+func BenchmarkFollowerCatchUpTriggered(b *testing.B) {
+	for _, count := range []int{5000, 10000, 25000} {
+		b.Run(fmt.Sprintf("entries=%d", count), func(b *testing.B) { benchmarkFollowerCatchUp(b, count, true) })
+	}
+}
+
+func benchmarkFollowerCatchUp(b *testing.B, laggingEntries int, trigger bool) {
 	b.ReportAllocs()
 	value := valueOfSize(256)
 
@@ -250,6 +279,11 @@ func benchmarkFollowerCatchUp(b *testing.B, laggingEntries int) {
 
 		b.StartTimer()
 		start := time.Now()
+		if trigger {
+			if err := c.Put(ctx, []byte("catchup-wake"), value); err != nil {
+				b.Fatal(err)
+			}
+		}
 		waitForClusterCommit(b, 30*time.Second, []*testNode{follower}, lastIndex)
 		elapsed := time.Since(start)
 		b.StopTimer()

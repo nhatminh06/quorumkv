@@ -335,3 +335,8 @@ compact safety ordering, and follower-side installation, is in
 - No quorum-confirmed linearizable reads is no longer accurate — see
   [docs/read-index.md](read-index.md).
 - No request deduplication / exactly-once write semantics.
+
+M22 replication uses a bounded borrowed view only during encoding under
+`Node.mu`. The independent encoded payload is sent after unlock, and scalar
+sent-index/count metadata drives responses. Structured sender overrides remain
+available. See [replication allocation performance](replication-allocation-performance.md).

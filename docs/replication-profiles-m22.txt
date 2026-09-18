@@ -1,0 +1,432 @@
+
+=== before batch: alloc_space ===
+File: raft.test
+Build ID: de52476ca2c26bf4a735a7e91d4776f6748c71d1
+Type: alloc_space
+Time: 2026-09-18 12:50:08 CDT
+Showing nodes accounting for 2717.61MB, 99.73% of 2724.86MB total
+Dropped 40 nodes (cum <= 13.62MB)
+      flat  flat%   sum%        cum   cum%
+ 1381.22MB 50.69% 50.69%  1381.22MB 50.69%  quorumkv/internal/raft.EncodeAppendEntries
+ 1283.75MB 47.11% 97.80%  1283.75MB 47.11%  quorumkv/internal/raft.cloneBytes (inline)
+   52.63MB  1.93% 99.73%  1336.39MB 49.04%  quorumkv/internal/raft.cloneEntries (inline)
+         0     0% 99.73%  1336.39MB 49.04%  quorumkv/internal/raft.(*Log).EntriesRange
+         0     0% 99.73%  2717.61MB 99.73%  quorumkv/internal/raft.BenchmarkReplicationPayload.func1.2
+         0     0% 99.73%  2717.61MB 99.73%  quorumkv/internal/raft.benchmarkReplicationPayload
+         0     0% 99.73%  2717.61MB 99.73%  testing.(*B).launch
+         0     0% 99.73%  2718.11MB 99.75%  testing.(*B).runN
+
+=== before batch: alloc_objects ===
+File: raft.test
+Build ID: de52476ca2c26bf4a735a7e91d4776f6748c71d1
+Type: alloc_objects
+Time: 2026-09-18 12:50:08 CDT
+Showing nodes accounting for 1399710, 99.82% of 1402239 total
+Dropped 27 nodes (cum <= 7011)
+Showing top 15 nodes out of 21
+      flat  flat%   sum%        cum   cum%
+   1314562 93.75% 93.75%    1314562 93.75%  quorumkv/internal/raft.cloneBytes (inline)
+     34049  2.43% 96.18%      34049  2.43%  runtime.mallocgc
+     20532  1.46% 97.64%    1335094 95.21%  quorumkv/internal/raft.cloneEntries (inline)
+     19644  1.40% 99.04%      19644  1.40%  quorumkv/internal/raft.EncodeAppendEntries
+     10923  0.78% 99.82%      10923  0.78%  testing.(*B).ResetTimer
+         0     0% 99.82%      10924  0.78%  main.main
+         0     0% 99.82%    1335094 95.21%  quorumkv/internal/raft.(*Log).EntriesRange
+         0     0% 99.82%    1354738 96.61%  quorumkv/internal/raft.BenchmarkReplicationPayload.func1.2
+         0     0% 99.82%    1354738 96.61%  quorumkv/internal/raft.benchmarkReplicationPayload
+         0     0% 99.82%      32768  2.34%  runtime.(*scavengerState).sleep
+         0     0% 99.82%      32768  2.34%  runtime.(*timer).maybeAdd
+         0     0% 99.82%      32768  2.34%  runtime.(*timer).modify
+         0     0% 99.82%      32768  2.34%  runtime.(*timer).reset (inline)
+         0     0% 99.82%      32768  2.34%  runtime.(*timers).addHeap
+         0     0% 99.82%      32768  2.34%  runtime.bgscavenge
+
+=== before batch: cpu ===
+File: raft.test
+Build ID: de52476ca2c26bf4a735a7e91d4776f6748c71d1
+Type: cpu
+Time: 2026-09-18 12:50:08 CDT
+Duration: 452.57ms, Total samples = 930ms (205.50%)
+Showing nodes accounting for 640ms, 68.82% of 930ms total
+Showing top 15 nodes out of 143
+      flat  flat%   sum%        cum   cum%
+     170ms 18.28% 18.28%      170ms 18.28%  runtime.memmove
+      60ms  6.45% 24.73%      170ms 18.28%  runtime.scanObject
+      60ms  6.45% 31.18%       70ms  7.53%  runtime.scanblock
+      50ms  5.38% 36.56%       50ms  5.38%  runtime.madvise
+      40ms  4.30% 40.86%       40ms  4.30%  internal/runtime/atomic.(*Uint32).Add (inline)
+      40ms  4.30% 45.16%       40ms  4.30%  runtime.futex
+      40ms  4.30% 49.46%       70ms  7.53%  runtime.typePointers.next
+      40ms  4.30% 53.76%       40ms  4.30%  runtime.typePointers.nextFast (inline)
+      20ms  2.15% 55.91%       20ms  2.15%  quorumkv/internal/raft.appendEntriesEncodedSize
+      20ms  2.15% 58.06%      170ms 18.28%  quorumkv/internal/raft.cloneEntries
+      20ms  2.15% 60.22%       20ms  2.15%  runtime.(*sweepLocker).tryAcquire
+      20ms  2.15% 62.37%       40ms  4.30%  runtime.lock2
+      20ms  2.15% 64.52%       20ms  2.15%  runtime.memclrNoHeapPointers
+      20ms  2.15% 66.67%       20ms  2.15%  runtime.procyieldAsm
+      20ms  2.15% 68.82%      100ms 10.75%  runtime.sweepone
+
+=== after batch: alloc_space ===
+File: raft.test
+Build ID: 962a4f26c4c993fc0ad6f61fcd4297a782d259c8
+Type: alloc_space
+Time: 2026-09-18 12:56:15 CDT
+Showing nodes accounting for 1.33GB, 99.55% of 1.34GB total
+Dropped 35 nodes (cum <= 0.01GB)
+      flat  flat%   sum%        cum   cum%
+    1.33GB 99.55% 99.55%     1.33GB 99.55%  quorumkv/internal/raft.EncodeAppendEntries
+         0     0% 99.55%     1.33GB 99.55%  quorumkv/internal/raft.(*Node).encodeReplicationLocked
+         0     0% 99.55%     1.33GB 99.55%  quorumkv/internal/raft.BenchmarkReplicationPayload.func1.2
+         0     0% 99.55%     1.33GB 99.55%  quorumkv/internal/raft.benchmarkReplicationPayload
+         0     0% 99.55%     1.33GB 99.55%  testing.(*B).launch
+         0     0% 99.55%     1.33GB 99.55%  testing.(*B).runN
+
+=== after batch: alloc_objects ===
+File: raft.test
+Build ID: 962a4f26c4c993fc0ad6f61fcd4297a782d259c8
+Type: alloc_objects
+Time: 2026-09-18 12:56:15 CDT
+Showing nodes accounting for 30942, 100% of 30948 total
+Dropped 10 nodes (cum <= 154)
+Showing top 15 nodes out of 31
+      flat  flat%   sum%        cum   cum%
+     19438 62.81% 62.81%      19438 62.81%  quorumkv/internal/raft.EncodeAppendEntries
+      5706 18.44% 81.25%       5706 18.44%  runtime.mallocgc
+      3277 10.59% 91.83%       3277 10.59%  compress/gzip.NewWriterLevel
+      2521  8.15%   100%       2521  8.15%  net/http.init
+         0     0%   100%      19438 62.81%  quorumkv/internal/raft.(*Node).encodeReplicationLocked
+         0     0%   100%      19438 62.81%  quorumkv/internal/raft.BenchmarkReplicationPayload.func1.2
+         0     0%   100%      19438 62.81%  quorumkv/internal/raft.benchmarkReplicationPayload
+         0     0%   100%       4681 15.13%  runtime.acquireSudog
+         0     0%   100%       1025  3.31%  runtime.allocm
+         0     0%   100%       2521  8.15%  runtime.doInit (inline)
+         0     0%   100%       2521  8.15%  runtime.doInit1
+         0     0%   100%       4681 15.13%  runtime.gcBgMarkWorker
+         0     0%   100%       4681 15.13%  runtime.gcMarkDone
+         0     0%   100%       2522  8.15%  runtime.main
+         0     0%   100%        513  1.66%  runtime.mcall
+
+=== after batch: cpu ===
+File: raft.test
+Build ID: 962a4f26c4c993fc0ad6f61fcd4297a782d259c8
+Type: cpu
+Time: 2026-09-18 12:56:15 CDT
+Duration: 203.32ms, Total samples = 380ms (186.90%)
+Showing nodes accounting for 330ms, 86.84% of 380ms total
+Showing top 15 nodes out of 79
+      flat  flat%   sum%        cum   cum%
+      80ms 21.05% 21.05%       80ms 21.05%  runtime.memclrNoHeapPointers
+      60ms 15.79% 36.84%       60ms 15.79%  runtime.memmove
+      30ms  7.89% 44.74%       30ms  7.89%  runtime.findObject
+      30ms  7.89% 52.63%       50ms 13.16%  runtime.scanblock
+      20ms  5.26% 57.89%       40ms 10.53%  runtime.(*sweepLocked).sweep
+      20ms  5.26% 63.16%       50ms 13.16%  runtime.scanObject
+      10ms  2.63% 65.79%       10ms  2.63%  internal/runtime/atomic.(*Uint32).CompareAndSwap
+      10ms  2.63% 68.42%       10ms  2.63%  internal/runtime/atomic.(*Uintptr).Store (inline)
+      10ms  2.63% 71.05%       10ms  2.63%  internal/runtime/syscall/linux.Syscall6
+      10ms  2.63% 73.68%      180ms 47.37%  quorumkv/internal/raft.EncodeAppendEntries
+      10ms  2.63% 76.32%       10ms  2.63%  runtime.(*unwinder).resolveInternal
+      10ms  2.63% 78.95%       10ms  2.63%  runtime.findfunc
+      10ms  2.63% 81.58%       10ms  2.63%  runtime.mProf_FlushLocked
+      10ms  2.63% 84.21%       10ms  2.63%  runtime.madvise
+      10ms  2.63% 86.84%       10ms  2.63%  runtime.newArenaMayUnlock
+
+=== before put: alloc_space ===
+File: service.test
+Build ID: c324ccefc281a0bf469b632d4102e7a2ae2064f2
+Type: alloc_space
+Time: 2026-09-18 12:49:34 CDT
+Showing nodes accounting for 61.23MB, 91.00% of 67.29MB total
+Showing top 15 nodes out of 113
+      flat  flat%   sum%        cum   cum%
+    9.62MB 14.29% 14.29%     9.62MB 14.29%  quorumkv/internal/transport.EncodeFrame
+    9.21MB 13.69% 27.98%    13.22MB 19.64%  quorumkv/internal/raft.(*Log).appendSegmented
+    8.51MB 12.64% 40.63%     8.51MB 12.64%  quorumkv/internal/kv.cloneBytes (inline)
+    7.60MB 11.30% 51.93%     7.60MB 11.30%  quorumkv/internal/transport.ReadFrame
+    7.01MB 10.41% 62.34%     7.01MB 10.41%  quorumkv/internal/raft.cloneBytes (inline)
+       4MB  5.95% 68.30%        4MB  5.95%  quorumkv/internal/kv.encodeCommandV2
+    3.56MB  5.29% 73.59%     3.56MB  5.29%  quorumkv/internal/raft.EncodeAppendEntries
+    3.01MB  4.47% 78.06%     3.01MB  4.47%  runtime.mallocgc
+    1.50MB  2.23% 80.29%     1.50MB  2.23%  quorumkv/internal/raft.DecodeAppendEntries
+    1.50MB  2.23% 82.52%     1.50MB  2.23%  quorumkv/internal/clientproto.cloneBytes
+    1.50MB  2.23% 84.75%     1.50MB  2.23%  quorumkv/internal/raft.(*Node).notifyMembershipChangedLocked
+    1.16MB  1.72% 86.47%     1.16MB  1.72%  runtime/pprof.StartCPUProfile
+    1.05MB  1.56% 88.02%     5.55MB  8.25%  quorumkv/internal/kv.(*StateMachine).applyRaw
+       1MB  1.49% 89.51%        1MB  1.49%  quorumkv/internal/transport.onCancel
+       1MB  1.49% 91.00%        1MB  1.49%  quorumkv/internal/client.newWithIDAndPoolWidth
+
+=== before put: alloc_objects ===
+File: service.test
+Build ID: c324ccefc281a0bf469b632d4102e7a2ae2064f2
+Type: alloc_objects
+Time: 2026-09-18 12:49:34 CDT
+Showing nodes accounting for 222008, 96.42% of 230244 total
+Dropped 32 nodes (cum <= 1151)
+Showing top 15 nodes out of 81
+      flat  flat%   sum%        cum   cum%
+     65537 28.46% 28.46%      65537 28.46%  quorumkv/internal/client.newWithIDAndPoolWidth
+     34971 15.19% 43.65%      34971 15.19%  quorumkv/internal/transport.ReadFrame
+     26526 11.52% 55.17%      26526 11.52%  quorumkv/internal/transport.onCancel
+     16384  7.12% 62.29%      16384  7.12%  quorumkv/internal/raft.EncodePreVote
+     14044  6.10% 68.39%      14044  6.10%  quorumkv/internal/raft.(*Node).notifyMembershipChangedLocked
+     13450  5.84% 74.23%      13450  5.84%  quorumkv/internal/transport.EncodeFrame
+     10923  4.74% 78.97%      10923  4.74%  quorumkv/internal/raft.Membership.Targets
+      8712  3.78% 82.76%       8712  3.78%  quorumkv/internal/kv.cloneBytes
+      6377  2.77% 85.53%       6377  2.77%  quorumkv/internal/raft.cloneBytes
+      5461  2.37% 87.90%       5461  2.37%  syscall.ByteSliceFromString
+      4681  2.03% 89.93%       4681  2.03%  context.(*cancelCtx).Done
+      4681  2.03% 91.97%       4681  2.03%  quorumkv/internal/service.(*Service).beginPending
+      4096  1.78% 93.75%       4096  1.78%  quorumkv/internal/service.(*Service).registerResultWaiter
+      3644  1.58% 95.33%       3644  1.58%  quorumkv/internal/kv.encodeCommandV2
+      2521  1.09% 96.42%       2521  1.09%  quorumkv/internal/raft.NewConfiguration
+
+=== before put: cpu ===
+File: service.test
+Build ID: c324ccefc281a0bf469b632d4102e7a2ae2064f2
+Type: cpu
+Time: 2026-09-18 12:49:34 CDT
+Duration: 459.72ms, Total samples = 180ms (39.15%)
+Showing nodes accounting for 180ms, 100% of 180ms total
+Showing top 15 nodes out of 108
+      flat  flat%   sum%        cum   cum%
+      30ms 16.67% 16.67%       30ms 16.67%  internal/runtime/syscall/linux.Syscall6
+      20ms 11.11% 27.78%       30ms 16.67%  runtime.lock2
+      20ms 11.11% 38.89%       20ms 11.11%  runtime.procyieldAsm
+      10ms  5.56% 44.44%       10ms  5.56%  crypto/internal/fips140/sha256.blockSHANI
+      10ms  5.56% 50.00%       20ms 11.11%  internal/sync.(*Mutex).Lock (inline)
+      10ms  5.56% 55.56%       20ms 11.11%  quorumkv/internal/kv.DecodeCommand
+      10ms  5.56% 61.11%       10ms  5.56%  quorumkv/internal/raft.(*Log).Entry
+      10ms  5.56% 66.67%       10ms  5.56%  runtime.(*mspan).scannedBitsForIndex
+      10ms  5.56% 72.22%       10ms  5.56%  runtime.(*mspan).writeHeapBitsSmall
+      10ms  5.56% 77.78%       10ms  5.56%  runtime._ExternalCode
+      10ms  5.56% 83.33%       10ms  5.56%  runtime.memmove
+      10ms  5.56% 88.89%       10ms  5.56%  runtime.scanframeworker
+      10ms  5.56% 94.44%       10ms  5.56%  runtime.usleep
+      10ms  5.56%   100%       30ms 16.67%  sync.(*Mutex).Lock
+         0     0%   100%       10ms  5.56%  crypto/internal/fips140/sha256.(*Digest).Sum
+
+=== after put: alloc_space ===
+File: service.test
+Build ID: cdaf70579e004ad271682596536ae89101cf4e98
+Type: alloc_space
+Time: 2026-09-18 12:55:49 CDT
+Showing nodes accounting for 59.53MB, 86.65% of 68.71MB total
+Showing top 15 nodes out of 136
+      flat  flat%   sum%        cum   cum%
+   12.51MB 18.21% 18.21%    12.51MB 18.21%  quorumkv/internal/kv.cloneBytes
+    7.65MB 11.13% 29.34%    13.66MB 19.88%  quorumkv/internal/raft.(*Log).appendSegmented
+    7.62MB 11.09% 40.43%     7.62MB 11.09%  quorumkv/internal/transport.EncodeFrame
+    5.53MB  8.05% 48.48%     5.53MB  8.05%  quorumkv/internal/transport.ReadFrame
+    5.51MB  8.01% 56.49%     5.51MB  8.01%  quorumkv/internal/raft.cloneBytes (inline)
+    3.50MB  5.10% 61.59%     3.50MB  5.10%  quorumkv/internal/clientproto.EncodeRequest
+       3MB  4.37% 65.96%        3MB  4.37%  quorumkv/internal/clientproto.cloneBytes
+    2.54MB  3.70% 69.67%     2.54MB  3.70%  quorumkv/internal/raft.EncodeAppendEntries
+    2.50MB  3.65% 73.31%     2.50MB  3.65%  runtime.mallocgc
+    2.50MB  3.64% 76.96%     2.50MB  3.64%  quorumkv/internal/raft.DecodeAppendEntries
+    1.50MB  2.19% 79.14%     1.50MB  2.19%  quorumkv/internal/kv.encodeCommandV2
+    1.50MB  2.18% 81.33%     1.50MB  2.18%  context.(*cancelCtx).Done
+    1.50MB  2.18% 83.51%     1.50MB  2.18%  os.newFile
+    1.16MB  1.68% 85.19%     1.16MB  1.68%  runtime/pprof.StartCPUProfile
+       1MB  1.46% 86.65%     1.50MB  2.18%  context.(*cancelCtx).propagateCancel
+
+=== after put: alloc_objects ===
+File: service.test
+Build ID: cdaf70579e004ad271682596536ae89101cf4e98
+Type: alloc_objects
+Time: 2026-09-18 12:55:49 CDT
+Showing nodes accounting for 382131, 93.33% of 409439 total
+Dropped 52 nodes (cum <= 2047)
+Showing top 15 nodes out of 84
+      flat  flat%   sum%        cum   cum%
+    132700 32.41% 32.41%     132700 32.41%  quorumkv/internal/transport.ReadFrame
+     76458 18.67% 51.08%      76458 18.67%  os.newFile
+     32768  8.00% 59.09%      39322  9.60%  context.WithCancel
+     32768  8.00% 67.09%      32768  8.00%  internal/strconv.FormatUint
+     16384  4.00% 71.09%      16384  4.00%  context.WithDeadlineCause
+     16384  4.00% 75.09%      16384  4.00%  quorumkv/internal/raft.(*Node).proposeOwned
+     16384  4.00% 79.10%      16384  4.00%  quorumkv/internal/transport.(*Transport).acceptLoop
+     14043  3.43% 82.52%      14043  3.43%  context.(*cancelCtx).Done
+     12812  3.13% 85.65%      12812  3.13%  quorumkv/internal/kv.cloneBytes
+      6554  1.60% 87.25%       6554  1.60%  context.withCancel (inline)
+      5461  1.33% 88.59%       5461  1.33%  syscall.ByteSliceFromString
+      5042  1.23% 89.82%       9723  2.37%  context.(*cancelCtx).propagateCancel
+      5011  1.22% 91.04%       5011  1.22%  quorumkv/internal/raft.cloneBytes
+      4681  1.14% 92.19%      14404  3.52%  context.AfterFunc
+      4681  1.14% 93.33%       9362  2.29%  quorumkv/internal/raft.(*Node).WaitApplied
+
+=== after put: cpu ===
+File: service.test
+Build ID: cdaf70579e004ad271682596536ae89101cf4e98
+Type: cpu
+Time: 2026-09-18 12:55:48 CDT
+Duration: 465.89ms, Total samples = 180ms (38.64%)
+Showing nodes accounting for 180ms, 100% of 180ms total
+Showing top 15 nodes out of 117
+      flat  flat%   sum%        cum   cum%
+      70ms 38.89% 38.89%       70ms 38.89%  internal/runtime/syscall/linux.Syscall6
+      10ms  5.56% 44.44%       10ms  5.56%  crypto/internal/fips140/sha256.blockSHANI
+      10ms  5.56% 50.00%       10ms  5.56%  internal/runtime/atomic.(*Uint32).CompareAndSwap (inline)
+      10ms  5.56% 55.56%       10ms  5.56%  internal/runtime/atomic.(*Uint64).Add (inline)
+      10ms  5.56% 61.11%       10ms  5.56%  runtime.(*gcBitsArena).tryAlloc
+      10ms  5.56% 66.67%       20ms 11.11%  runtime.(*mcache).nextFree
+      10ms  5.56% 72.22%       10ms  5.56%  runtime.chanrecv
+      10ms  5.56% 77.78%       10ms  5.56%  runtime.chansend
+      10ms  5.56% 83.33%       10ms  5.56%  runtime.futex
+      10ms  5.56% 88.89%       20ms 11.11%  runtime.injectglist
+      10ms  5.56% 94.44%       10ms  5.56%  runtime.nextFreeFast
+      10ms  5.56%   100%       10ms  5.56%  runtime.usleep
+         0     0%   100%       10ms  5.56%  crypto/internal/fips140/sha256.(*Digest).Write
+         0     0%   100%       10ms  5.56%  crypto/internal/fips140/sha256.block
+         0     0%   100%       50ms 27.78%  internal/poll.(*FD).Write
+
+=== before catchup: alloc_space ===
+File: service.test
+Build ID: c324ccefc281a0bf469b632d4102e7a2ae2064f2
+Type: alloc_space
+Time: 2026-09-18 12:50:06 CDT
+Showing nodes accounting for 6803.67MB, 90.19% of 7544.06MB total
+Dropped 115 nodes (cum <= 37.72MB)
+Showing top 15 nodes out of 96
+      flat  flat%   sum%        cum   cum%
+ 2512.27MB 33.30% 33.30%  2512.27MB 33.30%  quorumkv/internal/raft.cloneBytes (inline)
+ 2427.80MB 32.18% 65.48%  2427.80MB 32.18%  quorumkv/internal/raft.EncodeAppendEntries
+  325.30MB  4.31% 69.79%  2837.57MB 37.61%  quorumkv/internal/raft.cloneEntries (inline)
+  187.55MB  2.49% 72.28%   187.55MB  2.49%  quorumkv/internal/kv.cloneBytes
+  173.05MB  2.29% 74.57%   317.60MB  4.21%  quorumkv/internal/raft.(*Log).appendSegmented
+  162.51MB  2.15% 76.73%   162.51MB  2.15%  syscall.ByteSliceFromString
+  154.31MB  2.05% 78.77%   154.31MB  2.05%  quorumkv/internal/transport.ReadFrame
+  142.26MB  1.89% 80.66%   142.26MB  1.89%  quorumkv/internal/transport.EncodeFrame
+  124.52MB  1.65% 82.31%   124.52MB  1.65%  quorumkv/internal/raft.Membership.Targets
+  119.52MB  1.58% 83.90%   131.02MB  1.74%  context.(*cancelCtx).propagateCancel
+  114.01MB  1.51% 85.41%   308.03MB  4.08%  quorumkv/internal/transport.onCancel
+  112.51MB  1.49% 86.90%   243.53MB  3.23%  context.AfterFunc
+   84.51MB  1.12% 88.02%    84.51MB  1.12%  quorumkv/internal/raft.NewConfiguration
+   82.01MB  1.09% 89.11%    82.01MB  1.09%  quorumkv/internal/raft.(*Node).notifyMembershipChangedLocked
+   81.53MB  1.08% 90.19%    81.53MB  1.08%  quorumkv/internal/raft.DecodeAppendEntries
+
+=== before catchup: alloc_objects ===
+File: service.test
+Build ID: c324ccefc281a0bf469b632d4102e7a2ae2064f2
+Type: alloc_objects
+Time: 2026-09-18 12:50:06 CDT
+Showing nodes accounting for 24582927, 72.66% of 33834238 total
+Dropped 89 nodes (cum <= 169171)
+Showing top 15 nodes out of 122
+      flat  flat%   sum%        cum   cum%
+   8232194 24.33% 24.33%    8232194 24.33%  quorumkv/internal/raft.cloneBytes
+   2217409  6.55% 30.88%    4678678 13.83%  quorumkv/internal/transport.onCancel
+   2137450  6.32% 37.20%    2137450  6.32%  syscall.ByteSliceFromString
+   1980232  5.85% 43.05%    3118957  9.22%  context.AfterFunc
+   1572938  4.65% 47.70%    1572938  4.65%  os.newFile
+   1490660  4.41% 52.11%    1490660  4.41%  quorumkv/internal/transport.ReadFrame
+   1064663  3.15% 55.26%    1064663  3.15%  quorumkv/internal/raft.Membership.Targets
+   1031048  3.05% 58.30%    1138725  3.37%  context.(*cancelCtx).propagateCancel
+    891067  2.63% 60.94%     891067  2.63%  quorumkv/internal/kv.cloneBytes
+    767786  2.27% 63.21%     767786  2.27%  quorumkv/internal/raft.(*Node).notifyMembershipChangedLocked
+    742768  2.20% 65.40%    7785754 23.01%  quorumkv/internal/raft.sendPeerRPC[go.shape.struct { Term quorumkv/internal/raft.Term; Success bool; MatchIndex quorumkv/internal/raft.LogIndex; ReadContext quorumkv/internal/raft.ReadContext }]
+    714738  2.11% 67.51%     714738  2.11%  quorumkv/internal/transport.EncodeFrame
+    644520  1.90% 69.42%     644520  1.90%  quorumkv/internal/raft.NewConfiguration
+    571158  1.69% 71.11%     571158  1.69%  context.(*cancelCtx).Done
+    524296  1.55% 72.66%     976528  2.89%  context.WithCancel
+
+=== before catchup: cpu ===
+File: service.test
+Build ID: c324ccefc281a0bf469b632d4102e7a2ae2064f2
+Type: cpu
+Time: 2026-09-18 12:49:30 CDT
+Duration: 36.06s, Total samples = 45.49s (126.15%)
+Showing nodes accounting for 36.25s, 79.69% of 45.49s total
+Dropped 531 nodes (cum <= 0.23s)
+Showing top 15 nodes out of 185
+      flat  flat%   sum%        cum   cum%
+    20.07s 44.12% 44.12%     22.05s 48.47%  quorumkv/internal/raft.(*Node).rebuildMembershipLocked
+     9.85s 21.65% 65.77%      9.85s 21.65%  internal/runtime/syscall/linux.Syscall6
+     1.56s  3.43% 69.20%      1.56s  3.43%  quorumkv/internal/raft.(*Log).Entry (inline)
+     0.75s  1.65% 70.85%      0.75s  1.65%  runtime.futex
+     0.58s  1.28% 72.13%      0.58s  1.28%  runtime.spanClass.sizeclass (inline)
+     0.57s  1.25% 73.38%      0.57s  1.25%  runtime.procyieldAsm
+     0.53s  1.17% 74.54%      1.18s  2.59%  runtime.tryDeferToSpanScan
+     0.44s  0.97% 75.51%      0.44s  0.97%  runtime.memmove
+     0.34s  0.75% 76.26%      0.34s  0.75%  runtime.nextFreeFast
+     0.33s  0.73% 76.98%      1.04s  2.29%  runtime.stealWork
+     0.33s  0.73% 77.71%      0.33s  0.73%  runtime.usleep
+     0.28s  0.62% 78.32%      0.45s  0.99%  runtime.lock2
+     0.27s  0.59% 78.92%      0.27s  0.59%  internal/runtime/atomic.(*Uint32).CompareAndSwap
+     0.20s  0.44% 79.36%      1.52s  3.34%  runtime.scanObject
+     0.15s  0.33% 79.69%      0.55s  1.21%  internal/sync.(*Mutex).Lock
+
+=== after catchup: alloc_space ===
+File: service.test
+Build ID: cdaf70579e004ad271682596536ae89101cf4e98
+Type: alloc_space
+Time: 2026-09-18 12:55:48 CDT
+Showing nodes accounting for 4033.03MB, 86.59% of 4657.87MB total
+Dropped 96 nodes (cum <= 23.29MB)
+Showing top 15 nodes out of 107
+      flat  flat%   sum%        cum   cum%
+ 2378.47MB 51.06% 51.06%  2378.47MB 51.06%  quorumkv/internal/raft.EncodeAppendEntries
+  190.84MB  4.10% 55.16%   316.37MB  6.79%  quorumkv/internal/raft.(*Log).appendSegmented
+  178.54MB  3.83% 58.99%   178.54MB  3.83%  quorumkv/internal/kv.cloneBytes
+  156.01MB  3.35% 62.34%   156.01MB  3.35%  syscall.ByteSliceFromString
+  153.24MB  3.29% 65.63%   153.24MB  3.29%  quorumkv/internal/transport.ReadFrame
+  137.29MB  2.95% 68.58%   137.29MB  2.95%  quorumkv/internal/transport.EncodeFrame
+  126.01MB  2.71% 71.29%   305.53MB  6.56%  quorumkv/internal/transport.onCancel
+  108.02MB  2.32% 73.60%   108.02MB  2.32%  quorumkv/internal/raft.Membership.Targets
+  103.51MB  2.22% 75.83%   218.03MB  4.68%  context.AfterFunc
+  101.52MB  2.18% 78.01%   114.52MB  2.46%  context.(*cancelCtx).propagateCancel
+   95.51MB  2.05% 80.06%    95.51MB  2.05%  quorumkv/internal/raft.(*Node).notifyMembershipChangedLocked
+   86.01MB  1.85% 81.90%    86.01MB  1.85%  quorumkv/internal/raft.NewConfiguration
+   73.53MB  1.58% 83.48%    73.53MB  1.58%  quorumkv/internal/raft.DecodeAppendEntries
+   73.52MB  1.58% 85.06%    73.52MB  1.58%  quorumkv/internal/raft.cloneBytes (inline)
+   71.01MB  1.52% 86.59%    71.01MB  1.52%  os.newFile
+
+=== after catchup: alloc_objects ===
+File: service.test
+Build ID: cdaf70579e004ad271682596536ae89101cf4e98
+Type: alloc_objects
+Time: 2026-09-18 12:55:48 CDT
+Showing nodes accounting for 15770194, 65.76% of 23981578 total
+Dropped 76 nodes (cum <= 119907)
+Showing top 15 nodes out of 127
+      flat  flat%   sum%        cum   cum%
+   2432755 10.14% 10.14%    4448822 18.55%  quorumkv/internal/transport.onCancel
+   2094023  8.73% 18.88%    2094023  8.73%  syscall.ByteSliceFromString
+   1573043  6.56% 25.44%    1573043  6.56%  quorumkv/internal/transport.ReadFrame
+   1502747  6.27% 31.70%    2430324 10.13%  context.AfterFunc
+   1316245  5.49% 37.19%    1316245  5.49%  os.newFile
+    964662  4.02% 41.21%     964662  4.02%  quorumkv/internal/raft.Membership.Targets
+    894189  3.73% 44.94%     894189  3.73%  quorumkv/internal/raft.(*Node).notifyMembershipChangedLocked
+    805855  3.36% 48.30%     927577  3.87%  context.(*cancelCtx).propagateCancel
+    762034  3.18% 51.48%     762034  3.18%  quorumkv/internal/kv.cloneBytes
+    710896  2.96% 54.44%     710896  2.96%  quorumkv/internal/raft.NewConfiguration
+    610224  2.54% 56.99%     610224  2.54%  quorumkv/internal/transport.EncodeFrame
+    600770  2.51% 59.49%    7023632 29.29%  quorumkv/internal/raft.sendPeerRPC[go.shape.struct { Term quorumkv/internal/raft.Term; Success bool; MatchIndex quorumkv/internal/raft.LogIndex; ReadContext quorumkv/internal/raft.ReadContext }]
+    561796  2.34% 61.84%     561796  2.34%  context.(*cancelCtx).Done
+    482180  2.01% 63.85%     482180  2.01%  quorumkv/internal/raft.(*Node).proposeOwned
+    458775  1.91% 65.76%     580497  2.42%  context.WithDeadlineCause
+
+=== after catchup: cpu ===
+File: service.test
+Build ID: cdaf70579e004ad271682596536ae89101cf4e98
+Type: cpu
+Time: 2026-09-18 12:55:12 CDT
+Duration: 35.90s, Total samples = 43.89s (122.26%)
+Showing nodes accounting for 34.97s, 79.68% of 43.89s total
+Dropped 559 nodes (cum <= 0.22s)
+Showing top 15 nodes out of 185
+      flat  flat%   sum%        cum   cum%
+    19.23s 43.81% 43.81%     21.08s 48.03%  quorumkv/internal/raft.(*Node).rebuildMembershipLocked
+    10.07s 22.94% 66.76%     10.07s 22.94%  internal/runtime/syscall/linux.Syscall6
+     1.42s  3.24% 69.99%      1.44s  3.28%  quorumkv/internal/raft.(*Log).Entry (inline)
+     0.79s  1.80% 71.79%      0.79s  1.80%  runtime.futex
+     0.43s  0.98% 72.77%      0.43s  0.98%  runtime.procyieldAsm
+     0.42s  0.96% 73.73%      0.81s  1.85%  runtime.tryDeferToSpanScan
+     0.38s  0.87% 74.60%      0.94s  2.14%  runtime.stealWork
+     0.37s  0.84% 75.44%      0.37s  0.84%  runtime.spanClass.sizeclass (inline)
+     0.32s  0.73% 76.17%      0.42s  0.96%  runtime.lock2
+     0.30s  0.68% 76.85%      0.30s  0.68%  internal/runtime/atomic.(*Uint32).CompareAndSwap
+     0.29s  0.66% 77.51%      0.29s  0.66%  runtime.nextFreeFast
+     0.28s  0.64% 78.15%      0.29s  0.66%  runtime.unlock2
+     0.23s  0.52% 78.67%      0.23s  0.52%  runtime.memmove
+     0.22s   0.5% 79.18%      0.61s  1.39%  internal/sync.(*Mutex).Lock
+     0.22s   0.5% 79.68%      0.22s   0.5%  runtime.memclrNoHeapPointers

@@ -159,4 +159,6 @@ The next evidence-backed target is replication snapshot construction:
 batch, followed by a 73,728-byte RPC encoding. A future milestone should
 evaluate encoding a complete immutable RPC payload under the Raft lock, then
 performing network I/O after unlock, while preserving test sender interfaces
-and retry bookkeeping.
+and retry bookkeeping. M22 implements and measures this design in
+[replication allocation performance](replication-allocation-performance.md),
+including lock contention and GET tail-latency tradeoffs.
