@@ -265,7 +265,7 @@ milestone changes the transport (connection reuse/pooling), revisiting
 window width then would have a real chance of showing a different
 answer than it would today.
 
-## 18. Remaining bottleneck (profiled)
+## 18. Remaining bottleneck at Milestone 14 (resolved in Milestone 20)
 
 A CPU profile of `BenchmarkFollowerCatchUp` on this branch:
 
@@ -283,15 +283,15 @@ growing log file as more of it accumulates. This is exactly the
 bottleneck item 129 of the milestone brief anticipated: the follower's
 durable-write path was not changed by Milestone 14 and remains the
 dominant cost once the "wait for a heartbeat between batches" cost is
-removed. **This was not converted to segmented storage in this
-milestone** — see §19.
+removed. **This was not converted to segmented storage in this milestone.**
+Milestone 20 subsequently measured the scaling directly and replaced
+whole-log rewrites; see [raft-log-storage.md](raft-log-storage.md).
 
 ## 19. Limitations
 
-- The follower's log is still rewritten as a whole file on every
-  received batch (no segmented WAL / append-only log format) — see §18;
-  this is now the primary remaining catch-up bottleneck, deliberately
-  left unaddressed per the milestone's own scope boundary.
+- At Milestone 14, the follower's log was still rewritten as a whole file on
+  every received batch. Milestone 20 resolves this historical limitation with
+  append-oriented Raft-log segments; see §18.
 - No multi-request replication pipelining (window is fixed at 1 — see
   §10); the transport still opens roughly one connection per RPC (also
   unchanged this milestone — see

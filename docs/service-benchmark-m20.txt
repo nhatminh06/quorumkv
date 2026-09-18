@@ -1,0 +1,33 @@
+Milestone 20 established service benchmarks
+Commands: sequential PUT at 50x/count=3; concurrent PUT/GET/mixed at 300x/count=3 (see docs/raft-log-storage.md).
+
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    106189 ns/op	        95.00 p50-us	       122.0 p95-us	       224.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    184077 ns/op	       102.0 p50-us	       583.0 p95-us	       787.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=16B-12         	      50	    185292 ns/op	       102.0 p50-us	       517.0 p95-us	       600.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    193570 ns/op	       113.0 p50-us	       597.0 p95-us	       623.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    192550 ns/op	       113.0 p50-us	       545.0 p95-us	       594.0 p99-us
+BenchmarkThreeNodeSequentialPut/value=1024B-12       	      50	    194483 ns/op	       111.0 p50-us	       466.0 p95-us	       687.0 p99-us
+PASS
+ok  	quorumkv/internal/service	2.536s
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/service
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     55834 ns/op	       442.0 p50-us	     12115 p95-us	     12254 p99-us
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     33820 ns/op	       644.0 p50-us	      2716 p95-us	      4380 p99-us
+BenchmarkThreeNodeConcurrentPut/value=16B-12         	     300	     51757 ns/op	      1255 p50-us	      3250 p95-us	      4907 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	     41526 ns/op	      1146 p50-us	      2069 p95-us	      2371 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	     57044 ns/op	      1055 p50-us	      6576 p95-us	      7296 p99-us
+BenchmarkThreeNodeConcurrentPut/value=1024B-12       	     300	     54768 ns/op	      1004 p50-us	      4655 p95-us	      6178 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     46640 ns/op	       672.0 p50-us	      3738 p95-us	      4248 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     36697 ns/op	       665.0 p50-us	      3449 p95-us	      4958 p99-us
+BenchmarkThreeNodeConcurrentGet-12                   	     300	     50789 ns/op	      1016 p50-us	      3663 p95-us	      4530 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     51895 ns/op	      1162 p50-us	      3770 p95-us	      4451 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     54641 ns/op	      1383 p50-us	      3655 p95-us	      4179 p99-us
+BenchmarkThreeNodeMixedReadWrite-12                  	     300	     44746 ns/op	       872.0 p50-us	      3588 p95-us	      5097 p99-us
+PASS
+ok  	quorumkv/internal/service	5.165s
