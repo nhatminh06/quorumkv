@@ -34,6 +34,8 @@ runnable system with its own CLI and operational tooling.
   replicated per-client request identity.
 - Proposal batching and bounded backpressure (`BUSY` instead of
   unbounded queuing).
+- Prometheus metrics, health/readiness probes, bounded-cardinality labels,
+  and structured JSON operational logs on an optional HTTP listener.
 - A real node executable and a client/admin CLI, driven by real OS
   processes over real TCP in the mandatory integration tests and demo
   scripts — not just in-process test harnesses.
@@ -119,6 +121,12 @@ to be elected. Full CLI reference in
 
 See [docs/operations.md](docs/operations.md) for startup, shutdown,
 data-directory, and membership semantics.
+
+Add `--metrics-listen 127.0.0.1:9101` to expose `/metrics`, `/healthz`,
+and `/readyz` on a separate HTTP listener. Metrics are disabled when the
+flag is omitted. See [docs/observability.md](docs/observability.md) for the
+metric contract, Prometheus/Grafana examples, cardinality policy, and measured
+instrumentation overhead.
 
 ## Failure demo
 

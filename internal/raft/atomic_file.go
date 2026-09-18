@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // atomicWriteFile replaces the file at path with data: it writes to a
@@ -27,53 +28,63 @@ import (
 // described above. Only test code (see crashpoint_test.go and the
 // subprocess helper in cmd_crashhelper_test.go) ever sets it.
 func atomicWriteFile(domain, path string, data []byte) error {
+	err, _ := atomicWriteFileMeasured(domain, path, data)
+	return err
+}
+
+func atomicWriteFileMeasured(domain, path string, data []byte) (error, time.Duration) {
+	var fsyncDuration time.Duration
 	if err := checkFailpoint(domain, "before-temp-write"); err != nil {
-		return err
+		return err, fsyncDuration
 	}
 
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
 	if err != nil {
-		return err
+		return err, fsyncDuration
 	}
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath) // no-op once the rename below succeeds
 
 	if err := writeFull(tmp, data); err != nil {
 		tmp.Close()
-		return err
+		return err, fsyncDuration
 	}
 	if err := checkFailpoint(domain, "after-temp-write"); err != nil {
 		tmp.Close()
-		return err
+		return err, fsyncDuration
 	}
+	fsyncStart := time.Now()
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return err
+		return err, fsyncDuration
 	}
+	fsyncDuration += time.Since(fsyncStart)
 	if err := checkFailpoint(domain, "after-temp-fsync"); err != nil {
 		tmp.Close()
-		return err
+		return err, fsyncDuration
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return err, fsyncDuration
 	}
 	if err := os.Rename(tmpPath, path); err != nil {
-		return err
+		return err, fsyncDuration
 	}
 	if err := checkFailpoint(domain, "after-rename"); err != nil {
-		return err
+		return err, fsyncDuration
 	}
 
 	dirFile, err := os.Open(dir)
 	if err != nil {
-		return err
+		return err, fsyncDuration
 	}
 	defer dirFile.Close()
+	fsyncStart = time.Now()
 	if err := dirFile.Sync(); err != nil {
-		return err
+		return err, fsyncDuration
 	}
-	return checkFailpoint(domain, "after-dir-fsync")
+	fsyncDuration += time.Since(fsyncStart)
+	return checkFailpoint(domain, "after-dir-fsync"), fsyncDuration
 }
 
 // errNoWriteProgress is returned by writeFull if the underlying Writer

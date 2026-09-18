@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"quorumkv/internal/transport"
 )
@@ -35,6 +36,8 @@ type RestoreFunc func(data []byte) error
 type installSnapshotSender func(ctx context.Context, addr string, req InstallSnapshotRequest) (InstallSnapshotResponse, error)
 
 func (p *peerRPC) sendInstallSnapshotOverTransport(ctx context.Context, addr string, req InstallSnapshotRequest) (InstallSnapshotResponse, error) {
+	start := time.Now()
+	defer p.observe(start, "install_snapshot")
 	payload, err := EncodeInstallSnapshot(req)
 	if err != nil {
 		return InstallSnapshotResponse{}, err
@@ -65,7 +68,18 @@ type incomingSnapshot struct {
 // CreateSnapshot is this milestone's only snapshot trigger: it must be
 // called explicitly (by a test or an operator-facing mechanism outside
 // this package); there is no automatic threshold policy.
-func (n *Node) CreateSnapshot() error {
+func (n *Node) CreateSnapshot() (err error) {
+	start := time.Now()
+	createdSize := -1
+	var createdIndex LogIndex
+	defer func() {
+		if err == nil && createdSize >= 0 {
+			if m := n.observerMetrics(); m != nil {
+				m.SnapshotCreated(time.Since(start), createdSize, uint64(createdIndex))
+			}
+			n.logInfo("snapshot_created", "index", uint64(createdIndex), "bytes", createdSize, "duration", time.Since(start))
+		}
+	}()
 	n.applyMu.Lock()
 	defer n.applyMu.Unlock()
 
@@ -117,6 +131,7 @@ func (n *Node) CreateSnapshot() error {
 	if err := n.snapshotStore.Save(Snapshot{LastIncludedIndex: index, LastIncludedTerm: term, Data: data, Configuration: cfg}); err != nil {
 		return err
 	}
+	createdSize, createdIndex = len(data), index
 	if err := n.log.Compact(index, term); err != nil {
 		return err
 	}
@@ -210,8 +225,15 @@ func (n *Node) HandleInstallSnapshot(req InstallSnapshotRequest) (InstallSnapsho
 	n.mu.Unlock()
 
 	if err := n.installSnapshot(snap); err != nil {
+		if m := n.observerMetrics(); m != nil {
+			m.SnapshotInstalled(len(snap.Data), uint64(snap.LastIncludedIndex), true)
+		}
 		return InstallSnapshotResponse{}, err
 	}
+	if m := n.observerMetrics(); m != nil {
+		m.SnapshotInstalled(len(snap.Data), uint64(snap.LastIncludedIndex), false)
+	}
+	n.logInfo("snapshot_installed", "index", uint64(snap.LastIncludedIndex), "bytes", len(snap.Data))
 	return InstallSnapshotResponse{Term: term, Success: true, NextOffset: uint64(len(snap.Data))}, nil
 }
 

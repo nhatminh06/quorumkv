@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"hash/crc32"
 	"os"
+	"sync/atomic"
+	"time"
+
+	"quorumkv/internal/observability"
 )
 
 // EntryKind distinguishes what a LogEntry actually is, since Milestone 10
@@ -132,7 +136,10 @@ type Log struct {
 	baseIndex LogIndex
 	baseTerm  Term
 	entries   []LogEntry
+	observer  atomic.Pointer[observability.Metrics]
 }
+
+func (l *Log) setObserver(m *observability.Metrics) { l.observer.Store(m) }
 
 // OpenLog loads the log at path. A missing file means a brand-new node's
 // empty log (baseIndex 0, baseTerm 0, no entries). An existing-but-invalid
@@ -280,11 +287,16 @@ func encodeLogFile(baseIndex LogIndex, baseTerm Term, entries []LogEntry) ([]byt
 }
 
 func (l *Log) rewrite() error {
+	start := time.Now()
 	data, err := encodeLogFile(l.baseIndex, l.baseTerm, l.entries)
 	if err != nil {
 		return err
 	}
-	return atomicWriteFile("log", l.path, data)
+	err, fsync := atomicWriteFileMeasured("log", l.path, data)
+	if m := l.observer.Load(); m != nil {
+		m.RecordPersistence("log", len(data), time.Since(start), fsync)
+	}
+	return err
 }
 
 // BaseIndex returns the index of this log's compaction boundary

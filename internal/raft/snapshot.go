@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"hash/crc32"
 	"os"
+	"sync/atomic"
+	"time"
+
+	"quorumkv/internal/observability"
 )
 
 // Snapshot is a durable Raft snapshot: the application state machine's
@@ -62,8 +66,11 @@ var ErrCorruptSnapshot = errors.New("raft: corrupt snapshot")
 // Node serializes access to it, the same convention as Store/Log/
 // CommitStore.
 type SnapshotStore struct {
-	path string
+	path     string
+	observer atomic.Pointer[observability.Metrics]
 }
+
+func (s *SnapshotStore) setObserver(m *observability.Metrics) { s.observer.Store(m) }
 
 func NewSnapshotStore(path string) *SnapshotStore {
 	return &SnapshotStore{path: path}
@@ -93,6 +100,7 @@ func (s *SnapshotStore) Load() (*Snapshot, error) {
 // concept for reading older files, not a choice a writer makes). The
 // checksum covers version..membership (not magic, not itself).
 func (s *SnapshotStore) Save(snap Snapshot) error {
+	start := time.Now()
 	if len(snap.Data) > maxSnapshotPayloadSize {
 		return fmt.Errorf("raft: snapshot payload %d exceeds max %d", len(snap.Data), maxSnapshotPayloadSize)
 	}
@@ -119,7 +127,11 @@ func (s *SnapshotStore) Save(snap Snapshot) error {
 	checksum := crc32.Checksum(buf[4:off], crc32cTable)
 	binary.BigEndian.PutUint32(buf[off:off+snapshotChecksumSize], checksum)
 
-	return atomicWriteFile("snapshot", s.path, buf)
+	err, fsync := atomicWriteFileMeasured("snapshot", s.path, buf)
+	if m := s.observer.Load(); m != nil {
+		m.RecordPersistence("snapshot", len(buf), time.Since(start), fsync)
+	}
+	return err
 }
 
 func decodeSnapshotFile(data []byte) (*Snapshot, error) {

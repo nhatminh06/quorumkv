@@ -3,13 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 	"time"
 
+	"quorumkv/internal/observability"
 	"quorumkv/internal/raft"
 	"quorumkv/internal/service"
 	"quorumkv/internal/transport"
@@ -23,6 +24,18 @@ import (
 // without ever serving a single request; nothing is deleted, reset, or
 // silently reinterpreted.
 func serve(ctx context.Context, cfg nodeConfig) error {
+	level := new(slog.LevelVar)
+	switch cfg.logLevel {
+	case "debug":
+		level.Set(slog.LevelDebug)
+	case "warn":
+		level.Set(slog.LevelWarn)
+	case "error":
+		level.Set(slog.LevelError)
+	default:
+		level.Set(slog.LevelInfo)
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: level})).With("node_id", uint64(cfg.id))
 	if err := prepareDataDir(cfg.data); err != nil {
 		return err
 	}
@@ -51,6 +64,9 @@ func serve(ctx context.Context, cfg nodeConfig) error {
 	// internal placeholder NewNode uses until told otherwise.
 	node.SetSelfAddr(cfg.listen)
 	node.SetPeers(cfg.peers)
+	node.SetObserver(svc.Metrics())
+	node.SetLogger(logger)
+	svc.SetLogger(logger)
 	svc.Attach(node)
 
 	tr, err := transport.Listen(cfg.listen, svc.Handler())
@@ -59,7 +75,23 @@ func serve(ctx context.Context, cfg nodeConfig) error {
 		return fmt.Errorf("listening on %s: %w", cfg.listen, err)
 	}
 
-	logStartup(cfg, node)
+	var obs *observability.Server
+	if cfg.metricsListen != "" {
+		obs, err = observability.Listen(cfg.metricsListen, svc.Metrics(), node.ObservabilitySnapshot, func() (bool, string) {
+			if applyErr := node.ApplyError(); applyErr != nil {
+				return false, "application pipeline halted"
+			}
+			return true, "ready"
+		})
+		if err != nil {
+			_ = tr.Close()
+			node.Close()
+			return fmt.Errorf("metrics listening on %s: %w", cfg.metricsListen, err)
+		}
+		logger.Info("observability_started", "event", "observability_started", "listen", obs.Addr())
+	}
+
+	logStartup(logger, cfg, node)
 
 	runCtx, cancelRun := context.WithCancel(ctx)
 	runDone := make(chan struct{})
@@ -68,22 +100,27 @@ func serve(ctx context.Context, cfg nodeConfig) error {
 		node.Run(runCtx)
 	}()
 
-	go logRoleChanges(runCtx, cfg.id, node)
+	go logRoleChanges(runCtx, logger, node)
 
 	waitForShutdownSignal(ctx)
-	log.Printf("node=%d shutting down", cfg.id)
+	logger.Info("node_stopping", "event", "node_stopping")
+	if obs != nil {
+		if err := obs.Close(); err != nil {
+			logger.Warn("observability_close_failed", "event", "observability_close_failed", "error", err)
+		}
+	}
 
 	// Stop accepting/dispatching inbound work before tearing down the
 	// node (see docs/operations.md) — Transport.Close waits for every
 	// in-flight handler to finish, so nothing can race a handler against
 	// Node.Close.
 	if err := tr.Close(); err != nil {
-		log.Printf("node=%d transport close error: %v", cfg.id, err)
+		logger.Warn("transport_close_failed", "event", "transport_close_failed", "error", err)
 	}
 	cancelRun()
 	<-runDone
 	node.Close()
-	log.Printf("node=%d shutdown complete", cfg.id)
+	logger.Info("node_stopped", "event", "node_stopped")
 	return nil
 }
 
@@ -106,11 +143,10 @@ func prepareDataDir(dir string) error {
 	return nil
 }
 
-func logStartup(cfg nodeConfig, node *raft.Node) {
+func logStartup(logger *slog.Logger, cfg nodeConfig, node *raft.Node) {
 	idx, term := node.SnapshotBoundary()
-	log.Printf("node=%d listen=%s data=%s peers=%d", cfg.id, cfg.listen, cfg.data, len(cfg.peers))
-	log.Printf("node=%d recovered term=%d last-log-index=%d commit-index=%d last-applied=%d snapshot-index=%d snapshot-term=%d",
-		cfg.id, node.CurrentTerm(), node.LastLogIndex(), node.CommitIndex(), node.LastApplied(), idx, term)
+	logger.Info("node_started", "event", "node_started", "listen", cfg.listen, "peer_count", len(cfg.peers),
+		"term", uint64(node.CurrentTerm()), "last_log_index", uint64(node.LastLogIndex()), "commit_index", uint64(node.CommitIndex()), "last_applied", uint64(node.LastApplied()), "snapshot_index", uint64(idx), "snapshot_term", uint64(term))
 }
 
 // logRoleChanges polls Role at a modest interval and logs only actual
@@ -118,7 +154,7 @@ func logStartup(cfg nodeConfig, node *raft.Node) {
 // this covers "leadership gained/lost" without polling anything else or
 // producing output under normal idle operation (no per-heartbeat/
 // per-AppendEntries logging).
-func logRoleChanges(ctx context.Context, id raft.NodeID, node *raft.Node) {
+func logRoleChanges(ctx context.Context, logger *slog.Logger, node *raft.Node) {
 	last := node.Role()
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
@@ -134,9 +170,9 @@ func logRoleChanges(ctx context.Context, id raft.NodeID, node *raft.Node) {
 			last = role
 			term := node.CurrentTerm()
 			if role == raft.Leader {
-				log.Printf("node=%d became leader term=%d", id, term)
+				logger.Info("leader_elected", "event", "leader_elected", "term", uint64(term), "role", role.String())
 			} else {
-				log.Printf("node=%d role=%s term=%d", id, role, term)
+				logger.Info("role_changed", "event", "role_changed", "term", uint64(term), "role", role.String())
 			}
 		}
 	}

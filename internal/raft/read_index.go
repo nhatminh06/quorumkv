@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // ErrReadIndexUnavailable is returned by ReadIndex when quorum could not
@@ -155,7 +156,13 @@ type readProbeResult struct {
 //   - ErrNodeClosed if Close is called while this call is in progress.
 //   - whatever establishing the current-term commit barrier failed with
 //     (see ensureCurrentTermCommitted), if one was needed.
-func (n *Node) ReadIndex(ctx context.Context) (LogIndex, error) {
+func (n *Node) ReadIndex(ctx context.Context) (index LogIndex, err error) {
+	start := time.Now()
+	defer func() {
+		if m := n.observerMetrics(); m != nil {
+			m.RecordReadIndex(time.Since(start), err != nil)
+		}
+	}()
 	n.mu.Lock()
 	if n.transfer != nil && n.transfer.phase == transferHandoff {
 		// Handoff freeze (see leadership_transfer.go): this leader is

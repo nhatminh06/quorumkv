@@ -21,11 +21,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"quorumkv/internal/clientproto"
 	"quorumkv/internal/kv"
+	"quorumkv/internal/observability"
 	"quorumkv/internal/raft"
 	"quorumkv/internal/reqid"
 	"quorumkv/internal/transport"
@@ -81,8 +84,10 @@ type pendingWrite struct {
 // serialized through mu — a service-level lock distinct from raft.Node's
 // own internal lock.
 type Service struct {
-	node  *raft.Node
-	peers map[raft.NodeID]string // for resolving a leader hint to an address
+	node    *raft.Node
+	metrics *observability.Metrics
+	logger  atomic.Pointer[slog.Logger]
+	peers   map[raft.NodeID]string // for resolving a leader hint to an address
 
 	mu sync.Mutex
 	sm *kv.StateMachine
@@ -136,8 +141,13 @@ func New(peers map[raft.NodeID]string) *Service {
 		completed: make(map[raft.LogIndex]kv.ApplyOutcome),
 		pending:   make(map[pendingKey]*pendingWrite),
 		admission: make(chan struct{}, DefaultMaxConcurrentRequests),
+		metrics:   observability.New(),
 	}
 }
+
+func (s *Service) Metrics() *observability.Metrics { return s.metrics }
+
+func (s *Service) SetLogger(logger *slog.Logger) { s.logger.Store(logger) }
 
 // SetMaxConcurrentRequests overrides the concurrency bound handleClient
 // admits under — tests use this to construct a tiny bound (e.g. 1 or 2)
@@ -265,14 +275,55 @@ func (s *Service) handleClient(ctx context.Context, m transport.Message) (transp
 	case ch <- struct{}{}:
 		defer func() { <-ch }()
 	default:
+		s.metrics.RequestRejectedBusy()
+		if logger := s.logger.Load(); logger != nil {
+			logger.Warn("request_busy", "event", "request_busy")
+		}
 		return s.respond(clientproto.Response{Status: clientproto.StatusBusy})
 	}
+	s.metrics.RequestStarted()
+	defer s.metrics.RequestFinished()
 
 	req, err := clientproto.DecodeRequest(m.Payload)
 	if err != nil {
 		return s.respond(clientproto.Response{Status: clientproto.StatusBadRequest})
 	}
-	return s.respond(s.dispatch(ctx, req))
+	start := time.Now()
+	resp := s.dispatch(ctx, req)
+	s.metrics.RecordRequest(metricOperation(req.Operation), metricStatus(resp.Status), time.Since(start))
+	return s.respond(resp)
+}
+
+func metricOperation(op clientproto.Operation) string {
+	switch op {
+	case clientproto.OpGet:
+		return "get"
+	case clientproto.OpPut:
+		return "put"
+	case clientproto.OpDelete:
+		return "delete"
+	default:
+		return ""
+	}
+}
+
+func metricStatus(status clientproto.Status) string {
+	switch status {
+	case clientproto.StatusOK:
+		return "ok"
+	case clientproto.StatusNotFound:
+		return "not_found"
+	case clientproto.StatusBusy:
+		return "busy"
+	case clientproto.StatusTimeout:
+		return "timeout"
+	case clientproto.StatusNotLeader:
+		return "not_leader"
+	case clientproto.StatusBadRequest:
+		return "bad_request"
+	default:
+		return "internal"
+	}
 }
 
 func (s *Service) respond(r clientproto.Response) (transport.Message, error) {

@@ -33,7 +33,10 @@ data directory and one TCP listener that carries three protocols
 multiplexed by message type: Raft RPCs (`RequestVote`, `AppendEntries`,
 `InstallSnapshot`, `TimeoutNow`), the client protocol (PUT/GET/DELETE),
 and the admin protocol (status/snapshot/transfer/voter changes). There
-is no separate control-plane port. See [transport.md](transport.md).
+is no separate binary-protocol control-plane port. An optional, separate HTTP
+listener exposes Prometheus metrics and health probes without entering any
+Raft decision path. See [transport.md](transport.md) and
+[observability.md](observability.md).
 
 ## 3. Client write path
 
@@ -186,6 +189,15 @@ CLI/runbook detail in [operations.md](operations.md).
   request pipelining across proposals beyond the batching in section 7.
 - No sharding, no multi-Raft, no transactions, no CAS, no TTL, no
   follower reads, no leader leases.
+
+## 17. Observability path
+
+Raft, service, transport, and persistence code report events to a node-local
+observer through atomics and bounded fixed-label structures. `/metrics` first
+copies a small Raft state snapshot, then formats that snapshot with atomic
+counters; formatting does not hold the Raft mutex. Observers never return an
+error into consensus or storage code. JSON logs and the health endpoints use
+the same observational boundary. See [observability.md](observability.md).
 
 ## Client seed failover
 

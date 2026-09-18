@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ func TestServiceConcurrencyBackpressureDeterministic(t *testing.T) {
 	nodes := startCluster(t, 1)
 	electLeader(t, nodes, 0)
 	n := nodes[0]
+	n.svc.node.SetObserver(n.svc.Metrics())
 	n.svc.SetMaxConcurrentRequests(1)
 
 	// Occupy the only admission slot directly — deterministic, no timing
@@ -44,6 +46,13 @@ func TestServiceConcurrencyBackpressureDeterministic(t *testing.T) {
 	case err := <-putDone:
 		t.Fatalf("Put returned early (err=%v) while admission was still full — BUSY must be retried, not surfaced", err)
 	case <-time.After(100 * time.Millisecond):
+	}
+	var metrics strings.Builder
+	if err := n.svc.Metrics().WritePrometheus(&metrics, n.svc.node.ObservabilitySnapshot()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(metrics.String(), "quorumkv_requests_busy_total ") || strings.Contains(metrics.String(), "quorumkv_requests_busy_total 0") {
+		t.Fatalf("BUSY metric did not increase:\n%s", metrics.String())
 	}
 
 	// Release the slot: capacity is no longer exhausted, so the

@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"quorumkv/internal/observability"
 	"quorumkv/internal/transport"
 )
 
@@ -46,6 +49,8 @@ func randomElectionTimeout() time.Duration {
 type sender func(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error)
 
 func (p *peerRPC) sendOverTransport(ctx context.Context, addr string, req RequestVoteRequest) (RequestVoteResponse, error) {
+	start := time.Now()
+	defer p.observe(start, "request_vote")
 	msg := transport.NewMessage(transport.MessageRequestVote, EncodeRequestVote(req))
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageRequestVoteResponse, DecodeRequestVoteResponse)
 }
@@ -56,6 +61,8 @@ func (p *peerRPC) sendOverTransport(ctx context.Context, addr string, req Reques
 type appendSender func(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error)
 
 func (p *peerRPC) sendAppendOverTransport(ctx context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
+	start := time.Now()
+	defer p.observe(start, "append_entries")
 	payload, err := EncodeAppendEntries(req)
 	if err != nil {
 		return AppendEntriesResponse{}, err
@@ -70,6 +77,8 @@ func (p *peerRPC) sendAppendOverTransport(ctx context.Context, addr string, req 
 type preVoteSender func(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error)
 
 func (p *peerRPC) sendPreVoteOverTransport(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
+	start := time.Now()
+	defer p.observe(start, "pre_vote")
 	msg := transport.NewMessage(transport.MessagePreVote, EncodePreVote(req))
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessagePreVoteResponse, DecodePreVoteResponse)
 }
@@ -80,6 +89,8 @@ func (p *peerRPC) sendPreVoteOverTransport(ctx context.Context, addr string, req
 type timeoutNowSender func(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error)
 
 func (p *peerRPC) sendTimeoutNowOverTransport(ctx context.Context, addr string, req TimeoutNowRequest) (TimeoutNowResponse, error) {
+	start := time.Now()
+	defer p.observe(start, "timeout_now")
 	msg := transport.NewMessage(transport.MessageTimeoutNow, EncodeTimeoutNow(req))
 	return sendPeerRPC(ctx, p.client, addr, msg, transport.MessageTimeoutNowResponse, DecodeTimeoutNowResponse)
 }
@@ -102,6 +113,8 @@ type Node struct {
 	peers               map[NodeID]string // NodeID -> address, excluding self
 	selfAddr            string            // this node's own dialable address, for Configuration entries other nodes need to resolve it by
 	peerClient          *transport.PeerClient
+	observer            atomic.Pointer[observability.Metrics]
+	logger              atomic.Pointer[slog.Logger]
 	send                sender
 	sendAppend          appendSender
 	sendInstallSnapshot installSnapshotSender
@@ -373,8 +386,14 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 	}
 	bgCtx, bgCancel := context.WithCancel(context.Background())
 	peerClient := transport.NewPeerClient()
-	rpc := &peerRPC{client: peerClient}
-	n := &Node{
+	var n *Node
+	rpc := &peerRPC{client: peerClient, observer: func() *observability.Metrics {
+		if n == nil {
+			return nil
+		}
+		return n.observerMetrics()
+	}}
+	n = &Node{
 		peerClient:          peerClient,
 		id:                  id,
 		store:               store,
@@ -486,6 +505,26 @@ func (n *Node) Close() {
 	n.bgCancel()
 	n.peerClient.Close()
 	n.bgWG.Wait()
+}
+
+// SetObserver attaches observational counters before the node starts serving.
+// Recording never participates in Raft decisions and nil disables it.
+func (n *Node) SetObserver(m *observability.Metrics) {
+	n.store.setObserver(m)
+	n.log.setObserver(m)
+	n.commitStore.setObserver(m)
+	n.snapshotStore.setObserver(m)
+	n.observer.Store(m)
+}
+
+func (n *Node) observerMetrics() *observability.Metrics { return n.observer.Load() }
+
+func (n *Node) SetLogger(logger *slog.Logger) { n.logger.Store(logger) }
+
+func (n *Node) logInfo(event string, args ...any) {
+	if logger := n.logger.Load(); logger != nil {
+		logger.Info(event, append([]any{"event", event}, args...)...)
+	}
 }
 
 // spawnBackgroundLocked registers one more bgWG-tracked background
@@ -832,6 +871,8 @@ func (n *Node) lastLogInfo() (LogIndex, Term) {
 // returned; callers must not treat the step-down as having happened.
 // Must be called with n.mu held.
 func (n *Node) stepDownLocked(newTerm Term) error {
+	oldTerm := n.persistent.CurrentTerm
+	oldRole := n.role
 	prev := n.persistent
 	next := PersistentState{CurrentTerm: newTerm, VotedFor: nil}
 	if err := n.store.Save(next); err != nil {
@@ -841,6 +882,17 @@ func (n *Node) stepDownLocked(newTerm Term) error {
 	n.persistent = next
 	n.stepToFollowerLocked()
 	n.leaderID = nil // a higher term alone doesn't tell us who leads it
+	if m := n.observerMetrics(); m != nil {
+		if newTerm != oldTerm {
+			m.TermChanged()
+		}
+		if oldRole != Follower {
+			m.LeadershipChanged()
+		}
+	}
+	if oldRole != Follower {
+		n.logInfo("became_follower", "term", uint64(newTerm), "role", "Follower")
+	}
 	return nil
 }
 
@@ -875,6 +927,7 @@ func (n *Node) stepToFollowerLocked() {
 // until this node steps down or Close is called. Must be called with
 // n.mu held.
 func (n *Node) becomeLeaderLocked() {
+	oldRole := n.role
 	n.role = Leader
 	self := n.id
 	n.leaderID = &self
@@ -892,6 +945,12 @@ func (n *Node) becomeLeaderLocked() {
 	}
 
 	n.reconcileReplicationWorkersLocked()
+	if oldRole != Leader {
+		if m := n.observerMetrics(); m != nil {
+			m.LeadershipChanged()
+		}
+		n.logInfo("leader_elected", "term", uint64(n.persistent.CurrentTerm), "role", "Leader")
+	}
 
 	// A newly elected leader may be taking over mid-transition (the prior
 	// leader died after a Joint entry committed but before appending the
@@ -1137,6 +1196,11 @@ func (n *Node) startRealElection(ctx context.Context) error {
 		return err
 	}
 	n.persistent = next
+	if m := n.observerMetrics(); m != nil {
+		m.ElectionStarted()
+		m.TermChanged()
+	}
+	n.logInfo("election_started", "term", uint64(newTerm), "role", "Candidate")
 	n.role = Candidate
 	n.leaderID = nil // becoming a candidate means we no longer trust the old leader
 	n.votes = map[NodeID]bool{n.id: true}
