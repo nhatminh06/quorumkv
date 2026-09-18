@@ -101,6 +101,8 @@ func humanClientError(err error) string {
 		return "qkv: operation timed out (see --timeout); outcome is uncertain"
 	case errors.Is(err, context.Canceled):
 		return "qkv: operation canceled"
+	case errors.Is(err, client.ErrClosed):
+		return "qkv: client is closed"
 	default:
 		return "qkv: " + err.Error()
 	}

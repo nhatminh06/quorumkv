@@ -184,9 +184,9 @@ CLI/runbook detail in [operations.md](operations.md).
 - Snapshot creation is manually triggered; no scheduling policy.
 - No repair tooling for corrupted persistent storage — see
   [runbook-failover.md](runbook-failover.md#corrupted-node-storage).
-- Sequential persistent TCP sessions for Raft peers, fresh connections for
-  CLI/client RPCs (see [transport](transport.md)); no
-  request pipelining across proposals beyond the batching in section 7.
+- Sequential persistent TCP sessions for Raft peers and bounded pools of
+  sequential sessions for long-lived external clients; no wire multiplexing.
+  See [client transport performance](client-transport-performance.md).
 - No sharding, no multi-Raft, no transactions, no CAS, no TTL, no
   follower reads, no leader leases.
 
@@ -214,3 +214,8 @@ PUT/DELETE retain stable request identity across their automatic retries.
 GET remains linearizable through server-side `ReadIndex`: seed failover
 only discovers a leader and never enables follower reads. See
 [operations](operations.md) for details.
+
+Each `client.Client` lazily owns up to eight transport sessions per address.
+Concurrent requests use separate checked-out sessions; one connection never
+has more than one in-flight exchange. This transport lifecycle is independent
+of the `ClientID + Sequence` deduplication identity.

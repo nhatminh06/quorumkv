@@ -90,6 +90,9 @@ var (
 	// preserving terminal server-status semantics. GET is safe to retry
 	// as-is, at the caller's discretion.
 	ErrBusy = errors.New("client: server reported it is busy")
+	// ErrClosed means Close has begun and this Client cannot perform more
+	// operations. Active operations are canceled with this error.
+	ErrClosed = transport.ErrClosed
 )
 
 // Client is a leader-aware QuorumKV client seeded with one or more static
@@ -259,6 +262,8 @@ func (c *Client) doWrite(ctx context.Context, req clientproto.Request) error {
 				// key/value) will fail identically on every retry —
 				// terminal, not a transport failure.
 				return sendErr
+			} else if errors.Is(sendErr, transport.ErrClosed) {
+				return ErrClosed
 			} else {
 				// Transport-level failure: previously treated as
 				// unretryable (the outcome on the far end was unknown).

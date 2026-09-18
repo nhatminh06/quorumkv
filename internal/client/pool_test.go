@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -34,6 +35,9 @@ func TestClientReusesConnectionAndClose(t *testing.T) {
 	}
 	if _, _, err := c.Get(context.Background(), []byte("closed")); err == nil {
 		t.Fatal("Get after Close succeeded")
+	}
+	if err := c.Put(context.Background(), []byte("closed"), []byte("value")); !errors.Is(err, ErrClosed) {
+		t.Fatalf("Put after Close = %v, want ErrClosed", err)
 	}
 }
 

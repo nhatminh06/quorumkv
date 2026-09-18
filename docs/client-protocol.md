@@ -157,6 +157,14 @@ loop. It remembers the last address that actually answered as a hint for
 its *next* call, so a healthy cluster typically needs no redirect at all
 after the first request.
 
+The reusable Go client lazily maintains a bounded pool of sequential TCP
+sessions for each contacted address. Valid application statuses preserve
+stream alignment and do not discard a session. Framing/decoding errors,
+connection errors, and cancellation during an exchange do discard it. The
+pool never retries an RPC itself; retry and leader discovery remain in the
+application client. See
+[client-transport-performance.md](client-transport-performance.md).
+
 ## Timeout and failure semantics
 
 A `TIMEOUT` status or a transport-level failure (connection reset, EOF,
