@@ -205,7 +205,13 @@ func BenchmarkThreeNodeMixedReadWrite(b *testing.B) {
 // (typically -benchtime=1x, since each iteration is itself an entire
 // multi-thousand-entry catch-up).
 func BenchmarkFollowerCatchUp(b *testing.B) {
-	const laggingEntries = 5000
+	for _, count := range []int{5000, 10000, 25000} {
+		b.Run(fmt.Sprintf("entries=%d", count), func(b *testing.B) { benchmarkFollowerCatchUp(b, count) })
+	}
+}
+
+func benchmarkFollowerCatchUp(b *testing.B, laggingEntries int) {
+	b.ReportAllocs()
 	value := valueOfSize(256)
 
 	for i := 0; i < b.N; i++ {

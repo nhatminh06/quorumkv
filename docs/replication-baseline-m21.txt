@@ -1,0 +1,69 @@
+goos: linux
+goarch: amd64
+pkg: quorumkv/internal/raft
+cpu: 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz
+BenchmarkReplicationPayload/entries=0/value=0/select-12  	44506984	         2.828 ns/op	       0 B/op	       0 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/select-12  	42156100	         2.879 ns/op	       0 B/op	       0 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/select-12  	42593578	         2.645 ns/op	       0 B/op	       0 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/construct-12         	 1858269	        64.95 ns/op	        52.00 encoded-B	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/construct-12         	 1889718	        64.29 ns/op	        52.00 encoded-B	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/construct-12         	 1848699	        64.60 ns/op	        52.00 encoded-B	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/contended-12         	 1000000	       105.5 ns/op	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/contended-12         	 1000000	       106.2 ns/op	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=0/value=0/contended-12         	 1000000	       106.2 ns/op	      64 B/op	       1 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/select-12           	 2806275	        42.02 ns/op	      64 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/select-12           	 2854226	        41.97 ns/op	      64 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/select-12           	 2778474	        42.23 ns/op	      64 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/construct-12        	  768331	       133.8 ns/op	        81.00 encoded-B	     160 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/construct-12        	  904802	       134.1 ns/op	        81.00 encoded-B	     160 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/construct-12        	  895405	       133.5 ns/op	        81.00 encoded-B	     160 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/contended-12        	  806115	       155.3 ns/op	     160 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/contended-12        	  779750	       158.2 ns/op	     160 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=16/contended-12        	  778069	       157.1 ns/op	     160 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/select-12         	  645873	       187.5 ns/op	    1072 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/select-12         	  648746	       183.1 ns/op	    1072 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/select-12         	  645888	       189.3 ns/op	    1072 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/construct-12      	  281832	       431.9 ns/op	      1089 encoded-B	    2224 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/construct-12      	  262406	       428.9 ns/op	      1089 encoded-B	    2224 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/construct-12      	  249362	       444.5 ns/op	      1089 encoded-B	    2224 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/contended-12      	  189078	       742.9 ns/op	    2224 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/contended-12      	  201446	       633.1 ns/op	    2224 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=1024/contended-12      	  213468	       603.2 ns/op	    2224 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/select-12          	   70401	      1568 ns/op	    3712 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/select-12          	   75068	      1579 ns/op	    3712 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/select-12          	   71782	      1583 ns/op	    3712 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/construct-12       	   43550	      2739 ns/op	      1908 encoded-B	    5760 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/construct-12       	   43537	      2768 ns/op	      1908 encoded-B	    5760 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/construct-12       	   42332	      2733 ns/op	      1908 encoded-B	    5760 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/contended-12       	   43788	      2733 ns/op	    5760 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/contended-12       	   42309	      2732 ns/op	    5760 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=16/contended-12       	   43779	      2728 ns/op	    5760 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/select-12        	   10039	     11844 ns/op	   68224 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/select-12        	    9614	     12030 ns/op	   68224 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/select-12        	   10244	     11948 ns/op	   68224 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/construct-12     	    4804	     21697 ns/op	     66420 encoded-B	  141952 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/construct-12     	    5132	     20852 ns/op	     66420 encoded-B	  141952 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/construct-12     	    4825	     20828 ns/op	     66420 encoded-B	  141952 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/contended-12     	    5082	     24795 ns/op	  141956 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/contended-12     	    4544	     24042 ns/op	  141958 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=1024/contended-12     	    4328	     23637 ns/op	  141957 B/op	      66 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/select-12        	    1084	    107317 ns/op	  518785 B/op	      64 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/select-12        	    1106	    112592 ns/op	  518785 B/op	      64 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/select-12        	     994	    107368 ns/op	  518785 B/op	      64 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/construct-12     	     618	    191043 ns/op	    516967 encoded-B	 1043074 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/construct-12     	     573	    194330 ns/op	    516967 encoded-B	 1043076 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/construct-12     	     604	    189631 ns/op	    516967 encoded-B	 1043074 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/contended-12     	     783	    157350 ns/op	 1043099 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/contended-12     	     715	    168605 ns/op	 1043091 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=64/value=8192/contended-12     	     717	    154783 ns/op	 1043098 B/op	      65 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/select-12       	    3534	     30429 ns/op	  262192 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/select-12       	    4011	     32855 ns/op	  262193 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/select-12       	    4099	     31777 ns/op	  262193 B/op	       2 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/construct-12    	    1893	     62579 ns/op	    262209 encoded-B	  532531 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/construct-12    	    1819	     70800 ns/op	    262209 encoded-B	  532529 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/construct-12    	    1700	     79844 ns/op	    262209 encoded-B	  532530 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/contended-12    	    1514	     66180 ns/op	  532549 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/contended-12    	    1819	     66074 ns/op	  532551 B/op	       3 allocs/op
+BenchmarkReplicationPayload/entries=1/value=262144/contended-12    	    1551	     67389 ns/op	  532552 B/op	       3 allocs/op
+PASS
+ok  	quorumkv/internal/raft	9.238s
