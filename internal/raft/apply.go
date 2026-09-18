@@ -42,7 +42,7 @@ func (n *Node) checkEntryLocked(index LogIndex, term Term) error {
 	if term == 0 {
 		return nil
 	}
-	e, ok := n.log.Entry(index)
+	e, ok := n.log.entryView(index)
 	if !ok || e.Term != term {
 		return ErrEntryLost
 	}
@@ -83,7 +83,7 @@ func (n *Node) applyLoop() {
 			return
 		}
 		nextIndex := n.lastApplied + 1
-		entry, ok := n.log.Entry(nextIndex)
+		entry, ok := n.log.entryView(nextIndex)
 		fn := n.applyFunc
 		n.mu.Unlock()
 
@@ -118,7 +118,7 @@ func (n *Node) applyLoop() {
 		// snapshot always captures state as of exactly the lastApplied
 		// index it claims — never mid-apply, never one command ahead.
 		n.applyMu.Lock()
-		err := fn(nextIndex, entry.Command)
+		err := fn(nextIndex, cloneBytes(entry.Command))
 		n.applyMu.Unlock()
 
 		n.mu.Lock()

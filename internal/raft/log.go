@@ -131,21 +131,26 @@ var ErrCorruptLog = errors.New("raft: corrupt log")
 // generation that reuses unaffected segments. Log is not safe for
 // concurrent use; Node serializes access under its own mutex.
 type Log struct {
-	path          string
-	baseIndex     LogIndex
-	baseTerm      Term
-	entries       []LogEntry
-	segmented     bool
-	generation    uint64
-	activeSegment string
-	activeSize    int64
-	segmentFiles  int
-	appendFsync   time.Duration
-	appendBytes   int
-	rewriteBytes  int
-	observer      atomic.Pointer[observability.Metrics]
-	logger        atomic.Pointer[slog.Logger]
-	recoveredTail bool
+	path      string
+	baseIndex LogIndex
+	baseTerm  Term
+	entries   []LogEntry
+	// segmentBackings owns the immutable raw bytes read for retained
+	// segmented generations. Entries loaded from those segments may point
+	// into these buffers; mutation paths materialize owned commands before
+	// replacing or rewriting the logical log.
+	segmentBackings [][]byte
+	segmented       bool
+	generation      uint64
+	activeSegment   string
+	activeSize      int64
+	segmentFiles    int
+	appendFsync     time.Duration
+	appendBytes     int
+	rewriteBytes    int
+	observer        atomic.Pointer[observability.Metrics]
+	logger          atomic.Pointer[slog.Logger]
+	recoveredTail   bool
 }
 
 func (l *Log) setObserver(m *observability.Metrics) { l.observer.Store(m) }
@@ -357,11 +362,21 @@ func (l *Log) Term(index LogIndex) (term Term, ok bool) {
 	return l.entries[index-l.baseIndex-1].Term, true
 }
 
-// Entry returns the entry at index. ok is false if it doesn't exist or
-// index is at or before the compaction boundary — the command bytes at
-// BaseIndex() are not retained after compaction; only its index/term are
-// (via Term).
+// Entry returns a defensive copy of the entry at index. ok is false if it
+// doesn't exist or index is at or before the compaction boundary — the
+// command bytes at BaseIndex() are not retained after compaction; only its
+// index/term are (via Term).
 func (l *Log) Entry(index LogIndex) (LogEntry, bool) {
+	if index <= l.baseIndex || index > l.LastIndex() {
+		return LogEntry{}, false
+	}
+	return cloneEntry(l.entries[index-l.baseIndex-1]), true
+}
+
+// entryView returns a borrowed entry for internal callers that already hold
+// the log's synchronization. Its Command must not be mutated or retained
+// past that synchronization boundary.
+func (l *Log) entryView(index LogIndex) (LogEntry, bool) {
 	if index <= l.baseIndex || index > l.LastIndex() {
 		return LogEntry{}, false
 	}
@@ -440,9 +455,13 @@ func (l *Log) entriesRangeView(from LogIndex, maxEntries int, maxEncodedBytes in
 func cloneEntries(entries []LogEntry) []LogEntry {
 	out := make([]LogEntry, len(entries))
 	for i, e := range entries {
-		out[i] = LogEntry{Term: e.Term, Kind: e.Kind, Command: cloneBytes(e.Command)}
+		out[i] = cloneEntry(e)
 	}
 	return out
+}
+
+func cloneEntry(e LogEntry) LogEntry {
+	return LogEntry{Term: e.Term, Kind: e.Kind, Command: cloneBytes(e.Command)}
 }
 
 func equalLogEntries(a, b []LogEntry) bool {

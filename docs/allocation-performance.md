@@ -6,6 +6,11 @@ are in `allocation-baseline-m20.txt` and `allocation-after-m21.txt`; unchanged
 service results are in `service-benchmark-m21.txt`, with longer GET/mixed runs
 in `service-benchmark-m21-long.txt`.
 
+Milestone 23 removes the startup-only command clone from segmented-log
+scanning by retaining immutable segment buffers. Startup allocation and
+retained-memory results are recorded in
+[startup-memory-performance.md](startup-memory-performance.md).
+
 ## Baseline and profiles
 
 The M20 baseline was measured from merge commit `b3dfe96` in an isolated

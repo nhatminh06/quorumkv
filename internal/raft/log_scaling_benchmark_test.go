@@ -106,6 +106,42 @@ func BenchmarkRaftLogScalingAppendOne(b *testing.B) {
 	}
 }
 
+func BenchmarkRaftLogStartup(b *testing.B) {
+	for _, commandBytes := range []int{16, 1024, 16 * 1024} {
+		counts := []int{1000, 10000, 50000, 100000}
+		if commandBytes == 16*1024 {
+			counts = []int{1000, 10000}
+		}
+		for _, count := range counts {
+			b.Run(fmt.Sprintf("entries=%d/value=%dB", count, commandBytes), func(b *testing.B) {
+				_, path, _ := preparedScalingLog(b, count, commandBytes)
+				b.ReportAllocs()
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					opened, err := OpenLog(path)
+					if err != nil {
+						b.Fatal(err)
+					}
+					if i == 0 {
+						b.ReportMetric(float64(len(opened.entries)), "retained-entries")
+						b.ReportMetric(float64(len(opened.segmentBackings)), "segment-backings")
+						b.ReportMetric(float64(opened.LastIndex()-opened.BaseIndex()), "entry-count")
+						var backingBytes, commandBytes int
+						for _, backing := range opened.segmentBackings {
+							backingBytes += len(backing)
+						}
+						for _, entry := range opened.entries {
+							commandBytes += len(entry.Command)
+						}
+						b.ReportMetric(float64(backingBytes), "retained-backing-B")
+						b.ReportMetric(float64(commandBytes), "retained-command-B")
+					}
+				}
+			})
+		}
+	}
+}
+
 func BenchmarkRaftLogScalingMutations(b *testing.B) {
 	const commandBytes = 1024
 	for _, count := range persistenceScaleEntries {

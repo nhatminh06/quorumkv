@@ -111,10 +111,13 @@ are reused.
 Startup validates the manifest checksum and version, enumerates segment names
 in index order, verifies that each filename matches its header start index,
 and rejects gaps and overlaps. It validates record bounds, entry kinds, and
-checksums while reconstructing the existing decoded in-memory representation.
+checksums while reconstructing the in-memory representation.
 Readers and replication workers continue to use `BaseIndex`, `BaseTerm`,
 `LastIndex`, `LastTerm`, `Term`, `Entry`, and `EntriesRange`; physical segments
-do not enter the Raft API.
+do not enter the Raft API. M23 retains immutable raw segment buffers behind
+compact metadata; safe public entry APIs still return copies, and rewrites
+materialize surviving commands before old backing references are released. See
+[startup-memory-performance.md](startup-memory-performance.md).
 
 Only an incomplete final active record is recoverable. Missing segments,
 overlaps, filename/header mismatch, unsupported versions, invalid lengths,
