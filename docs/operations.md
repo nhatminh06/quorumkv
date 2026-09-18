@@ -87,6 +87,11 @@ cluster's dedup table is concerned — see
 [request-dedup.md](request-dedup.md). Within a single invocation, automatic
 write retries retain the same request identity.
 
+The reusable Go `client.Client` benefits from bounded persistent connection
+reuse and should be closed when no longer needed. Separate one-shot `qkv`
+invocations cannot share TCP connections; redirects and retries within one
+client lifetime still use its pool.
+
 ### put / get / delete
 
 ```bash

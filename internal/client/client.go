@@ -90,6 +90,9 @@ var (
 	// preserving terminal server-status semantics. GET is safe to retry
 	// as-is, at the caller's discretion.
 	ErrBusy = errors.New("client: server reported it is busy")
+	// ErrClosed means Close has begun and this Client cannot perform more
+	// operations. Active operations are canceled with this error.
+	ErrClosed = transport.ErrClosed
 )
 
 // Client is a leader-aware QuorumKV client seeded with one or more static
@@ -101,6 +104,7 @@ var (
 type Client struct {
 	id    reqid.ClientID
 	seeds []string
+	pool  *transport.PoolClient
 
 	mu sync.Mutex
 	// leader is the last address that answered OK or gave a redirect
@@ -138,6 +142,10 @@ func New(seedAddrs ...string) *Client {
 // starting sequence. id must be non-zero (the all-zero ClientID is
 // reserved invalid).
 func NewWithID(id reqid.ClientID, seedAddrs ...string) *Client {
+	return newWithIDAndPoolWidth(id, transport.DefaultClientPoolWidth, seedAddrs...)
+}
+
+func newWithIDAndPoolWidth(id reqid.ClientID, width int, seedAddrs ...string) *Client {
 	if id.IsZero() {
 		panic("client: NewWithID called with the reserved all-zero ClientID")
 	}
@@ -146,11 +154,18 @@ func NewWithID(id reqid.ClientID, seedAddrs ...string) *Client {
 	if len(seeds) > 0 {
 		leader = seeds[0]
 	}
-	return &Client{id: id, seeds: seeds, leader: leader, nextSeq: 1}
+	return &Client{id: id, seeds: seeds, leader: leader, nextSeq: 1, pool: transport.NewPoolClient(width)}
 }
 
 // ID returns this Client's ClientID.
 func (c *Client) ID() reqid.ClientID { return c.id }
+
+// Stats returns an observational snapshot of this client's connection pool.
+func (c *Client) Stats() transport.ClientStats { return c.pool.Stats() }
+
+// Close shuts down active exchanges, wakes pool waiters, and closes retained
+// sockets. It is safe to call concurrently and more than once.
+func (c *Client) Close() error { return c.pool.Close() }
 
 func (c *Client) Put(ctx context.Context, key, value []byte) error {
 	return c.write(ctx, clientproto.OpPut, key, value)
@@ -247,6 +262,8 @@ func (c *Client) doWrite(ctx context.Context, req clientproto.Request) error {
 				// key/value) will fail identically on every retry —
 				// terminal, not a transport failure.
 				return sendErr
+			} else if errors.Is(sendErr, transport.ErrClosed) {
+				return ErrClosed
 			} else {
 				// Transport-level failure: previously treated as
 				// unretryable (the outcome on the far end was unknown).
@@ -367,7 +384,13 @@ func (c *Client) attempt(ctx context.Context, addr string, req clientproto.Reque
 	if err != nil {
 		return clientproto.Response{}, fmt.Errorf("%w: %v", ErrBadRequest, err)
 	}
-	respMsg, err := transport.Send(ctx, addr, transport.NewMessage(transport.MessageClientRequest, payload))
+	respMsg, err := c.pool.Send(ctx, addr, transport.NewMessage(transport.MessageClientRequest, payload), func(m transport.Message) error {
+		if m.Type != transport.MessageClientResponse {
+			return fmt.Errorf("client: unexpected response type %d", m.Type)
+		}
+		_, err := clientproto.DecodeResponse(m.Payload)
+		return err
+	})
 	if err != nil {
 		return clientproto.Response{}, err
 	}

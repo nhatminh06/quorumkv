@@ -24,6 +24,14 @@ latency overhead, with idle and concurrent-update metric scrapes taking about
 scrape size, commands, and profile findings are recorded in
 [observability.md](observability.md#instrumentation-overhead).
 
+Milestone 19 follows M18's profile evidence by replacing fresh external
+client connections with an eight-session-per-address bounded pool. Focused
+long-lived-client workloads improved by 70-79%, established service workloads
+improved by 4-24%, and 1,000 sequential requests used one connection instead
+of 1,000. Pool-width evidence, tail latency, connection counts, CPU profiles,
+and the one-shot redirect regression are recorded in
+[client-transport-performance.md](client-transport-performance.md).
+
 ## Environment
 
 ```text
