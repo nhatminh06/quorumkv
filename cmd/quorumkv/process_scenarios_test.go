@@ -261,12 +261,12 @@ func TestRealProcessFailover(t *testing.T) {
 	survivors := survivorAddrs(addrs, leaderID)
 	waitForAnyLeader(t, qkvPath, survivors, 10*time.Second)
 
-	getXArgs := append(append([]string{}, addrJoin(survivors, "--addr")...), "get", "x")
+	getXArgs := append(append([]string{}, addrJoin(survivors, "--addr")...), "--timeout", "10s", "get", "x")
 	out, _, code := runQkv(t, qkvPath, getXArgs...)
 	if code != 0 || strings.TrimSpace(out) != "1" {
 		t.Fatalf("get x after failover: code=%d out=%q", code, out)
 	}
-	putYArgs := append(append([]string{}, addrJoin(survivors, "--addr")...), "put", "y", "2")
+	putYArgs := append(append([]string{}, addrJoin(survivors, "--addr")...), "--timeout", "10s", "put", "y", "2")
 	if out, _, code := runQkv(t, qkvPath, putYArgs...); code != 0 {
 		t.Fatalf("put y=2 after failover: code=%d out=%q", code, out)
 	}
