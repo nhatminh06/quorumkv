@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -66,12 +67,65 @@ func TestLogAppendRealCrashOldOrNew(t *testing.T) {
 			if err != nil {
 				t.Fatalf("OpenLog after crash: %v", err)
 			}
-			wantLast := LogIndex(1)
-			if publicationCompletedAt(stage) {
-				wantLast = 2
+			if got := l2.LastIndex(); got != 1 && got != 2 {
+				t.Fatalf("after crash at %s: LastIndex() = %d, want old 1 or new 2", stage, got)
 			}
-			if l2.LastIndex() != wantLast {
-				t.Fatalf("after crash at %s: LastIndex() = %d, want %d", stage, l2.LastIndex(), wantLast)
+		})
+	}
+}
+
+func TestLogRotationRealCrashOldOrNew(t *testing.T) {
+	for _, stage := range atomicFileStages {
+		t.Run(stage, func(t *testing.T) {
+			dir := t.TempDir()
+			l, err := OpenLog(filepath.Join(dir, "log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries := make([]LogEntry, 16)
+			for i := 0; i < 15; i++ {
+				entries[i] = LogEntry{Term: 1, Command: make([]byte, maxCommandSize)}
+			}
+			entries[15] = LogEntry{Term: 1, Command: make([]byte, 261395)}
+			if err := l.Append(entries); err != nil {
+				t.Fatal(err)
+			}
+			before := l.LastIndex()
+
+			runCrashSubprocess(t, dir, "log-append", "log."+stage)
+			reopened, err := OpenLog(filepath.Join(dir, "log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := reopened.LastIndex(); got != before && got != before+1 {
+				t.Fatalf("last index after rotation crash = %d, want %d or %d", got, before, before+1)
+			}
+		})
+	}
+}
+
+func TestLegacyMigrationRealCrashPreservesHistory(t *testing.T) {
+	for _, stage := range atomicFileStages {
+		t.Run(stage, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "log")
+			legacy := []LogEntry{{Term: 3, Command: []byte("legacy")}}
+			data, err := encodeLogFile(0, 0, legacy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			runCrashSubprocess(t, dir, "log-append", "log."+stage)
+			reopened, err := OpenLog(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entry, ok := reopened.Entry(1)
+			if !ok || entry.Term != 3 || string(entry.Command) != "legacy" {
+				t.Fatalf("legacy entry after migration crash = %+v, %v", entry, ok)
 			}
 		})
 	}

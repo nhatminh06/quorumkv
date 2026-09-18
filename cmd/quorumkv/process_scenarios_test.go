@@ -1,13 +1,18 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"quorumkv/internal/client"
 )
 
 func TestRealProcessObservabilityEndpoints(t *testing.T) {
@@ -49,6 +54,72 @@ func TestRealProcessObservabilityEndpoints(t *testing.T) {
 	}
 	if output := n.output(); !strings.Contains(output, `"event":"node_started"`) || !strings.Contains(output, `"level":"INFO"`) {
 		t.Fatalf("structured lifecycle log missing:\n%s", output)
+	}
+}
+
+func TestRealProcessLargeFollowerCatchUpAndRestart(t *testing.T) {
+	quorumkvPath, qkvPath := buildBinaries(t)
+	dataRoot := t.TempDir()
+	addrs := threeNodeAddrs(t)
+	nodes := make(map[int]*nodeProcess, 3)
+	for _, id := range []int{1, 2, 3} {
+		nodes[id] = startNode(t, quorumkvPath, id, addrs[id], fmt.Sprintf("%s/node%d", dataRoot, id), peersFor(addrs, id))
+	}
+	t.Cleanup(func() {
+		for _, node := range nodes {
+			node.kill(t)
+		}
+	})
+	waitForAnyLeader(t, qkvPath, []string{addrs[1], addrs[2], addrs[3]}, 10*time.Second)
+	leaderID := findLeaderID(t, qkvPath, addrs)
+	followerID := leaderID%3 + 1
+
+	c := client.New(addrs[1], addrs[2], addrs[3])
+	defer c.Close()
+	value := bytes.Repeat([]byte("v"), 8*1024)
+	putRange := func(from, to int) {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		for i := from; i < to; i++ {
+			if err := c.Put(ctx, []byte(fmt.Sprintf("large-%04d", i)), value); err != nil {
+				t.Fatalf("put %d: %v", i, err)
+			}
+		}
+	}
+	putRange(0, 100)
+	nodes[followerID].kill(t)
+	putRange(100, 800)
+
+	waitCaughtUp := func() {
+		t.Helper()
+		if !waitFor(t, 30*time.Second, func() bool {
+			out, _, code := runQkv(t, qkvPath, "--addr", addrs[followerID], "--timeout", "1s", "status")
+			return code == 0 && lastAppliedAtLeast(out, 800)
+		}) {
+			t.Fatalf("node %d did not catch up; log:\n%s", followerID, nodes[followerID].output())
+		}
+	}
+	nodes[followerID].launch(t)
+	waitCaughtUp()
+	segments, err := filepath.Glob(fmt.Sprintf("%s/node%d/log.segments/*/*.seg", dataRoot, followerID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(segments) < 2 {
+		t.Fatalf("large catch-up created %d segment files, want multiple", len(segments))
+	}
+	nodes[followerID].kill(t)
+	nodes[followerID].launch(t)
+	waitCaughtUp()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, index := range []int{0, 799} {
+		got, found, err := c.Get(ctx, []byte(fmt.Sprintf("large-%04d", index)))
+		if err != nil || !found || !bytes.Equal(got, value) {
+			t.Fatalf("get %d after catch-up restart: found=%v err=%v bytes=%d", index, found, err, len(got))
+		}
 	}
 }
 

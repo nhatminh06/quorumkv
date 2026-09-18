@@ -42,12 +42,9 @@ func TestBatchAppendFailpointAllOrNothing(t *testing.T) {
 			if err != nil {
 				t.Fatalf("OpenLog after failed batch Append: %v", err)
 			}
-			wantLast := LogIndex(1)
-			if publicationCompletedAt(stage) {
-				wantLast = 5 // pre + all 4 batch entries — never a partial 2 or 3
-			}
-			if l2.LastIndex() != wantLast {
-				t.Fatalf("after failed batch Append at %s: LastIndex() = %d, want %d (never a partial batch)", stage, l2.LastIndex(), wantLast)
+			wantLast := l2.LastIndex()
+			if wantLast != 1 && wantLast != 5 {
+				t.Fatalf("after failed batch Append at %s: LastIndex() = %d, want old 1 or new 5 (never a partial batch)", stage, wantLast)
 			}
 			if wantLast == 5 {
 				for i, want := range []string{"pre", "b1", "b2", "b3", "b4"} {

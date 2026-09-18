@@ -1,10 +1,12 @@
 package raft
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"log/slog"
 	"os"
 	"sync/atomic"
 	"time"
@@ -89,8 +91,8 @@ var logFileMagic = [4]byte{'R', 'L', 'G', '1'}
 // needed once EntryConfiguration exists (a configuration entry's payload
 // can't be told apart from an application command by content alone).
 // All three versions remain readable so existing repositories load
-// correctly; a subsequent rewrite always upgrades the file to the
-// current version.
+// correctly; the first subsequent mutation migrates it to segmented
+// storage.
 const (
 	logFileVersion1 = 1
 	logFileVersion2 = 2
@@ -118,33 +120,55 @@ const (
 	logV3HeaderSize = logV2HeaderSize
 )
 
-// ErrCorruptLog indicates the log file exists but failed validation. The
-// file is always rewritten atomically as a whole (see atomicWriteFile), so
-// unlike Milestone 1's append-only WAL there is no legitimate "torn tail"
-// case to tolerate here: any structural problem — short read, bad
-// checksum, an inconsistent or oversized declared length — means the file
-// was corrupted, and is rejected outright rather than silently repaired
-// or reset to empty.
+// ErrCorruptLog indicates that persistent log data failed validation.
+// Segmented storage recovers an incomplete record only at the active
+// segment tail. Invalid complete records, sealed-segment truncation, gaps,
+// overlaps, and invalid metadata remain hard errors.
 var ErrCorruptLog = errors.New("raft: corrupt log")
 
-// Log is a node's persistent Raft log, rewritten atomically on every
-// mutation (Append, TruncateAndAppend, or Compact). Log is not safe for
-// concurrent use; Node serializes access to it under its own mutex, the
-// same convention used for Store.
+// Log is a node's persistent segmented Raft log. Ordinary appends extend
+// the active segment; truncation and compaction atomically publish a new
+// generation that reuses unaffected segments. Log is not safe for
+// concurrent use; Node serializes access under its own mutex.
 type Log struct {
-	path      string
-	baseIndex LogIndex
-	baseTerm  Term
-	entries   []LogEntry
-	observer  atomic.Pointer[observability.Metrics]
+	path          string
+	baseIndex     LogIndex
+	baseTerm      Term
+	entries       []LogEntry
+	segmented     bool
+	generation    uint64
+	activeSegment string
+	activeSize    int64
+	segmentFiles  int
+	appendFsync   time.Duration
+	appendBytes   int
+	rewriteBytes  int
+	observer      atomic.Pointer[observability.Metrics]
+	logger        atomic.Pointer[slog.Logger]
+	recoveredTail bool
 }
 
 func (l *Log) setObserver(m *observability.Metrics) { l.observer.Store(m) }
+func (l *Log) setLogger(logger *slog.Logger) {
+	l.logger.Store(logger)
+	if logger != nil && l.recoveredTail {
+		logger.Info("raft_log_recovered_torn_tail", "event", "raft_log_recovered_torn_tail")
+		l.recoveredTail = false
+	}
+}
+func (l *Log) logInfo(event string, args ...any) {
+	if logger := l.logger.Load(); logger != nil {
+		logger.Info(event, append([]any{"event", event}, args...)...)
+	}
+}
 
 // OpenLog loads the log at path. A missing file means a brand-new node's
 // empty log (baseIndex 0, baseTerm 0, no entries). An existing-but-invalid
 // file returns ErrCorruptLog.
 func OpenLog(path string) (*Log, error) {
+	if log, found, err := openSegmentedLog(path); found {
+		return log, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -288,13 +312,9 @@ func encodeLogFile(baseIndex LogIndex, baseTerm Term, entries []LogEntry) ([]byt
 
 func (l *Log) rewrite() error {
 	start := time.Now()
-	data, err := encodeLogFile(l.baseIndex, l.baseTerm, l.entries)
-	if err != nil {
-		return err
-	}
-	err, fsync := atomicWriteFileMeasured("log", l.path, data)
+	err := l.rewriteSegmented()
 	if m := l.observer.Load(); m != nil {
-		m.RecordPersistence("log", len(data), time.Since(start), fsync)
+		m.RecordPersistence("log", l.rewriteBytes, time.Since(start), 0)
 	}
 	return err
 }
@@ -413,17 +433,50 @@ func cloneEntries(entries []LogEntry) []LogEntry {
 	return out
 }
 
+func equalLogEntries(a, b []LogEntry) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Term != b[i].Term || a[i].Kind != b[i].Kind || !bytes.Equal(a[i].Command, b[i].Command) {
+			return false
+		}
+	}
+	return true
+}
+
 // Append adds entries to the tail of the log and persists the result
 // before returning. On failure the log is left exactly as it was.
 func (l *Log) Append(entries []LogEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
-	prev := l.entries
-	l.entries = append(append([]LogEntry{}, l.entries...), cloneEntries(entries)...)
-	if err := l.rewrite(); err != nil {
-		l.entries = prev
+	migrated := !l.segmented
+	if migrated {
+		if err := l.rewriteSegmented(); err != nil {
+			return err
+		}
+		l.logInfo("raft_log_migrated")
+	}
+	previousSegment := l.activeSegment
+	start := time.Now()
+	if err := l.appendSegmented(entries); err != nil {
 		return err
+	}
+	if m := l.observer.Load(); m != nil {
+		var bytes int
+		for _, entry := range entries {
+			bytes += logLengthPrefixSize + logEntryHeaderSizeV3 + len(entry.Command) + logChecksumSize
+		}
+		m.RecordPersistence("log", bytes, time.Since(start), l.appendFsync)
+		m.RecordRaftLogWrite(bytes, l.appendBytes)
+		if previousSegment != l.activeSegment {
+			m.RaftLogRotated()
+		}
+		m.SetRaftLogSegments(int64(l.segmentCount()))
+	}
+	if previousSegment != l.activeSegment {
+		l.logInfo("raft_log_segment_rotated", "segments", l.segmentCount())
 	}
 	return nil
 }
@@ -438,6 +491,9 @@ func (l *Log) TruncateAndAppend(fromIndex LogIndex, entries []LogEntry) error {
 	if fromIndex <= l.baseIndex {
 		fromIndex = l.baseIndex + 1
 	}
+	if fromIndex == l.LastIndex()+1 {
+		return l.Append(entries)
+	}
 	prev := l.entries
 	physIdx := int(fromIndex - l.baseIndex - 1)
 	var kept []LogEntry
@@ -451,6 +507,11 @@ func (l *Log) TruncateAndAppend(fromIndex LogIndex, entries []LogEntry) error {
 		l.entries = prev
 		return err
 	}
+	if m := l.observer.Load(); m != nil {
+		m.RaftLogTruncated()
+		m.SetRaftLogSegments(int64(l.segmentCount()))
+	}
+	l.logInfo("raft_log_truncated", "from_index", uint64(fromIndex), "last_index", uint64(l.LastIndex()))
 	return nil
 }
 
@@ -481,6 +542,11 @@ func (l *Log) Compact(newBaseIndex LogIndex, newBaseTerm Term) error {
 		l.baseIndex, l.baseTerm, l.entries = prevBaseIndex, prevBaseTerm, prevEntries
 		return err
 	}
+	if m := l.observer.Load(); m != nil {
+		m.RaftLogTruncated()
+		m.SetRaftLogSegments(int64(l.segmentCount()))
+	}
+	l.logInfo("raft_log_compacted", "base_index", uint64(newBaseIndex), "segments", l.segmentCount())
 	return nil
 }
 

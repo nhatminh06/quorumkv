@@ -519,7 +519,10 @@ func (n *Node) SetObserver(m *observability.Metrics) {
 
 func (n *Node) observerMetrics() *observability.Metrics { return n.observer.Load() }
 
-func (n *Node) SetLogger(logger *slog.Logger) { n.logger.Store(logger) }
+func (n *Node) SetLogger(logger *slog.Logger) {
+	n.log.setLogger(logger)
+	n.logger.Store(logger)
+}
 
 func (n *Node) logInfo(event string, args ...any) {
 	if logger := n.logger.Load(); logger != nil {

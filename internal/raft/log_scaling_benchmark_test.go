@@ -39,6 +39,11 @@ func preparedScalingLog(b *testing.B, count, commandBytes int) (*Log, string, in
 	if err != nil {
 		b.Fatal(err)
 	}
+	if !log.segmented {
+		if err := log.rewriteSegmented(); err != nil {
+			b.Fatal(err)
+		}
+	}
 	return log, path, int64(len(data))
 }
 
@@ -64,16 +69,12 @@ func metricSum(b *testing.B, metrics *observability.Metrics, prefix string) floa
 	return 0
 }
 
-func reportMutation(b *testing.B, metrics *observability.Metrics, path string, logicalBytes int64) {
+func reportMutation(b *testing.B, metrics *observability.Metrics, logicalBytes int64) {
 	b.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		b.Fatal(err)
-	}
-	physical := info.Size()
+	physical := metricSum(b, metrics, "quorumkv_raft_log_physical_bytes_written_total")
 	b.ReportMetric(float64(logicalBytes), "logical-B")
-	b.ReportMetric(float64(physical), "physical-B")
-	b.ReportMetric(float64(physical)/float64(logicalBytes), "write-amplification")
+	b.ReportMetric(physical, "physical-B")
+	b.ReportMetric(physical/float64(logicalBytes), "write-amplification")
 	b.ReportMetric(metricSum(b, metrics, "quorumkv_persistence_duration_seconds_sum{domain=\"log\"}")*1e9, "persist-ns")
 	b.ReportMetric(metricSum(b, metrics, "quorumkv_persistence_fsync_duration_seconds_sum{domain=\"log\"}")*1e9, "fsync-ns")
 }
@@ -86,7 +87,7 @@ func BenchmarkRaftLogScalingAppendOne(b *testing.B) {
 		}
 		for _, count := range counts {
 			b.Run(fmt.Sprintf("entries=%d/value=%dB", count, commandBytes), func(b *testing.B) {
-				log, path, _ := preparedScalingLog(b, count, commandBytes)
+				log, _, _ := preparedScalingLog(b, count, commandBytes)
 				metrics := observability.New()
 				log.setObserver(metrics)
 				entry := LogEntry{Term: 99, Command: make([]byte, commandBytes)}
@@ -99,7 +100,7 @@ func BenchmarkRaftLogScalingAppendOne(b *testing.B) {
 					}
 				}
 				b.StopTimer()
-				reportMutation(b, metrics, path, logical*int64(b.N))
+				reportMutation(b, metrics, logical*int64(b.N))
 			})
 		}
 	}
@@ -109,7 +110,7 @@ func BenchmarkRaftLogScalingMutations(b *testing.B) {
 	const commandBytes = 1024
 	for _, count := range persistenceScaleEntries {
 		b.Run(fmt.Sprintf("append-batch/entries=%d", count), func(b *testing.B) {
-			log, path, _ := preparedScalingLog(b, count, commandBytes)
+			log, _, _ := preparedScalingLog(b, count, commandBytes)
 			metrics := observability.New()
 			log.setObserver(metrics)
 			batch := scalingEntries(64, commandBytes)
@@ -120,10 +121,10 @@ func BenchmarkRaftLogScalingMutations(b *testing.B) {
 				b.Fatal(err)
 			}
 			b.StopTimer()
-			reportMutation(b, metrics, path, logical)
+			reportMutation(b, metrics, logical)
 		})
 		b.Run(fmt.Sprintf("truncate-tail/entries=%d", count), func(b *testing.B) {
-			log, path, _ := preparedScalingLog(b, count, commandBytes)
+			log, _, _ := preparedScalingLog(b, count, commandBytes)
 			metrics := observability.New()
 			log.setObserver(metrics)
 			replacement := scalingEntries(10, commandBytes)
@@ -134,10 +135,10 @@ func BenchmarkRaftLogScalingMutations(b *testing.B) {
 				b.Fatal(err)
 			}
 			b.StopTimer()
-			reportMutation(b, metrics, path, logical)
+			reportMutation(b, metrics, logical)
 		})
 		b.Run(fmt.Sprintf("truncate-deep/entries=%d", count), func(b *testing.B) {
-			log, path, _ := preparedScalingLog(b, count, commandBytes)
+			log, _, _ := preparedScalingLog(b, count, commandBytes)
 			metrics := observability.New()
 			log.setObserver(metrics)
 			replacement := scalingEntries(10, commandBytes)
@@ -148,10 +149,10 @@ func BenchmarkRaftLogScalingMutations(b *testing.B) {
 				b.Fatal(err)
 			}
 			b.StopTimer()
-			reportMutation(b, metrics, path, logical)
+			reportMutation(b, metrics, logical)
 		})
 		b.Run(fmt.Sprintf("compact/entries=%d", count), func(b *testing.B) {
-			log, path, _ := preparedScalingLog(b, count, commandBytes)
+			log, _, _ := preparedScalingLog(b, count, commandBytes)
 			metrics := observability.New()
 			log.setObserver(metrics)
 			base := LogIndex(count / 2)
@@ -162,7 +163,7 @@ func BenchmarkRaftLogScalingMutations(b *testing.B) {
 				b.Fatal(err)
 			}
 			b.StopTimer()
-			reportMutation(b, metrics, path, 16)
+			reportMutation(b, metrics, 16)
 		})
 	}
 }
@@ -228,11 +229,12 @@ func BenchmarkFollowerLogPersistenceCatchUp(b *testing.B) {
 			elapsed := b.Elapsed()
 			b.ReportMetric(float64(count)/elapsed.Seconds(), "entries/sec")
 			b.ReportMetric(float64(logical)/elapsed.Seconds(), "logical-B/sec")
-			b.ReportMetric(metricSum(b, metrics, "quorumkv_persistence_bytes_total{domain=\"log\"}"), "physical-B")
+			physical := metricSum(b, metrics, "quorumkv_raft_log_physical_bytes_written_total")
+			b.ReportMetric(physical, "physical-B")
 			b.ReportMetric(metricSum(b, metrics, "quorumkv_persistence_writes_total{domain=\"log\"}"), "log-writes")
 			b.ReportMetric(metricSum(b, metrics, "quorumkv_persistence_duration_seconds_sum{domain=\"log\"}")*1e9, "persist-ns")
 			b.ReportMetric(metricSum(b, metrics, "quorumkv_persistence_fsync_duration_seconds_sum{domain=\"log\"}")*1e9, "fsync-ns")
-			b.ReportMetric(metricSum(b, metrics, "quorumkv_persistence_bytes_total{domain=\"log\"}")/float64(logical), "write-amplification")
+			b.ReportMetric(physical/float64(logical), "write-amplification")
 		})
 	}
 }
