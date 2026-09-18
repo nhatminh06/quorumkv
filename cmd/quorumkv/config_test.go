@@ -1,12 +1,17 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseNodeConfigValid(t *testing.T) {
 	cfg, err := parseNodeConfig([]string{
 		"--id", "1",
 		"--listen", "127.0.0.1:7001",
 		"--data", "/tmp/data1",
+		"--metrics-listen", "127.0.0.1:9101",
+		"--log-level", "debug",
 		"--peer", "2=127.0.0.1:7002",
 		"--peer", "3=127.0.0.1:7003",
 	})
@@ -16,8 +21,18 @@ func TestParseNodeConfigValid(t *testing.T) {
 	if cfg.id != 1 || cfg.listen != "127.0.0.1:7001" || cfg.data != "/tmp/data1" {
 		t.Fatalf("cfg = %+v, want id=1 listen=127.0.0.1:7001 data=/tmp/data1", cfg)
 	}
+	if cfg.metricsListen != "127.0.0.1:9101" || cfg.logLevel != "debug" {
+		t.Fatalf("observability config = %+v", cfg)
+	}
 	if len(cfg.peers) != 2 || cfg.peers[2] != "127.0.0.1:7002" || cfg.peers[3] != "127.0.0.1:7003" {
 		t.Fatalf("cfg.peers = %v, want {2:127.0.0.1:7002, 3:127.0.0.1:7003}", cfg.peers)
+	}
+}
+
+func TestParseNodeConfigRejectsInvalidLogLevel(t *testing.T) {
+	_, err := parseNodeConfig([]string{"--id", "1", "--listen", "127.0.0.1:7001", "--data", "/tmp/data1", "--log-level", "verbose"})
+	if err == nil || !strings.Contains(err.Error(), "invalid --log-level") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

@@ -2,11 +2,55 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestRealProcessObservabilityEndpoints(t *testing.T) {
+	quorumkvPath, qkvPath := buildBinaries(t)
+	nodeAddr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	metricsAddr := fmt.Sprintf("127.0.0.1:%d", freePort(t))
+	n := &nodeProcess{
+		id: 1, addr: nodeAddr, dataDir: t.TempDir(), binPath: quorumkvPath,
+		args: []string{"node", "--id", "1", "--listen", nodeAddr, "--metrics-listen", metricsAddr, "--log-level", "debug", "--data", t.TempDir()},
+		out:  &lockedBuffer{},
+	}
+	n.launch(t)
+	t.Cleanup(func() { n.stopGracefully(t) })
+	waitForAnyLeader(t, qkvPath, []string{nodeAddr}, 10*time.Second)
+	if out, stderr, code := runQkv(t, qkvPath, "--addr", nodeAddr, "put", "observed", "value"); code != 0 {
+		t.Fatalf("put: code=%d out=%q stderr=%q", code, out, stderr)
+	}
+	client := &http.Client{Timeout: 2 * time.Second}
+	for _, path := range []string{"/healthz", "/readyz", "/metrics"} {
+		var resp *http.Response
+		if !waitFor(t, 5*time.Second, func() bool { var err error; resp, err = client.Get("http://" + metricsAddr + path); return err == nil }) {
+			t.Fatalf("%s unavailable; node log:\n%s", path, n.output())
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: code=%d body=%q", path, resp.StatusCode, body)
+		}
+		if path == "/metrics" {
+			for _, name := range []string{"quorumkv_raft_term", "quorumkv_requests_total", "quorumkv_persistence_duration_seconds"} {
+				if !strings.Contains(string(body), name) {
+					t.Errorf("metrics missing %s", name)
+				}
+			}
+		}
+	}
+	if output := n.output(); !strings.Contains(output, `"event":"node_started"`) || !strings.Contains(output, `"level":"INFO"`) {
+		t.Fatalf("structured lifecycle log missing:\n%s", output)
+	}
+}
 
 // threeNodeAddrs picks 3 free loopback ports and returns each node's own
 // address plus its peer map.
