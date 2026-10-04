@@ -222,10 +222,12 @@ new worker model, and the InstallSnapshot handoff, were also covered
 there. The observational stats surface was not extended to replication
 in M14 either — still proposal admission/batching only.
 
-The deterministic load/stress test matrix beyond `overload_test.go`
-(items 130-133 of Milestone 13's own spec — a combined 32-client stress
-test, a one-follower-down load test, a leader-failover-under-load test)
-remains undone; it was not part of Milestone 14's scope either.
+Milestone 24 completed the previously missing combined client stress,
+follower-down-under-load, and leader-failover-under-load scenarios. They are
+real-process correctness/stress tests in
+`cmd/quorumkv/process_scenarios_test.go`, not performance benchmarks and do
+not add throughput or availability claims to this document. Historical M13,
+M14, and later performance measurements below remain unchanged.
 
 ## Milestone 14 — replication performance
 

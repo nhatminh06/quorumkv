@@ -109,6 +109,54 @@ Every result above is from an actually-passing test at the time this
 document was written — see "Verification" in the PR description for the
 exact commands run.
 
+## Milestone 24: real processes under active client load
+
+Milestone 24 closes the remaining live-workload failure-testing gap. The
+authoritative tests are in `cmd/quorumkv/process_scenarios_test.go` and use
+three real `quorumkv` processes, real TCP, dynamic loopback ports, and
+separate persistent directories. The load tests run 16 independent
+`client.Client` instances with a deterministic 70% PUT / 30% GET mix. Every
+client operation has a deadline, and election, catch-up, and convergence
+waits have fixed bounds.
+
+`TestRealProcessLeaderFailoverUnderLoad` records the actual leader and term,
+then sends SIGKILL to that exact process while clients remain active. The
+surviving two-node majority must elect a different leader, accept additional
+writes, and allow clients to recover through bounded client discovery and
+retry. The killed node is restarted with its original data directory and is
+checked through its direct status endpoint until its applied state catches up.
+The final check requires one leader, stable three-voter membership, all nodes
+reachable, and every write for which a client definitely received success to
+be readable with its expected value.
+
+`TestRealProcessFollowerDownUnderLoad` kills a non-leader during the same
+bounded workload and verifies quorum progress, restart, catch-up, and the
+same acknowledged-write invariant. `TestRealProcessRepeatedCrashRecovery`
+then runs three fixed rounds covering follower loss, leader loss, and another
+follower loss. It is intentionally bounded and deterministic rather than an
+endless or random chaos test.
+
+The repeated M24 run exposed a real protocol defect rather than a missing
+client-session identity: after leader SIGKILL, a replacement leader could
+receive the next request before applying a previously acknowledged log prefix.
+Its pre-proposal dedup lookup then saw (for example) `LastSequence = 187` and
+rejected incoming sequence 189 as stale, even though the client had definitely
+completed sequence 188. The fix makes the write path establish the existing
+current-term Raft commit barrier before lookup, and makes same-identity pending
+reservation atomic. `StateMachine.Apply` remains the authoritative dedup
+check.
+
+Transient connection, no-leader, timeout, and busy outcomes during recovery
+are counted as expected bounded failures. After an ambiguous write result,
+the M24 workload retires that in-memory client session before issuing a
+different logical write, because its current sequence may already have
+committed. A fresh session gets a fresh ClientID; `ErrStaleRequest` and
+`ErrRequestConflict` remain unexpected terminal errors. Failed or timed-out
+writes are not claimed to exist; only definite successful PUT results enter
+the post-recovery verification set. These scenarios do not claim availability
+percentages, throughput, or linearizability beyond the existing ReadIndex and
+request-deduplication tests.
+
 ## Isolated-old-leader GET: closed as of Milestone 8
 
 Scenarios 1–21 above predate ReadIndex and reflect a real limitation that

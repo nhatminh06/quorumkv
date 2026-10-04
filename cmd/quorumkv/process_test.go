@@ -90,7 +90,7 @@ type nodeProcess struct {
 
 func startNode(t *testing.T, binPath string, id int, addr, dataDir string, peers map[int]string) *nodeProcess {
 	t.Helper()
-	args := []string{"node", "--id", fmt.Sprint(id), "--listen", addr, "--data", dataDir}
+	args := []string{"node", "--id", fmt.Sprint(id), "--listen", addr, "--log-level", "debug", "--data", dataDir}
 	for pid, paddr := range peers {
 		args = append(args, "--peer", fmt.Sprintf("%d=%s", pid, paddr))
 	}

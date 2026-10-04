@@ -200,20 +200,36 @@ Linux/POSIX only. Specifically relied upon:
 No claim is made about non-POSIX filesystems, network filesystems, or
 filesystems without atomic rename semantics.
 
+## What is covered now
+
+Milestone 24 adds real three-process failure-under-load coverage in
+`cmd/quorumkv/process_scenarios_test.go`:
+
+- `TestRealProcessFailover` covers a real leader SIGKILL, survivor progress,
+  same-directory restart, and catch-up.
+- `TestRealProcessLeaderFailoverUnderLoad` covers leader SIGKILL while 16
+  independent clients issue a bounded 70% PUT / 30% GET workload, continued
+  progress after replacement election, restart, convergence, and visibility
+  of every definitely acknowledged write.
+- `TestRealProcessFollowerDownUnderLoad` covers the same active client shape
+  while one follower is killed, followed by restart and catch-up.
+- `TestRealProcessRepeatedCrashRecovery` covers three fixed crash/restart
+  rounds, including follower loss and leader loss.
+
+These tests use actual binaries, TCP, persistent directories, and SIGKILL.
+Operation deadlines and recovery polling are bounded. Failed or timed-out
+writes are treated as ambiguous and are not included in the acknowledged-
+write postcondition. This is correctness/stress evidence, not a formal proof,
+availability SLO, or benchmark.
+
+M24 also exposed and fixed a failover ordering defect: a replacement leader
+could inspect its local state before applying a committed prefix, causing a
+legitimate next request sequence to be reported stale. The write path now
+establishes the current-term commit barrier before dedup lookup; a deterministic
+service regression covers the acknowledged-prefix failover case.
+
 ## What remains unsupported / not implemented
 
-- No live multi-process 3-node integration test exists yet where a real
-  separate OS process is killed mid-operation while two other real nodes
-  continue serving traffic over TCP and the restarted node catches up
-  (items 91, 92's "cluster continues" half). What is proved instead: (a)
-  every individual durable operation survives a real crash in isolation
-  (this matrix), and (b) a healthy cluster tolerates a node's *loss*
-  during in-process testing (existing `internal/raft/fault_recovery_test.go`,
-  `internal/service/fault_test.go` from earlier milestones, using
-  graceful `Close()` rather than `os.Exit`). Composing the two into one
-  live multi-process scenario is future work.
-- No scripted crash-torture sequence (repeated crash/restart/operate
-  cycles chained together) or seeded stress test exists yet.
 - No dedicated membership-specific crash test exists beyond the generic
   log/snapshot matrix above. This is a deliberate scope decision, not an
   oversight: a configuration-change entry is an ordinary `LogEntry`
