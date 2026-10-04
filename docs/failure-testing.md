@@ -157,6 +157,25 @@ the post-recovery verification set. These scenarios do not claim availability
 percentages, throughput, or linearizability beyond the existing ReadIndex and
 request-deduplication tests.
 
+## Milestone 25: canonical evidence bundle
+
+`tools/demo/capture.sh` produces the sanitized canonical bundle at
+`docs/evidence/canonical`. It reruns the real three-process leader-failover
+scenario using 16 client workers and the deterministic 70% PUT / 30% GET mix,
+captures initial, failover, and final direct node status, records the observed
+timeline, verifies every definitely acknowledged write through the normal
+client API, and emits checksums. The capture tracks exact child PIDs and uses
+SIGKILL for only the observed leader; temporary cluster state and binaries are
+not included in the bundle.
+
+`tools/demo/validate.py` fails closed on schema, topology, workload, failure,
+convergence, acknowledgment, sanitization, and checksum violations.
+`tools/demo/summarize.py` renders the machine-readable bundle as a concise
+operator-facing summary. Ambiguous writes and retired sessions remain visible
+as separate counters; they are not included in the definite acknowledgment
+set. This is one canonical correctness/stress capture, not a failover-latency
+benchmark, availability/SLO claim, or formal proof.
+
 ## Isolated-old-leader GET: closed as of Milestone 8
 
 Scenarios 1–21 above predate ReadIndex and reflect a real limitation that
