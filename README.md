@@ -5,6 +5,9 @@ replication, and failure recovery from first principles. Raft is
 implemented from scratch in this repository — no external consensus
 library.
 
+- **Project showcase:** [canonical failure-under-load evidence](https://nhatminh06.github.io/quorumkv/)
+- **Canonical failover evidence:** [`docs/evidence/canonical/`](docs/evidence/canonical/)
+
 ## Why QuorumKV
 
 Most Raft implementations are libraries you import. QuorumKV is the
