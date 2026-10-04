@@ -1,263 +1,222 @@
 # QuorumKV
 
-QuorumKV is a distributed key-value store built to study consensus,
-replication, and failure recovery from first principles. Raft is
-implemented from scratch in this repository — no external consensus
-library.
+QuorumKV is a Raft-backed distributed key-value store built from scratch to
+study consensus, persistence, replication, and failure recovery using real OS
+processes, TCP, and disk-backed state. Raft is implemented here without an
+external consensus library.
 
-- **Project showcase:** [canonical failure-under-load evidence](https://nhatminh06.github.io/quorumkv/)
-- **Canonical failover evidence:** [`docs/evidence/canonical/`](docs/evidence/canonical/)
+[Project showcase](https://nhatminh06.github.io/quorumkv/) ·
+[Canonical failover evidence](docs/evidence/canonical/) ·
+[Architecture](docs/architecture.md) ·
+[Demo video](https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4)
 
-## Why QuorumKV
+[![QuorumKV canonical failure-under-load showcase](docs/assets/quorumkv-showcase.png)](https://nhatminh06.github.io/quorumkv/)
 
-Most Raft implementations are libraries you import. QuorumKV is the
-opposite: every mechanism — persistent state, log replication, leader
-election, PreVote, snapshotting, joint-consensus membership changes,
-leadership transfer, request deduplication, quorum-confirmed reads — is
-implemented and tested here, with the invariant each one enforces
-stated explicitly rather than assumed. It is not a library; it is a
-runnable system with its own CLI and operational tooling.
+## What QuorumKV demonstrates
 
-## What it implements
+- A persistent Raft implementation with PreVote elections, replicated logs,
+  commit tracking, and crash recovery.
+- Real node and client executables communicating over bounded binary protocols
+  on TCP—not an in-process-only simulation.
+- Quorum-confirmed linearizable reads through `ReadIndex`.
+- At-most-once state-machine effects for retried writes through replicated
+  request identity and deduplication.
+- Snapshot creation and chunked `InstallSnapshot` follower recovery.
+- Joint-consensus membership changes and deliberate leadership transfer.
+- Checksummed, append-oriented persistent formats with torn-write recovery.
 
-- Persistent Raft: term/vote/log/commit state survive a restart, with
-  explicit checksummed binary formats and deterministic crash-recovery
-  tests (real subprocess kills at each meaningful write point).
-- Leader election with PreVote, avoiding disruptive term bumps from an
-  isolated node.
-- Log replication with per-peer event-driven catch-up and bounded
-  batching.
-- Append-oriented, checksummed Raft-log segments with torn-tail recovery and
-  atomic conflict-repair/compaction generations.
-- Snapshotting and chunked `InstallSnapshot` catch-up for followers
-  behind a compacted log.
-- Joint-consensus membership changes (add/remove one voter at a time).
-- Deliberate leadership transfer, confirmed by real evidence the target
-  won, not just that a handoff was accepted.
-- Quorum-confirmed (`ReadIndex`) linearizable GET.
-- At-most-once state-machine effects for retried PUT/DELETE, via a
-  replicated per-client request identity.
-- Proposal batching and bounded backpressure (`BUSY` instead of
-  unbounded queuing).
-- Bounded persistent external-client pooling for long-lived Go clients,
-  with context-aware waiting and deterministic shutdown.
-- Prometheus metrics, health/readiness probes, bounded-cardinality labels,
-  and structured JSON operational logs on an optional HTTP listener.
-- A real node executable and a client/admin CLI, driven by real OS
-  processes over real TCP in the mandatory integration tests and demo
-  scripts — not just in-process test harnesses.
+The project is an engineering study, not a production-ready database service.
+
+## Canonical leader-failover result
+
+The committed M25 capture ran three real QuorumKV processes with real TCP and
+disk-backed state. Sixteen concurrent clients maintained a deterministic 70%
+PUT / 30% GET workload while the current leader was killed with `SIGKILL`.
+
+```text
+LEADER FAILURE UNDER LOAD
+
+initial             node 1 leader · term 1
+failure             SIGKILL node 1
+replacement         node 2 leader · term 2
+
+before crash        3,621 acknowledged writes
+after failover      3,244 acknowledged writes
+total               6,865 acknowledged
+verified            6,865
+missing             0
+```
+
+No definitely acknowledged write was missing in this captured run. The
+surviving quorum continued committing new writes after leadership changed.
+The failed node then restarted from its existing data directory and caught up
+through normal replication.
+
+Final convergence:
+
+```text
+node 1              follower
+node 2              leader
+node 3              follower
+term                2
+commit / applied    6867 / 6867
+apply lag           0
+membership          3 voters
+```
+
+The fixed canonical run also recorded:
+
+```text
+STALE_REQUEST       0
+REQUEST_CONFLICT    0
+unexpected errors  0
+```
+
+These are observations from one captured execution, not a claim that every
+future execution can never produce an ambiguous or transient outcome. Inspect
+the [interactive incident timeline](https://nhatminh06.github.io/quorumkv/)
+or the [canonical JSON and checksums](docs/evidence/canonical/).
+
+### What failure-under-load testing found
+
+Stress testing exposed a real deduplication race on replacement leaders:
+committed state could exist in the Raft log before the new leader's state
+machine had applied it, causing a legitimate next client sequence to be
+classified as stale.
+
+The [fix](https://github.com/nhatminh06/quorumkv/commit/f3ff0bfd41c8fb0d2bca3864af96f8dd85b130bd)
+establishes the necessary current-term commit/apply barrier before the
+leader-local dedup lookup and atomically reserves same-identity pending
+requests. The Pages report contains the concise causal chain.
 
 ## Architecture
 
 ```text
-Client
-  ↓
-Leader
-  ↓
-Replicated Raft Log
-  ↓
-Committed Commands
-  ↓
-KV State Machine
+Clients
+   │
+   ▼
+Service
+   ├─ request identity / dedup
+   ├─ ReadIndex
+   └─ proposal path
+   │
+   ▼
+Raft
+   ├─ elections
+   ├─ replication
+   ├─ snapshots
+   └─ membership
+   │
+   ▼
+Persistent state
+   │
+   ▼
+KV state machine
 ```
 
-Full breakdown — process model, write/read paths, election,
-replication, persistence, snapshotting, membership, leadership
-transfer, and the operational control plane — in
-[docs/architecture.md](docs/architecture.md).
+See [Architecture](docs/architecture.md) for the complete process model,
+write/read paths, persistence design, and operational control plane.
 
 ## Correctness properties
 
-- **Linearizable GET**: quorum-confirmed via `ReadIndex`, eliminating
-  stale reads from an isolated old leader — see
-  [docs/read-index.md](docs/read-index.md).
-- **At-most-once PUT/DELETE effect** for a retried request that reuses
-  the same `ClientID`/sequence, including across a leader failover —
-  see [docs/request-dedup.md](docs/request-dedup.md).
-- **Joint-consensus membership changes**: every quorum decision during
-  a transition requires a majority of both the old and new
-  configuration — see [docs/membership.md](docs/membership.md).
-- **Deterministic crash recovery**: every persisted file recovers to
-  exactly its old or exactly its new content after a process killed at
-  any point mid-write, proven with real subprocess crashes — see
-  [docs/crash-consistency.md](docs/crash-consistency.md).
+- **Leader election with PreVote** avoids disruptive term changes from an
+  isolated node.
+- **Persistent replicated log** retains term, vote, log, and commit state
+  across process restarts.
+- **Linearizable GET** uses quorum-confirmed `ReadIndex` and local apply
+  catch-up rather than follower reads.
+- **Replicated request deduplication** preserves request identity across
+  retries and leader changes.
+- **Snapshots / `InstallSnapshot`** recover followers behind a compacted log.
+- **Joint consensus** requires majorities of both configurations during a
+  membership transition.
+- **Same-disk crash recovery** is exercised through actual subprocess kills
+  and restarts.
 
-These are implemented and tested, not formally proven. See Limitations.
+These mechanisms are tested, not formally verified. Their invariants and test
+matrices are linked from [Documentation](#documentation).
 
-## Performance evidence
+## Historical measured performance studies
 
-Measured on this repository's own benchmark harness (single machine,
-see [docs/performance.md](docs/performance.md) for exact environment
-and commands — do not extrapolate these numbers to other hardware):
+These measurements predate and are separate from the canonical M25 failover
+capture. They are single-machine studies; do not extrapolate them to other
+hardware.
 
-- Concurrent-write throughput improved after proposal batching let
-  concurrent `Propose` calls share one durable log write.
-- Stale-follower catch-up (5000-entry lagging suffix) dropped from
-  3.95s to 0.27s (~14.7x) after event-driven per-peer replication
-  workers replaced fixed-heartbeat-interval catch-up, with no observed
-  regression to steady-state throughput.
-- Follower persistence for 25,000 entries dropped from 1.036s and 98.84x
-  write amplification to 13-14ms and 1.001x after segmented Raft-log storage.
+| Study | Before | After | Result |
+|---|---:|---:|---:|
+| 5,000-entry follower catch-up | 3.95 s | 0.27 s | ≈14.7× faster |
+| 25,000-entry follower persistence | 1.036 s / 98.84× write amplification | 13–14 ms / 1.001× | append-oriented segments |
 
-Full methodology in [docs/performance.md](docs/performance.md) and
-[docs/replication-performance.md](docs/replication-performance.md); the storage
-format and scaling evidence are in
-[docs/raft-log-storage.md](docs/raft-log-storage.md).
+See [performance methodology](docs/performance.md),
+[replication evidence](docs/replication-performance.md), and
+[storage evidence](docs/raft-log-storage.md).
 
 ## Quick start
 
+Requires Go 1.26.5 or newer.
+
 ```bash
-git clone <this-repo>
+git clone https://github.com/nhatminh06/quorumkv.git
 cd quorumkv
 make build
 ./scripts/start-local-cluster.sh
+
 ./bin/qkv --addr 127.0.0.1:7001 put x 1
 ./bin/qkv --addr 127.0.0.1:7001 get x
 ./bin/qkv --addr 127.0.0.1:7001 status
+
 ./scripts/stop-local-cluster.sh
 ```
 
-`start-local-cluster.sh` starts a real 3-node cluster on
-`127.0.0.1:7001-7003`, prints each node's PID, and waits for a leader
-to be elected. Full CLI reference in
-[docs/operations.md](docs/operations.md).
+The start script launches a real three-node cluster on ports 7001–7003 and
+waits for election. See [Operations](docs/operations.md) for direct node
+startup, data-directory semantics, metrics, and administrative commands.
 
-## Running a node directly
-
-```bash
-./bin/quorumkv node \
-  --id 1 --listen 127.0.0.1:7001 --data ./data/node1 \
-  --peer 2=127.0.0.1:7002 --peer 3=127.0.0.1:7003
-```
-
-See [docs/operations.md](docs/operations.md) for startup, shutdown,
-data-directory, and membership semantics.
-
-Add `--metrics-listen 127.0.0.1:9101` to expose `/metrics`, `/healthz`,
-and `/readyz` on a separate HTTP listener. Metrics are disabled when the
-flag is omitted. See [docs/observability.md](docs/observability.md) for the
-metric contract, Prometheus/Grafana examples, cardinality policy, and measured
-instrumentation overhead.
-
-## Failure demo
+## Evidence and testing
 
 ```bash
-./scripts/demo-failover.sh
-```
-
-Kills the real leader process (`SIGKILL`), confirms the surviving
-majority elects a replacement and previously committed data survives,
-writes a second key through the new leader, then restarts the crashed
-node from its same on-disk data directory and confirms it catches up —
-proving real election, replication, and disk-backed persistence, not
-in-memory survival. Four more scripted demos (basic KV, leadership
-transfer, snapshot/`InstallSnapshot` catch-up, membership change) are
-described in [docs/demo.md](docs/demo.md).
-
-## Repository structure
-
-```text
-cmd/quorumkv/          the node server executable
-cmd/qkv/                the client/admin CLI
-internal/reqid/         client request identity types (ClientID, Sequence)
-internal/kv/             command representation, codec, deterministic KV state machine + dedup
-internal/wal/            append-only write-ahead log (application command history)
-internal/transport/     bounded message framing and TCP request/response transport
-internal/raft/           persistent Raft state, replication, election, snapshotting, membership
-internal/clientproto/   bounded binary client PUT/GET/DELETE wire protocol
-internal/adminproto/    bounded binary operational admin wire protocol
-internal/service/       wires a raft.Node to a kv.StateMachine; serves both wire protocols
-internal/client/         reusable leader-aware Go client with safe write retry
-scripts/                 local cluster lifecycle + reproducible demos
-docs/                    protocol design notes, operations guide, runbooks, architecture
-```
-
-## Testing
-
-```bash
+gofmt -l .
+go vet ./...
+go build ./...
 go test ./...
 go test -race ./...
-go vet ./...
+make check
+python3 tools/demo/validate.py docs/evidence/canonical
 ```
 
-`make check` runs vet, build, and test together. The mandatory
-process-integration tests in `cmd/quorumkv` build and run the actual
-`quorumkv`/`qkv` binaries as real OS processes over real TCP with real
-persistent directories — the strongest available proof that the
-executables work the way an operator would use them, not just that the
-internal packages do.
+Mandatory process-level tests build and spawn the real `quorumkv` and `qkv`
+binaries over TCP with temporary persistent directories. The canonical bundle
+adds a sanitized, checksum-verified record of the leader-failure-under-load
+scenario. Ambiguous outcomes are excluded from the definitely acknowledged
+set and tracked separately.
 
-## Design documents
+The [recording guide](docs/recording.md) documents the deterministic silent
+demo; it presents the existing evidence and never recaptures it.
 
-Protocol-level design notes with the reasoning and full test list for
-each mechanism live in [docs/](docs/): election, replication,
-read-index, request dedup, membership, leadership transfer,
-snapshotting, crash consistency, WAL/state-machine format, transport,
-and performance. [docs/architecture.md](docs/architecture.md) is the
-top-level map; [docs/operations.md](docs/operations.md) and the
-`docs/runbook-*.md` files cover running and administering a cluster.
+## Limits of claim
 
-## Limitations
+- Crash-fault model only; no Byzantine tolerance or network-partition claim.
+- One local-loopback canonical run; not a production SLO, failover guarantee,
+  throughput benchmark, or cross-region study.
+- No formal verification.
+- No TLS or authentication; intended for local or trusted-network study.
+- No sharding, multi-Raft, transactions, CAS, TTL, follower leases, automatic
+  discovery, or Kubernetes deployment.
+- Client identities are not persisted by the one-shot CLI, the dedup table has
+  no garbage collection, and snapshot creation is manually triggered.
+- Corrupted persistent storage is replaced through membership procedures; it
+  is not repaired in place.
 
-- Crash fault model only — not Byzantine fault tolerant.
-- No TLS or authentication on either wire protocol; intended for a
-  local or trusted-network/educational environment.
-- No client-side session persistence across a process restart — each
-  `qkv` invocation is a fresh client identity.
-- The write-dedup `ClientID` table has no garbage collection yet.
-- Membership changes are one voter at a time; no batched changes, no
-  automatic rebalancing or discovery.
-- Snapshot creation is manually triggered; no scheduling policy.
-- No repair tooling for corrupted persistent storage — a corrupted node
-  is replaced via the normal membership procedure, not patched in
-  place. See [docs/runbook-failover.md](docs/runbook-failover.md).
-- Raft peers reuse sequential TCP sessions. Long-lived external Go clients
-  use up to eight sessions per address; one-shot `qkv` processes cannot
-  reuse sockets across invocations. No request multiplexing. See
-  [client transport measurements](docs/client-transport-performance.md).
-- No sharding, multi-Raft, transactions, CAS, TTL, follower reads, or
-  leader leases.
+## Documentation
 
-## Out of scope
+- [Architecture](docs/architecture.md)
+- [Raft election](docs/raft-election.md) and [log replication](docs/raft-log-replication.md)
+- [ReadIndex](docs/read-index.md) and [request deduplication](docs/request-dedup.md)
+- [Snapshots](docs/snapshots.md), [membership](docs/membership.md), and [leadership transfer](docs/leadership-transfer.md)
+- [Persistence](docs/wal.md), [crash consistency](docs/crash-consistency.md), and [state machine](docs/state-machine.md)
+- [Operations](docs/operations.md), [failure testing](docs/failure-testing.md), and [demos](docs/demo.md)
+- [Observability](docs/observability.md) and [performance studies](docs/performance.md)
 
-Kubernetes/Helm manifests, a REST/gRPC API, a web dashboard,
-Prometheus/Grafana integration, automatic cluster discovery, and
-performance optimization beyond what's already measured above — none of
-these are goals of this project.
-
-## Engineering highlights
-
-- Every persisted format is explicit and checksummed — no `gob` or
-  other opaque serialization for correctness-critical state — with
-  deterministic tests that kill a real subprocess mid-write and assert
-  the file recovers to exactly one of its two valid states.
-- Joint-consensus membership changes require a majority of *both* the
-  old and new configuration for every quorum decision during a
-  transition, never a majority of their union.
-- Leadership transfer only reports success once the old leader observes
-  real evidence the target won an election — never merely that a
-  handoff request was accepted.
-- Request deduplication is fully replicated state, not a leader-local
-  cache: a retried write is recognized correctly even by a brand-new
-  leader that only ever received the original request via
-  `InstallSnapshot`.
-- The mandatory CLI integration tests spawn the actual production
-  binaries as OS processes and simulate a leader crash with `SIGKILL`,
-  not `Node.Close()` — proving the on-disk recovery path, not just the
-  in-memory one.
-
-## Client seed failover
-
-Clients accept multiple seed nodes and cache the successful leader for
-subsequent calls. GET first tries that cache, follows bounded leader hints,
-and falls back to untried seeds in configured order after missing/stale/
-cyclic hints or transport failures. Each address is contacted at most once,
-with at most three hint attempts in addition to seeds and a cached address.
-All attempts respect the caller's context; use a deadline to bound silent
-peers. A finite search can still fail during an election or without quorum.
-Server TIMEOUT/BUSY and other terminal responses are not retried by GET.
-
-PUT/DELETE retain stable request identity across their automatic retries.
-GET remains linearizable through server-side `ReadIndex`: seed failover
-only discovers a leader and never enables follower reads. See
-[operations](docs/operations.md) for details.
+**Portfolio status: feature-frozen.** Future changes are limited to correctness
+bug fixes, compatibility fixes, documentation corrections, and justified
+evidence replacement.
