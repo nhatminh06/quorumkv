@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="QuorumKV canonical leader-failure capture: an evidence-backed consensus control board.">
-  <title>QuorumKV — consensus incident control board</title>
+  <meta name="description" content="QuorumKV consensus incident viewer built from committed leader-failure evidence.">
+  <title>QuorumKV: consensus incident control board</title>
   <link rel="stylesheet" href="styles.css">
   <script src="evidence.js" defer></script>
 </head>
@@ -16,7 +16,7 @@
       <a class="wordmark" href="#top">QUORUM<span>KV</span></a>
       <div class="incident-id"><span>INCIDENT 001</span><strong>LEADER FAILURE UNDER LOAD</strong></div>
     </div>
-    <div class="capture-tag"><span class="lamp lamp-ok" aria-hidden="true"></span><strong>CANONICAL CAPTURE</strong><span id="header-spec">— NODES · — CLIENTS · RAFT · —</span></div>
+    <div class="capture-tag"><span class="lamp lamp-ok" aria-hidden="true"></span><strong>CANONICAL CAPTURE</strong><span id="header-spec">... NODES · ... CLIENTS · RAFT · ...</span></div>
     <nav aria-label="Control board sections">
       <a href="#control-board">Incident</a><a href="#evidence">Evidence</a><a href="#bug">Bug</a><a href="#architecture">Architecture</a><a href="#boundaries">Boundaries</a><a href="https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4">Video ↗</a><a href="https://github.com/nhatminh06/quorumkv">Repository ↗</a>
     </nav>
@@ -54,8 +54,8 @@
         </div>
 
         <div class="event-readout" aria-live="polite">
-          <div><span id="selected-sequence">EVENT — / —</span><strong id="selected-event">SELECT AN EVENT</strong></div>
-          <div><span id="selected-time">T + —</span><p id="selected-detail">Use the incident rail or arrow keys to inspect the canonical sequence.</p></div>
+          <div><span id="selected-sequence">EVENT ... / ...</span><strong id="selected-event">SELECT AN EVENT</strong></div>
+          <div><span id="selected-time">T + ...</span><p id="selected-detail">Use the incident rail or arrow keys to inspect the recorded events.</p></div>
         </div>
 
         <div class="checkpoint-switch" role="tablist" aria-label="Recorded cluster checkpoints">
@@ -68,16 +68,16 @@
       <div class="workload-strip" aria-label="Continuous client workload">
         <div class="signal-name"><span class="lamp lamp-load" aria-hidden="true"></span><strong>CLIENT LOAD</strong></div>
         <div class="signal-line" aria-hidden="true"><i></i><b class="crash-tick">×</b><i></i><b class="election-tick">●</b><i></i></div>
-        <div class="signal-spec"><strong id="workload-workers">— WORKERS</strong><span id="workload-mix">—% PUT · —% GET</span><small>ACTIVE ACROSS CRASH / ELECTION</small></div>
+        <div class="signal-spec"><strong id="workload-workers">... WORKERS</strong><span id="workload-mix">...% PUT · ...% GET</span><small>ACTIVE ACROSS CRASH / ELECTION</small></div>
       </div>
     </section>
 
     <section class="evidence-board" id="evidence" aria-labelledby="evidence-title">
-      <header class="section-header"><span>03 / Evidence ledger</span><h2 id="evidence-title">Every definite acknowledgment accounted for.</h2></header>
+      <header class="section-header"><span>03 / Evidence ledger</span><h2 id="evidence-title">Acknowledged write verification</h2></header>
       <div class="ledger" aria-label="Acknowledged write verification">
-        <div><strong id="ack-total">—</strong><span>ACKNOWLEDGED</span></div><b>=</b><div><strong id="ack-verified">—</strong><span>VERIFIED</span></div><b>−</b><div class="ledger-zero"><strong id="ack-missing">—</strong><span>MISSING</span></div>
+        <div><strong id="ack-total">...</strong><span>ACKNOWLEDGED</span></div><b>=</b><div><strong id="ack-verified">...</strong><span>VERIFIED</span></div><b>-</b><div class="ledger-zero"><strong id="ack-missing">...</strong><span>MISSING</span></div>
       </div>
-      <div class="ack-split"><span><strong id="ack-before">—</strong> BEFORE FAILURE</span><i></i><span><strong id="ack-after">—</strong> AFTER FAILOVER</span></div>
+      <div class="ack-split"><span><strong id="ack-before">...</strong> BEFORE FAILURE</span><i></i><span><strong id="ack-after">...</strong> AFTER FAILOVER</span></div>
       <blockquote>No definitely acknowledged write was missing in this captured run.</blockquote>
       <div class="diagnostic-strip" aria-label="Protocol integrity readout">
         <span class="diagnostic-title">PROTOCOL INTEGRITY / THIS CAPTURE</span>
@@ -94,7 +94,7 @@
     </section>
 
     <section class="architecture-board" id="architecture" aria-labelledby="architecture-title">
-      <header class="section-header"><span>05 / System signal path</span><h2 id="architecture-title">From client intent to durable state</h2></header>
+      <header class="section-header"><span>05 / System signal path</span><h2 id="architecture-title">Client request path</h2></header>
       <div class="signal-path" role="img" aria-label="Clients flow through service, Raft, persistence, and the KV state machine">
         <div class="path-stage"><span>01</span><strong>CLIENTS</strong><small>binary TCP protocol</small></div><i>↓</i>
         <div class="path-stage"><span>02</span><strong>SERVICE</strong><small>request identity · dedup · ReadIndex · proposal</small></div><i>↓</i>
@@ -108,7 +108,7 @@
     <section class="records-board">
       <div class="id-plate" id="provenance" aria-labelledby="provenance-title">
         <header><span>06 / Identification plate</span><h2 id="provenance-title">Evidence provenance</h2></header>
-        <dl><div><dt>CAPTURE SOURCE</dt><dd><a id="capture-link" href="https://github.com/nhatminh06/quorumkv"><code id="capture-source">—</code></a></dd></div><div><dt>EVIDENCE COMMIT</dt><dd><a href="https://github.com/nhatminh06/quorumkv/commit/e1847ac5021fe11a051d5afbea43dff8cc1c5623"><code>e1847ac…</code></a></dd></div><div><dt>SCHEMA</dt><dd id="tool-schema">—</dd></div><div><dt>PLATFORM</dt><dd id="platform">—</dd></div><div><dt>INTEGRITY</dt><dd class="verified">SHA-256 VERIFIED</dd></div></dl>
+        <dl><div><dt>CAPTURE SOURCE</dt><dd><a id="capture-link" href="https://github.com/nhatminh06/quorumkv"><code id="capture-source">...</code></a></dd></div><div><dt>EVIDENCE COMMIT</dt><dd><a href="https://github.com/nhatminh06/quorumkv/commit/e1847ac5021fe11a051d5afbea43dff8cc1c5623"><code>e1847ac...</code></a></dd></div><div><dt>SCHEMA</dt><dd id="tool-schema">...</dd></div><div><dt>PLATFORM</dt><dd id="platform">...</dd></div><div><dt>INTEGRITY</dt><dd class="verified">SHA-256 VERIFIED</dd></div></dl>
         <p><a href="https://github.com/nhatminh06/quorumkv/tree/main/docs/evidence/canonical">INSPECT CANONICAL EVIDENCE ↗</a></p>
       </div>
       <aside class="archive-note" aria-labelledby="archive-title"><span>ARCHIVE / PERFORMANCE STUDY</span><h2 id="archive-title">5,000-entry follower catch-up</h2><p><s>3.95 s</s><b>→</b><strong>0.27 s</strong></p><em>≈ 14.7× faster</em><small>Historical single-machine study. Separate from the canonical incident.</small><a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/replication-performance.md">METHODOLOGY ↗</a></aside>
@@ -119,7 +119,7 @@
       <dl><div><dt>NETWORK PARTITION</dt><dd>NOT TESTED HERE</dd></div><div><dt>BYZANTINE FAILURE</dt><dd>OUT OF SCOPE</dd></div><div><dt>FORMAL VERIFICATION</dt><dd>NO</dd></div><div><dt>PRODUCTION SLO</dt><dd>NO</dd></div><div><dt>FAILOVER GUARANTEE</dt><dd>NO</dd></div><div><dt>THROUGHPUT BENCHMARK</dt><dd>NO</dd></div><div><dt>CROSS-REGION BEHAVIOR</dt><dd>NOT TESTED HERE</dd></div><div><dt>TLS / AUTH</dt><dd>NOT PROVIDED</dd></div></dl>
     </section>
 
-    <section class="walkthrough-board" aria-label="Demo video and repository links"><div><span>INCIDENT WALKTHROUGH / 03:38 / SILENT</span><h2>Inspect the recorded evidence sequence.</h2></div><a class="video-link" href="https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4">WATCH INCIDENT WALKTHROUGH ↗</a></section>
+    <section class="walkthrough-board" aria-label="Demo video and repository links"><div><span>INCIDENT WALKTHROUGH / 03:38 / SILENT</span><h2>Watch the recorded run.</h2></div><a class="video-link" href="https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4">WATCH INCIDENT WALKTHROUGH ↗</a></section>
   </main>
 
   <footer><span>QUORUMKV / INCIDENT 001 / CANONICAL M25</span><span>PORTFOLIO STATUS: FEATURE-FROZEN</span></footer>

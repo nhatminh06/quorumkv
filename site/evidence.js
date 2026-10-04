@@ -64,7 +64,7 @@ function renderNode(id, node, mode) {
   if (isRestartedPending) role = "RESTARTED";
   element.className = `topology-node node-${["zero", "one", "two", "three"][Number(id)]} ${isDown ? "down" : node?.role === "leader" ? "leader" : isRecovered ? "recovered" : "follower"}`;
   const values = isDown || isRestartedPending
-    ? [["TERM", isRestartedPending ? "—" : node?.term ?? "—"], ["COMMIT", "—"], ["APPLIED", "—"]]
+    ? [["TERM", isRestartedPending ? "..." : node?.term ?? "..."], ["COMMIT", "..."], ["APPLIED", "..."]]
     : [["TERM", node.term], ["COMMIT", number(node.commit_index)], ["APPLIED", number(node.last_applied)]];
   const note = isRecovered ? "RESTARTED / CAUGHT UP" : isRestartedPending ? "STATE NOT RECORDED AT THIS INSTANT" : isDown ? "DISCONNECTED / SIGKILL" : "";
   element.innerHTML = `<header><span class="node-code">NODE 0${id}</span><span class="node-status"><i class="status-indicator" aria-hidden="true"></i>${role}</span></header><strong class="node-role">${role}</strong><dl class="node-values">${values.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join("")}</dl>${note ? `<span class="node-note">${note}</span>` : ""}`;

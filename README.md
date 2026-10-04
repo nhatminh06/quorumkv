@@ -1,23 +1,24 @@
 # QuorumKV
 
-QuorumKV is a Raft-backed distributed key-value store built from scratch to
-study consensus, persistence, replication, and failure recovery using real OS
-processes, TCP, and disk-backed state. Raft is implemented here without an
-external consensus library.
+QuorumKV is a Raft-backed distributed key-value store for studying consensus,
+persistence, replication, and failure recovery with real OS processes, TCP,
+and disk-backed state. The repository implements Raft directly instead of
+using an external consensus library.
 
-[Project showcase](https://nhatminh06.github.io/quorumkv/) ·
+[Incident viewer](https://nhatminh06.github.io/quorumkv/) ·
 [Canonical failover evidence](docs/evidence/canonical/) ·
 [Architecture](docs/architecture.md) ·
 [Demo video](https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4)
 
 [![QuorumKV canonical failure-under-load showcase](docs/assets/quorumkv-showcase.png)](https://nhatminh06.github.io/quorumkv/)
 
-## What QuorumKV demonstrates
+## Implementation
 
 - A persistent Raft implementation with PreVote elections, replicated logs,
   commit tracking, and crash recovery.
 - Real node and client executables communicating over bounded binary protocols
-  on TCP—not an in-process-only simulation.
+  on TCP. Process tests run the compiled executables rather than an in-process
+  simulation.
 - Quorum-confirmed linearizable reads through `ReadIndex`.
 - At-most-once state-machine effects for retried writes through replicated
   request identity and deduplication.
@@ -145,7 +146,7 @@ hardware.
 | Study | Before | After | Result |
 |---|---:|---:|---:|
 | 5,000-entry follower catch-up | 3.95 s | 0.27 s | ≈14.7× faster |
-| 25,000-entry follower persistence | 1.036 s / 98.84× write amplification | 13–14 ms / 1.001× | append-oriented segments |
+| 25,000-entry follower persistence | 1.036 s / 98.84× write amplification | 13-14 ms / 1.001× | append-oriented segments |
 
 See [performance methodology](docs/performance.md),
 [replication evidence](docs/replication-performance.md), and
@@ -168,7 +169,7 @@ make build
 ./scripts/stop-local-cluster.sh
 ```
 
-The start script launches a real three-node cluster on ports 7001–7003 and
+The start script launches a real three-node cluster on ports 7001-7003 and
 waits for election. See [Operations](docs/operations.md) for direct node
 startup, data-directory semantics, metrics, and administrative commands.
 
