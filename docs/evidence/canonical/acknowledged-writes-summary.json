@@ -1,0 +1,7 @@
+{
+  "acknowledged_after_failover": 3244,
+  "acknowledged_before_crash": 3621,
+  "total_acknowledged": 6865,
+  "verification_missing": 0,
+  "verified_acknowledged": 6865
+}

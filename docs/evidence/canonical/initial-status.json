@@ -1,0 +1,59 @@
+{
+  "1": {
+    "apply_lag": 5,
+    "commit_index": 3500,
+    "last_applied": 3495,
+    "last_log_index": 3503,
+    "leader": 1,
+    "membership": "stable",
+    "node": 1,
+    "reachable": true,
+    "role": "leader",
+    "snapshot_index": 0,
+    "snapshot_term": 0,
+    "term": 1,
+    "voters": [
+      1,
+      2,
+      3
+    ]
+  },
+  "2": {
+    "apply_lag": 0,
+    "commit_index": 3565,
+    "last_applied": 3565,
+    "last_log_index": 3574,
+    "leader": 1,
+    "membership": "stable",
+    "node": 2,
+    "reachable": true,
+    "role": "follower",
+    "snapshot_index": 0,
+    "snapshot_term": 0,
+    "term": 1,
+    "voters": [
+      1,
+      2,
+      3
+    ]
+  },
+  "3": {
+    "apply_lag": 0,
+    "commit_index": 3608,
+    "last_applied": 3608,
+    "last_log_index": 3616,
+    "leader": 1,
+    "membership": "stable",
+    "node": 3,
+    "reachable": true,
+    "role": "follower",
+    "snapshot_index": 0,
+    "snapshot_term": 0,
+    "term": 1,
+    "voters": [
+      1,
+      2,
+      3
+    ]
+  }
+}

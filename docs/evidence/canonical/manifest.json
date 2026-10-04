@@ -1,0 +1,40 @@
+{
+  "capture_tool_version": "m25-canonical-v1",
+  "cluster": {
+    "nodes": 3,
+    "persistence": "disk",
+    "transport": "tcp"
+  },
+  "failure": {
+    "leader_id": 1,
+    "method": "SIGKILL"
+  },
+  "go_version": "go version go1.27.1-X:nodwarf5 linux/amd64",
+  "platform": "linux/amd64",
+  "quorumkv_commit": "7b068288e748330828cff91f9c71e97179119897",
+  "recovery": {
+    "replacement_leader_id": 2,
+    "restarted_node_id": 1,
+    "same_data_directory": true
+  },
+  "result": {
+    "acknowledged_after_failover": 3244,
+    "acknowledged_before_crash": 3621,
+    "acknowledged_writes": 6865,
+    "ambiguous_write_outcomes": 0,
+    "request_conflicts": 0,
+    "retired_sessions": 0,
+    "stale_request_errors": 0,
+    "status": "PASS",
+    "transient_read_failures": 0,
+    "unexpected_protocol_errors": 0,
+    "verified_acknowledged_writes": 6865
+  },
+  "scenario": "leader_failover_under_load",
+  "schema_version": 1,
+  "workload": {
+    "get_percent": 30,
+    "put_percent": 70,
+    "workers": 16
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "acknowledged_after": 3244,
+  "acknowledged_before": 3621,
+  "ambiguous_write_outcomes": 0,
+  "request_conflicts": 0,
+  "retired_sessions": 0,
+  "stale_requests": 0,
+  "transient_read_failures": 0,
+  "unexpected_message": "",
+  "unexpected_protocol_errors": 0
+}

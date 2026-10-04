@@ -1,0 +1,48 @@
+[
+  {
+    "at_seconds": 0.0,
+    "event": "cluster_ready",
+    "leader": 1,
+    "term": 1
+  },
+  {
+    "at_seconds": 0.0,
+    "event": "load_started",
+    "get_percent": 30,
+    "put_percent": 70,
+    "workers": 16
+  },
+  {
+    "at_seconds": 0.003,
+    "event": "leader_crashed",
+    "node": 1,
+    "signal": "SIGKILL"
+  },
+  {
+    "at_seconds": 0.327,
+    "event": "replacement_leader",
+    "node": 2,
+    "term": 2
+  },
+  {
+    "at_seconds": 0.327,
+    "event": "post_failover_progress"
+  },
+  {
+    "at_seconds": 0.333,
+    "data_directory": "cluster-data/node1",
+    "event": "old_leader_restarted",
+    "node": 1,
+    "same_data_directory": true
+  },
+  {
+    "at_seconds": 0.452,
+    "event": "old_leader_caught_up",
+    "node": 1
+  },
+  {
+    "at_seconds": 1.003,
+    "count": 6865,
+    "event": "acknowledged_writes_verified"
+  }
+]

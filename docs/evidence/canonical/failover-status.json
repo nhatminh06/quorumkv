@@ -1,0 +1,43 @@
+{
+  "1": {
+    "reachable": false
+  },
+  "2": {
+    "apply_lag": 0,
+    "commit_index": 4361,
+    "last_applied": 4361,
+    "last_log_index": 4372,
+    "leader": 2,
+    "membership": "stable",
+    "node": 2,
+    "reachable": true,
+    "role": "leader",
+    "snapshot_index": 0,
+    "snapshot_term": 0,
+    "term": 2,
+    "voters": [
+      1,
+      2,
+      3
+    ]
+  },
+  "3": {
+    "apply_lag": 0,
+    "commit_index": 4387,
+    "last_applied": 4387,
+    "last_log_index": 4397,
+    "leader": 2,
+    "membership": "stable",
+    "node": 3,
+    "reachable": true,
+    "role": "follower",
+    "snapshot_index": 0,
+    "snapshot_term": 0,
+    "term": 2,
+    "voters": [
+      1,
+      2,
+      3
+    ]
+  }
+}

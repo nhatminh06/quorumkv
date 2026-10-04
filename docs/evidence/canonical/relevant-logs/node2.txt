@@ -1,0 +1,5 @@
+{"time":"2026-10-04T12:25:27.353088868-05:00","level":"INFO","msg":"node_started","node_id":2,"event":"node_started","listen":"127.0.0.1:34311","peer_count":2,"term":0,"last_log_index":0,"commit_index":0,"last_applied":0,"snapshot_index":0,"snapshot_term":0}
+{"time":"2026-10-04T12:25:27.569811651-05:00","level":"INFO","msg":"raft_log_migrated","node_id":2,"event":"raft_log_migrated"}
+{"time":"2026-10-04T12:25:28.062874263-05:00","level":"INFO","msg":"election_started","node_id":2,"event":"election_started","term":2,"role":"Candidate"}
+{"time":"2026-10-04T12:25:28.06304073-05:00","level":"INFO","msg":"leader_elected","node_id":2,"event":"leader_elected","term":2,"role":"Leader"}
+{"time":"2026-10-04T12:25:28.153197777-05:00","level":"INFO","msg":"leader_elected","node_id":2,"event":"leader_elected","term":2,"role":"Leader"}
