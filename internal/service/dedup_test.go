@@ -363,7 +363,7 @@ func TestRetryToNewLeaderAfterFailoverRecognizesDedup(t *testing.T) {
 	}
 	_ = tr
 
-	c := client.New(a.addr())
+	c := client.New(a.addr(), b.addr(), cNode.addr())
 	arm(c.ID(), 1)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -503,6 +503,127 @@ func TestLeaderCrashBeforeCommitRetryAppliesOnce(t *testing.T) {
 	if got := b.applied.Load() + cNode.applied.Load(); got != 1 {
 		t.Fatalf("surviving nodes mutated state %d times combined, want exactly 1", got)
 	}
+}
+
+// TestNextSequenceAfterLeaderFailoverCommitsPrefixBeforeLookup proves that a
+// replacement leader applies an acknowledged prefix before classifying the
+// next client sequence. A's first two entry-bearing replications are the
+// client write; the replacement leader must establish its current-term
+// barrier before classifying the next sequence.
+func TestNextSequenceAfterLeaderFailoverCommitsPrefixBeforeLookup(t *testing.T) {
+	nodes := startDedupCluster(t, 3)
+	electDedupLeader(t, nodes, 0)
+	a, b, cNode := nodes[0], nodes[1], nodes[2]
+
+	var mu sync.Mutex
+	sentEntries := make(map[string]int)
+	sealed := make(map[string]bool)
+	a.svc.node.SetAppendSend(func(ctx context.Context, addr string, req raft.AppendEntriesRequest) (raft.AppendEntriesResponse, error) {
+		mu.Lock()
+		if sealed[addr] {
+			mu.Unlock()
+			return raft.AppendEntriesResponse{}, errors.New("commit propagation blocked")
+		}
+		count := sentEntries[addr]
+		if count+len(req.Entries) > 2 {
+			mu.Unlock()
+			return raft.AppendEntriesResponse{}, errors.New("entry propagation blocked")
+		}
+		mu.Unlock()
+
+		payload, err := raft.EncodeAppendEntries(req)
+		if err != nil {
+			return raft.AppendEntriesResponse{}, err
+		}
+		respMsg, err := transport.Send(ctx, addr, transport.NewMessage(transport.MessageAppendEntries, payload))
+		if err != nil {
+			return raft.AppendEntriesResponse{}, err
+		}
+		resp, err := raft.DecodeAppendEntriesResponse(respMsg.Payload)
+		if err != nil {
+			return raft.AppendEntriesResponse{}, err
+		}
+		if len(req.Entries) > 0 && resp.Success {
+			mu.Lock()
+			sentEntries[addr] += len(req.Entries)
+			if sentEntries[addr] == 2 {
+				sealed[addr] = true
+			}
+			mu.Unlock()
+		}
+		return resp, nil
+	})
+
+	c := client.New(a.addr(), b.addr(), cNode.addr())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.Put(ctx, []byte("x"), []byte("1")); err != nil {
+		t.Fatalf("first Put: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for b.svc.node.LastLogIndex() < 1 && time.Now().Before(deadline) {
+		time.Sleep(3 * time.Millisecond)
+	}
+	if b.svc.node.LastLogIndex() < 1 {
+		t.Fatalf("follower B did not receive the acknowledged write")
+	}
+
+	a.svc.node.Close()
+	electLeaderAmongDedup(t, []*dedupTestNode{b, cNode}, nodes, 1)
+	if err := c.Put(ctx, []byte("y"), []byte("2")); err != nil {
+		t.Fatalf("next sequence after failover: %v", err)
+	}
+
+	b.svc.mu.Lock()
+	x, xOK := b.svc.sm.Get([]byte("x"))
+	y, yOK := b.svc.sm.Get([]byte("y"))
+	b.svc.mu.Unlock()
+	if !xOK || string(x) != "1" || !yOK || string(y) != "2" {
+		t.Fatalf("recovered state = x=%q/%v y=%q/%v, want x=1 and y=2", x, xOK, y, yOK)
+	}
+}
+
+func TestReservePendingSerializesSameIdentity(t *testing.T) {
+	svc := New(nil)
+	id := testClientID()
+	cmd := kv.NewIdentifiedPutCommand(id, 1, []byte("x"), []byte("1"))
+	key := pendingKey{id: id, seq: 1}
+	fp := kv.Fingerprint(cmd)
+	pw, owner, resp := svc.reservePending(context.Background(), key, fp)
+	if !owner || pw == nil || resp.Status != 0 {
+		t.Fatalf("first reservation = owner=%v pending=%v response=%v, want owner", owner, pw != nil, resp.Status)
+	}
+
+	joined := make(chan clientproto.Response, 1)
+	go func() {
+		_, joinedOwner, joinedResp := svc.reservePending(context.Background(), key, fp)
+		if joinedOwner {
+			joined <- clientproto.Response{Status: clientproto.StatusInternalError}
+			return
+		}
+		joined <- joinedResp
+	}()
+	select {
+	case <-joined:
+		t.Fatalf("matching reservation returned before owner finished")
+	case <-time.After(10 * time.Millisecond):
+	}
+	_, conflictOwner, conflict := svc.reservePending(context.Background(), key, kv.Fingerprint(kv.NewIdentifiedPutCommand(id, 1, []byte("x"), []byte("different"))))
+	if conflictOwner || conflict.Status != clientproto.StatusRequestConflict {
+		t.Fatalf("conflicting reservation = owner=%v status=%v, want REQUEST_CONFLICT", conflictOwner, conflict.Status)
+	}
+
+	want := clientproto.Response{Status: clientproto.StatusOK}
+	svc.finishPending(key, pw, want)
+	select {
+	case got := <-joined:
+		if got.Status != want.Status {
+			t.Fatalf("joined reservation status=%v, want %v", got.Status, want.Status)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("matching reservation did not receive owner result")
+	}
+
 }
 
 // TestRequestConflictOverRealTCP is items 13/28: the same (ClientID,

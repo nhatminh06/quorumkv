@@ -182,8 +182,12 @@ func (s *Service) Apply(index raft.LogIndex, command []byte) error {
 		return fmt.Errorf("service: malformed committed command at index %d: %w", index, err)
 	}
 	s.mu.Lock()
+	previous, hadPrevious := s.sm.ClientRecord(cmd.ClientID)
 	outcome := s.sm.Apply(cmd)
 	s.mu.Unlock()
+	if outcome == kv.StaleRequest {
+		s.logDedupStale("apply", index, cmd, previous, hadPrevious)
+	}
 
 	s.resMu.Lock()
 	if ch, ok := s.results[index]; ok {
@@ -383,65 +387,86 @@ func (s *Service) write(ctx context.Context, cmd kv.Command) clientproto.Respons
 	key := pendingKey{id: cmd.ClientID, seq: cmd.Sequence}
 	fp := kv.Fingerprint(cmd)
 
-	if resp, ok := s.joinPending(ctx, key, fp); ok {
+	pw, owner, resp := s.reservePending(ctx, key, fp)
+	if !owner {
 		return resp
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx, requestTimeout)
 	defer cancel()
+	if err := s.node.EnsureCurrentTermCommitted(waitCtx); err != nil {
+		resp := s.readFailureResponse(err)
+		s.finishPending(key, pw, resp)
+		return resp
+	}
 	if err := s.node.WaitApplied(waitCtx, s.node.CommitIndex(), 0); err != nil {
-		return s.readFailureResponse(err)
+		resp := s.readFailureResponse(err)
+		s.finishPending(key, pw, resp)
+		return resp
 	}
 
 	s.mu.Lock()
 	lookup := s.sm.LookupRequest(cmd.ClientID, cmd.Sequence, fp)
+	record, hadRecord := s.sm.ClientRecord(cmd.ClientID)
 	s.mu.Unlock()
 	switch lookup {
 	case kv.AppliedDuplicate:
-		return clientproto.Response{Status: clientproto.StatusOK}
+		result := clientproto.Response{Status: clientproto.StatusOK}
+		s.finishPending(key, pw, result)
+		return result
 	case kv.RequestConflict:
-		return clientproto.Response{Status: clientproto.StatusRequestConflict}
+		result := clientproto.Response{Status: clientproto.StatusRequestConflict}
+		s.finishPending(key, pw, result)
+		return result
 	case kv.StaleRequest:
-		return clientproto.Response{Status: clientproto.StatusStaleRequest}
+		s.logDedupStale("lookup", 0, cmd, record, hadRecord)
+		result := clientproto.Response{Status: clientproto.StatusStaleRequest}
+		s.finishPending(key, pw, result)
+		return result
 	}
 
-	pw := s.beginPending(key, fp)
-	resp := s.proposeAndWaitIdentified(waitCtx, cmd)
+	resp = s.proposeAndWaitIdentified(waitCtx, cmd)
 	s.finishPending(key, pw, resp)
 	return resp
 }
 
-// joinPending checks for an in-flight write with the same request
-// identity: a matching fingerprint waits on its completion (coalescing,
-// per docs/request-dedup.md item 39); a mismatched one is an immediate
-// RequestConflict (item 40) without ever touching Raft.
-func (s *Service) joinPending(ctx context.Context, key pendingKey, fp reqid.Fingerprint) (clientproto.Response, bool) {
+func (s *Service) logDedupStale(phase string, index raft.LogIndex, cmd kv.Command, record kv.ClientRecord, hadRecord bool) {
+	logger := s.logger.Load()
+	if logger == nil {
+		return
+	}
+	logger.Debug("dedup_stale", "event", "dedup_stale", "phase", phase,
+		"role", s.node.Role().String(), "term", uint64(s.node.CurrentTerm()),
+		"log_index", uint64(index), "client_id", cmd.ClientID.String(),
+		"incoming_sequence", uint64(cmd.Sequence), "incoming_fingerprint", fmt.Sprintf("%x", kv.Fingerprint(cmd)),
+		"had_record", hadRecord, "last_sequence", uint64(record.LastSequence),
+		"last_fingerprint", fmt.Sprintf("%x", record.LastFingerprint))
+}
+
+// reservePending atomically installs ownership of a request identity before
+// any local catch-up or dedup lookup. A matching retry waits on the owner's
+// result; a different fingerprint is rejected without touching Raft.
+func (s *Service) reservePending(ctx context.Context, key pendingKey, fp reqid.Fingerprint) (*pendingWrite, bool, clientproto.Response) {
 	s.pendMu.Lock()
 	pw, ok := s.pending[key]
-	if !ok {
+	if ok && pw.fingerprint != fp {
 		s.pendMu.Unlock()
-		return clientproto.Response{}, false
+		return nil, false, clientproto.Response{Status: clientproto.StatusRequestConflict}
 	}
-	if pw.fingerprint != fp {
+	if !ok {
+		pw = &pendingWrite{fingerprint: fp, done: make(chan struct{})}
+		s.pending[key] = pw
 		s.pendMu.Unlock()
-		return clientproto.Response{Status: clientproto.StatusRequestConflict}, true
+		return pw, true, clientproto.Response{}
 	}
 	s.pendMu.Unlock()
 
 	select {
 	case <-pw.done:
-		return pw.resp, true
+		return nil, false, pw.resp
 	case <-ctx.Done():
-		return clientproto.Response{Status: clientproto.StatusTimeout}, true
+		return nil, false, clientproto.Response{Status: clientproto.StatusTimeout}
 	}
-}
-
-func (s *Service) beginPending(key pendingKey, fp reqid.Fingerprint) *pendingWrite {
-	pw := &pendingWrite{fingerprint: fp, done: make(chan struct{})}
-	s.pendMu.Lock()
-	s.pending[key] = pw
-	s.pendMu.Unlock()
-	return pw
 }
 
 func (s *Service) finishPending(key pendingKey, pw *pendingWrite, resp clientproto.Response) {

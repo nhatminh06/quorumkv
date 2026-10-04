@@ -151,6 +151,13 @@ leader crash, the new leader has no memory of it and resolves any retry
 purely from replicated state (§5/§6) and the Raft log, exactly as it
 would for a request it had never seen coalesced before.
 
+Concurrent retries can overlap on one leader when a client abandons a
+transport exchange while the server-side handler is still running. The
+service reserves `(ClientID, Sequence)` atomically before local catch-up and
+dedup lookup, so a matching retry joins the original handler and a conflicting
+fingerprint is rejected. The authoritative `StateMachine.Apply` check remains
+necessary across leaders and duplicate log entries.
+
 ## 8. The service write flow
 
 ```text
@@ -176,6 +183,12 @@ replicated dedup lookup (§6):
     ↓
 map outcome to a client status (§5's table) and respond
 ```
+
+Before the leader-local lookup, the service establishes Raft's current-term
+commit barrier and waits for local application to catch up. A replacement
+leader can have a committed log prefix that its state machine has not applied
+yet; without this barrier, a legitimate next sequence could be classified
+against temporarily stale local state.
 
 A follower never reaches any of this — `dispatch` rejects a non-leader
 before touching Raft at all, even if that follower happens to already

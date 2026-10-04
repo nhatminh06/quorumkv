@@ -132,6 +132,21 @@ func (n *Node) ensureCurrentTermCommitted(ctx context.Context) error {
 	return nil
 }
 
+// EnsureCurrentTermCommitted establishes the current-term commit barrier for
+// callers that must inspect committed application state after becoming leader.
+// It is the same single-flight barrier used by ReadIndex; exposing this
+// narrow wrapper keeps write-side dedup lookup from treating an unapplied
+// committed prefix as a stale client sequence.
+func (n *Node) EnsureCurrentTermCommitted(ctx context.Context) error {
+	n.mu.Lock()
+	needsBarrier := n.role == Leader && n.commitIndex < n.log.LastIndex()
+	n.mu.Unlock()
+	if !needsBarrier {
+		return nil
+	}
+	return n.ensureCurrentTermCommitted(ctx)
+}
+
 // readProbeResult is one peer's outcome for a specific ReadContext quorum
 // probe, delivered over a channel private to one ReadIndex call.
 type readProbeResult struct {

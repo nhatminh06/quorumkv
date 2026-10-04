@@ -132,6 +132,14 @@ func (m *StateMachine) LookupRequest(id reqid.ClientID, seq reqid.Sequence, fp r
 	return classifyRequest(m.clients[id], seq, fp)
 }
 
+// ClientRecord returns the current deduplication record for id. The returned
+// record is a value copy; callers must still synchronize access to the state
+// machine as they do for LookupRequest and Apply.
+func (m *StateMachine) ClientRecord(id reqid.ClientID) (ClientRecord, bool) {
+	record, ok := m.clients[id]
+	return record, ok
+}
+
 func (m *StateMachine) applyRaw(cmd Command) {
 	switch cmd.Type {
 	case CommandPut:
