@@ -3,144 +3,125 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="QuorumKV canonical leader-failure capture: an evidence-backed distributed-systems incident timeline.">
-  <title>QuorumKV — canonical failure-under-load capture</title>
+  <meta name="description" content="QuorumKV canonical leader-failure capture: an evidence-backed consensus control board.">
+  <title>QuorumKV — consensus incident control board</title>
   <link rel="stylesheet" href="styles.css">
   <script src="evidence.js" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to evidence</a>
-  <header class="masthead">
-    <a class="wordmark" href="#top" aria-label="QuorumKV home">QUORUM<span>KV</span></a>
-    <nav aria-label="Report sections">
-      <a href="#timeline">Timeline</a><a href="#verification">Verification</a><a href="#recovery">Recovery</a><a href="#provenance">Provenance</a><a href="https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4">Demo video</a>
+  <a class="skip-link" href="#control-board">Skip to incident control board</a>
+
+  <header class="board-header" id="top">
+    <div class="identity">
+      <a class="wordmark" href="#top">QUORUM<span>KV</span></a>
+      <div class="incident-id"><span>INCIDENT 001</span><strong>LEADER FAILURE UNDER LOAD</strong></div>
+    </div>
+    <div class="capture-tag"><span class="lamp lamp-ok" aria-hidden="true"></span><strong>CANONICAL CAPTURE</strong><span id="header-spec">— NODES · — CLIENTS · RAFT · —</span></div>
+    <nav aria-label="Control board sections">
+      <a href="#control-board">Incident</a><a href="#evidence">Evidence</a><a href="#bug">Bug</a><a href="#architecture">Architecture</a><a href="#boundaries">Boundaries</a><a href="https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4">Video ↗</a><a href="https://github.com/nhatminh06/quorumkv">Repository ↗</a>
     </nav>
   </header>
 
-  <main id="main">
-    <section class="hero" id="top" aria-labelledby="hero-title">
-      <div class="eyebrow"><span class="status-dot" aria-hidden="true"></span> Canonical failure-under-load capture</div>
-      <div class="hero-grid">
-        <div>
-          <p class="kicker">QUORUMKV</p>
-          <h1 id="hero-title">Consensus,<br>under interruption.</h1>
-          <p class="dek">Raft-backed key-value store tested under real leader failure and concurrent load.</p>
+  <main>
+    <div id="load-error" class="load-error" role="alert" hidden><strong>EVIDENCE UNAVAILABLE</strong><span>The canonical capture could not be loaded. No substitute values are shown.</span></div>
+
+    <section class="control-board" id="control-board" aria-labelledby="board-title">
+      <h1 id="board-title" class="sr-only">Canonical leader failure incident control board</h1>
+
+      <aside class="incident-rail" aria-labelledby="rail-title">
+        <div class="panel-label"><span>01</span><h2 id="rail-title">Incident chronology</h2><small>Observed in this capture</small></div>
+        <ol id="event-list" class="event-list"></ol>
+        <p class="rail-note">Recorded relative time. Not a failover SLA or benchmark.</p>
+      </aside>
+
+      <div class="consensus-panel">
+        <div class="panel-label topology-label"><span>02</span><h2>Consensus topology</h2><small id="checkpoint-label">Awaiting evidence</small></div>
+
+        <div class="topology-scroll" tabindex="0" aria-label="Scrollable three-node consensus topology">
+          <div class="topology" id="topology" role="img" aria-labelledby="topology-title topology-description">
+            <h3 id="topology-title" class="sr-only">Three-node QuorumKV topology</h3>
+            <p id="topology-description" class="sr-only">Node roles and indexes update when a recorded event or checkpoint is selected.</p>
+            <svg viewBox="0 0 900 510" aria-hidden="true" focusable="false">
+              <path d="M450 118 L210 380 L690 380 Z" class="peer-link"></path>
+              <path d="M450 118 L210 380 L690 380 Z" class="peer-link-active" id="active-links"></path>
+              <text x="450" y="260" text-anchor="middle" class="quorum-label">RAFT / 3 VOTERS</text>
+            </svg>
+            <div id="node-1" class="topology-node node-one" data-node="1"></div>
+            <div id="node-2" class="topology-node node-two" data-node="2"></div>
+            <div id="node-3" class="topology-node node-three" data-node="3"></div>
+            <div id="failure-stamp" class="failure-stamp" hidden><span>×</span><strong>SIGKILL</strong></div>
+          </div>
         </div>
-        <dl class="hero-facts" aria-label="Capture summary">
-          <div><dt>Cluster</dt><dd id="hero-nodes">—</dd></div>
-          <div><dt>Clients</dt><dd id="hero-clients">—</dd></div>
-          <div><dt>Failure</dt><dd id="hero-failure">—</dd></div>
-          <div class="wide"><dt>Definitely acknowledged writes</dt><dd><span id="hero-verified">—</span> <small>verified</small></dd></div>
-        </dl>
-      </div>
-      <div id="load-error" class="load-error" role="alert" hidden><strong>Evidence unavailable</strong><span>The canonical capture could not be loaded. No substitute values are shown.</span></div>
-    </section>
 
-    <section class="report-section timeline-section" id="timeline" aria-labelledby="timeline-title">
-      <div class="section-heading">
-        <div><p class="section-number">01 / Incident record</p><h2 id="timeline-title">One failure. One election.<br>Continued progress.</h2></div>
-        <p>The elapsed times below were <strong>observed in this capture</strong>. They are neither a benchmark nor a failover-time guarantee.</p>
-      </div>
-      <div class="timeline-shell">
-        <div class="timeline-axis" aria-hidden="true"><span>TIME</span><i></i><span>1.003 s →</span></div>
-        <div class="timeline-scroll" tabindex="0" aria-label="Scrollable cluster timeline">
-          <svg id="cluster-timeline" viewBox="0 0 1100 350" role="img" aria-labelledby="timeline-svg-title timeline-svg-desc">
-            <title id="timeline-svg-title">QuorumKV leader failure and recovery timeline</title>
-            <desc id="timeline-svg-desc">Node 1 begins as leader, is killed, restarts from disk, and returns as follower. Node 2 becomes leader while clients continue their workload.</desc>
-          </svg>
+        <div class="event-readout" aria-live="polite">
+          <div><span id="selected-sequence">EVENT — / —</span><strong id="selected-event">SELECT AN EVENT</strong></div>
+          <div><span id="selected-time">T + —</span><p id="selected-detail">Use the incident rail or arrow keys to inspect the canonical sequence.</p></div>
         </div>
-        <div class="event-inspector" aria-live="polite">
-          <div><span class="event-index" id="event-index">Event — / —</span><h3 id="event-name">Select an event</h3></div>
-          <div><span class="event-time" id="event-time">—</span><p id="event-detail">Use the event markers or arrow keys to inspect the recorded timeline.</p></div>
+
+        <div class="checkpoint-switch" role="tablist" aria-label="Recorded cluster checkpoints">
+          <button role="tab" id="checkpoint-initial" aria-selected="true" data-checkpoint="initial"><span>01</span><strong>Before</strong><small>term 1</small></button>
+          <button role="tab" id="checkpoint-failover" aria-selected="false" data-checkpoint="failover" tabindex="-1"><span>02</span><strong>Failover</strong><small>term 2</small></button>
+          <button role="tab" id="checkpoint-final" aria-selected="false" data-checkpoint="final" tabindex="-1"><span>03</span><strong>Converged</strong><small>term 2</small></button>
         </div>
-        <ol id="timeline-text" class="sr-only" aria-label="Text equivalent of timeline"></ol>
+      </div>
+
+      <div class="workload-strip" aria-label="Continuous client workload">
+        <div class="signal-name"><span class="lamp lamp-load" aria-hidden="true"></span><strong>CLIENT LOAD</strong></div>
+        <div class="signal-line" aria-hidden="true"><i></i><b class="crash-tick">×</b><i></i><b class="election-tick">●</b><i></i></div>
+        <div class="signal-spec"><strong id="workload-workers">— WORKERS</strong><span id="workload-mix">—% PUT · —% GET</span><small>ACTIVE ACROSS CRASH / ELECTION</small></div>
       </div>
     </section>
 
-    <section class="report-section" aria-labelledby="states-title">
-      <div class="section-heading compact"><div><p class="section-number">02 / Checkpoints</p><h2 id="states-title">Leadership changed.<br>The cluster converged.</h2></div></div>
-      <div class="checkpoint-tabs" role="tablist" aria-label="Cluster checkpoints">
-        <button role="tab" aria-selected="true" aria-controls="checkpoint-panel" id="tab-initial" data-checkpoint="initial">Before failure</button>
-        <button role="tab" aria-selected="false" aria-controls="checkpoint-panel" id="tab-failover" data-checkpoint="failover" tabindex="-1">During failover</button>
-        <button role="tab" aria-selected="false" aria-controls="checkpoint-panel" id="tab-final" data-checkpoint="final" tabindex="-1">Final convergence</button>
+    <section class="evidence-board" id="evidence" aria-labelledby="evidence-title">
+      <header class="section-header"><span>03 / Evidence ledger</span><h2 id="evidence-title">Every definite acknowledgment accounted for.</h2></header>
+      <div class="ledger" aria-label="Acknowledged write verification">
+        <div><strong id="ack-total">—</strong><span>ACKNOWLEDGED</span></div><b>=</b><div><strong id="ack-verified">—</strong><span>VERIFIED</span></div><b>−</b><div class="ledger-zero"><strong id="ack-missing">—</strong><span>MISSING</span></div>
       </div>
-      <div id="checkpoint-panel" class="checkpoint-panel" role="tabpanel" aria-labelledby="tab-initial">
-        <div id="checkpoint-nodes" class="node-grid"></div>
-        <dl id="checkpoint-details" class="checkpoint-details"></dl>
-      </div>
-    </section>
-
-    <section class="report-section verification" id="verification" aria-labelledby="verification-title">
-      <div class="section-heading">
-        <div><p class="section-number">03 / Correctness result</p><h2 id="verification-title">Acknowledged means<br>accounted for.</h2></div>
-        <p>Every write for which the client observed a definite successful acknowledgment remained readable after recovery.</p>
-      </div>
-      <div class="verification-ledger">
-        <div><strong id="ack-total">—</strong><span>Acknowledged</span></div><span class="ledger-mark" aria-hidden="true">=</span>
-        <div><strong id="ack-verified">—</strong><span>Verified</span></div><span class="ledger-mark" aria-hidden="true">−</span>
-        <div class="zero"><strong id="ack-missing">—</strong><span>Missing</span></div>
-      </div>
-      <p class="precision-note">No definitely acknowledged write was missing in this capture.</p>
-      <div class="progress-split">
-        <div><span>Before crash</span><strong id="ack-before">—</strong><small>ACKs</small></div>
-        <div><span>After failover</span><strong id="ack-after">—</strong><small>ACKs</small></div>
-      </div>
-      <div class="protocol-block">
-        <div><p class="section-number">Protocol outcomes / this capture</p><h3>Expected identities stayed consistent.</h3></div>
-        <dl id="protocol-counts"></dl>
+      <div class="ack-split"><span><strong id="ack-before">—</strong> BEFORE FAILURE</span><i></i><span><strong id="ack-after">—</strong> AFTER FAILOVER</span></div>
+      <blockquote>No definitely acknowledged write was missing in this captured run.</blockquote>
+      <div class="diagnostic-strip" aria-label="Protocol integrity readout">
+        <span class="diagnostic-title">PROTOCOL INTEGRITY / THIS CAPTURE</span>
+        <dl id="protocol-readout"></dl>
       </div>
     </section>
 
-    <section class="report-section bug-story" aria-labelledby="bug-title">
-      <div><p class="section-number">04 / What the stress test found</p><h2 id="bug-title">A race between<br>commit and apply.</h2><p>The earlier stress run exposed a correctness edge on a replacement leader. The canonical capture was recorded after the fix.</p><a class="text-link" href="https://github.com/nhatminh06/quorumkv/commit/f3ff0bfd41c8fb0d2bca3864af96f8dd85b130bd" rel="noreferrer">Inspect fix f3ff0bfd →</a></div>
-      <div class="causal-chain" aria-label="Bug cause and fix">
-        <ol>
-          <li><span>01</span>Replacement leader</li><li><span>02</span>Committed prefix existed</li><li><span>03</span>State machine had not applied it</li><li><span>04</span>Next valid client sequence arrived</li><li class="fault"><span>05</span>Stale apply state implied <code>STALE_REQUEST</code></li>
-        </ol>
-        <div class="fix-note"><span>FIX</span><strong>current-term / apply barrier</strong><b>+</b><strong>atomic same-identity pending reservation</strong></div>
+    <section class="bug-board" id="bug" aria-labelledby="bug-title">
+      <header class="section-header"><span>04 / Protocol diagnostic</span><h2 id="bug-title">What failure-under-load testing found</h2></header>
+      <div class="logic-chain" aria-label="M24 deduplication race logic chain">
+        <div><span>01</span><strong>NEW LEADER</strong><small>replacement elected</small></div><i>→</i><div><span>02</span><strong>COMMITTED PREFIX</strong><small>not yet applied</small></div><i>→</i><div><span>03</span><strong>DEDUP LOOKUP</strong><small>sees old state</small></div><i>→</i><div class="logic-fault"><span>04</span><strong>VALID SEQUENCE</strong><small>rejected as stale</small></div>
       </div>
+      <div class="fix-schematic"><span>FIX / <a href="https://github.com/nhatminh06/quorumkv/commit/f3ff0bfd41c8fb0d2bca3864af96f8dd85b130bd">f3ff0bfd ↗</a></span><strong>COMMIT / APPLY BARRIER</strong><b>+</b><strong>ATOMIC PENDING RESERVATION</strong></div>
     </section>
 
-    <section class="report-section recovery" id="recovery" aria-labelledby="recovery-title">
-      <div class="section-heading"><div><p class="section-number">05 / Persistence and recovery</p><h2 id="recovery-title">The old leader<br>returned from disk.</h2></div><p>The failed process restarted from its existing persisted state and caught up through normal replication.</p></div>
-      <div class="recovery-grid">
-        <div class="disk-card"><span class="disk-icon" aria-hidden="true"></span><p>Restart source</p><code id="recovery-path">—</code><dl><div><dt>Same data directory</dt><dd id="same-directory">—</dd></div><div><dt>Recovery mode</dt><dd>Normal replication</dd></div></dl></div>
-        <div class="node-readout"><header><span>NODE 1</span><strong id="recovery-role">—</strong></header><dl><div><dt>Term</dt><dd id="recovery-term">—</dd></div><div><dt>Commit</dt><dd id="recovery-commit">—</dd></div><div><dt>Applied</dt><dd id="recovery-applied">—</dd></div><div><dt>Apply lag</dt><dd id="recovery-lag">—</dd></div></dl></div>
+    <section class="architecture-board" id="architecture" aria-labelledby="architecture-title">
+      <header class="section-header"><span>05 / System signal path</span><h2 id="architecture-title">From client intent to durable state</h2></header>
+      <div class="signal-path" role="img" aria-label="Clients flow through service, Raft, persistence, and the KV state machine">
+        <div class="path-stage"><span>01</span><strong>CLIENTS</strong><small>binary TCP protocol</small></div><i>↓</i>
+        <div class="path-stage"><span>02</span><strong>SERVICE</strong><small>request identity · dedup · ReadIndex · proposal</small></div><i>↓</i>
+        <div class="path-stage path-core"><span>03</span><strong>RAFT</strong><small>election · replication · commit · snapshots · membership</small></div><i>↓</i>
+        <div class="path-stage"><span>04</span><strong>PERSISTENCE</strong><small>log · commit state · snapshot</small></div><i>↓</i>
+        <div class="path-stage"><span>05</span><strong>KV STATE MACHINE</strong><small>deterministic apply</small></div>
       </div>
+      <p class="doc-links"><a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/architecture.md">Complete architecture ↗</a><a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/read-index.md">ReadIndex ↗</a><a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/request-dedup.md">Request identity ↗</a></p>
     </section>
 
-    <section class="report-section architecture" aria-labelledby="architecture-title">
-      <div class="section-heading compact"><div><p class="section-number">06 / System path</p><h2 id="architecture-title">From client intent<br>to persisted state.</h2></div></div>
-      <div class="architecture-flow" role="img" aria-label="Clients flow through client protocol, service, Raft, persistent log, and KV state machine">
-        <div class="arch-main"><span>01</span><strong>Clients</strong></div><i>↓</i><div class="arch-main"><span>02</span><strong>Client protocol</strong></div><i>↓</i>
-        <div class="arch-row"><div class="arch-main"><span>03</span><strong>Service</strong></div><ul><li>dedup / request identity</li><li>ReadIndex</li><li>proposal path</li></ul></div><i>↓</i>
-        <div class="arch-row"><div class="arch-main blue"><span>04</span><strong>Raft</strong></div><ul><li>election</li><li>replication</li><li>commit</li><li>snapshots</li><li>membership</li></ul></div><i>↓</i>
-        <div class="arch-main"><span>05</span><strong>Persistent log / commit / snapshot</strong></div><i>↓</i><div class="arch-main"><span>06</span><strong>KV state machine</strong></div>
+    <section class="records-board">
+      <div class="id-plate" id="provenance" aria-labelledby="provenance-title">
+        <header><span>06 / Identification plate</span><h2 id="provenance-title">Evidence provenance</h2></header>
+        <dl><div><dt>CAPTURE SOURCE</dt><dd><a id="capture-link" href="https://github.com/nhatminh06/quorumkv"><code id="capture-source">—</code></a></dd></div><div><dt>EVIDENCE COMMIT</dt><dd><a href="https://github.com/nhatminh06/quorumkv/commit/e1847ac5021fe11a051d5afbea43dff8cc1c5623"><code>e1847ac…</code></a></dd></div><div><dt>SCHEMA</dt><dd id="tool-schema">—</dd></div><div><dt>PLATFORM</dt><dd id="platform">—</dd></div><div><dt>INTEGRITY</dt><dd class="verified">SHA-256 VERIFIED</dd></div></dl>
+        <p><a href="https://github.com/nhatminh06/quorumkv/tree/main/docs/evidence/canonical">INSPECT CANONICAL EVIDENCE ↗</a></p>
       </div>
-      <p class="capability-links">Also implemented: <a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/snapshots.md">snapshots / InstallSnapshot</a> · <a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/membership.md">joint consensus</a> · <a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/leadership-transfer.md">leadership transfer</a> · <a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/read-index.md">ReadIndex</a> · <a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/request-dedup.md">request deduplication</a></p>
+      <aside class="archive-note" aria-labelledby="archive-title"><span>ARCHIVE / PERFORMANCE STUDY</span><h2 id="archive-title">5,000-entry follower catch-up</h2><p><s>3.95 s</s><b>→</b><strong>0.27 s</strong></p><em>≈ 14.7× faster</em><small>Historical single-machine study. Separate from the canonical incident.</small><a href="https://github.com/nhatminh06/quorumkv/blob/main/docs/replication-performance.md">METHODOLOGY ↗</a></aside>
     </section>
 
-    <section class="report-section taxonomy" aria-labelledby="taxonomy-title">
-      <div><p class="section-number">07 / Evidence taxonomy</p><h2 id="taxonomy-title">Different claims.<br>Different records.</h2></div>
-      <dl><div><dt>Observed</dt><dd>Node roles, terms, indexes, process death</dd></div><div><dt>Client</dt><dd>ACK counts and post-recovery verification</dd></div><div><dt>Protocol</dt><dd>Stale, conflict, and error counts</dd></div><div><dt>Persistence</dt><dd>Same-disk restart and catch-up</dd></div><div><dt>Historical</dt><dd>Older, separate performance studies</dd></div></dl>
+    <section class="boundary-board" id="boundaries" aria-labelledby="boundary-title">
+      <header class="section-header"><span>07 / Claim perimeter</span><h2 id="boundary-title">Evidence boundary matrix</h2></header>
+      <dl><div><dt>NETWORK PARTITION</dt><dd>NOT TESTED HERE</dd></div><div><dt>BYZANTINE FAILURE</dt><dd>OUT OF SCOPE</dd></div><div><dt>FORMAL VERIFICATION</dt><dd>NO</dd></div><div><dt>PRODUCTION SLO</dt><dd>NO</dd></div><div><dt>FAILOVER GUARANTEE</dt><dd>NO</dd></div><div><dt>THROUGHPUT BENCHMARK</dt><dd>NO</dd></div><div><dt>CROSS-REGION BEHAVIOR</dt><dd>NOT TESTED HERE</dd></div><div><dt>TLS / AUTH</dt><dd>NOT PROVIDED</dd></div></dl>
     </section>
 
-    <section class="report-section historical" aria-labelledby="historical-title">
-      <div><p class="section-number">Historical performance study / separate from M25</p><h2 id="historical-title">Follower catch-up,<br>measured earlier.</h2><p>A prior controlled study measured a 5,000-entry lagging suffix after event-driven replication replaced fixed-heartbeat catch-up.</p><a class="text-link" href="https://github.com/nhatminh06/quorumkv/blob/main/docs/replication-performance.md">Read methodology →</a></div>
-      <div class="historical-metric"><span>3.95 s</span><i>→</i><strong>0.27 s</strong><small>≈ 14.7× faster</small></div>
-    </section>
-
-    <section class="report-section boundaries" aria-labelledby="boundaries-title">
-      <div><p class="section-number">08 / Evidence boundary</p><h2 id="boundaries-title">This capture<br>does not claim</h2></div>
-      <ul><li>Network partition testing</li><li>Byzantine tolerance</li><li>Formal verification</li><li>Production SLOs</li><li>Failover-time guarantee</li><li>Throughput benchmark</li><li>Cross-region behavior</li><li>TLS / authentication</li></ul>
-    </section>
-
-    <section class="report-section provenance" id="provenance" aria-labelledby="provenance-title">
-      <div><p class="section-number">09 / Provenance</p><h2 id="provenance-title">Trace the result<br>back to source.</h2></div>
-      <dl><div><dt>Capture source</dt><dd><a id="capture-link" href="https://github.com/nhatminh06/quorumkv/commit/7b068288e748330828cff91f9c71e97179119897"><code id="capture-source">—</code></a></dd></div><div><dt>Evidence commit</dt><dd><a href="https://github.com/nhatminh06/quorumkv/commit/e1847ac5021fe11a051d5afbea43dff8cc1c5623"><code>e1847ac…</code></a></dd></div><div><dt>Tool schema</dt><dd id="tool-schema">—</dd></div><div><dt>Platform</dt><dd id="platform">—</dd></div><div><dt>Integrity</dt><dd>SHA-256 verified</dd></div></dl>
-      <p><a class="button-link" href="https://github.com/nhatminh06/quorumkv/tree/main/docs/evidence/canonical">Inspect canonical evidence <span>↗</span></a><a class="text-link" href="https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4">Demo video →</a><a class="text-link" href="https://github.com/nhatminh06/quorumkv">View repository →</a></p>
-    </section>
+    <section class="walkthrough-board" aria-label="Demo video and repository links"><div><span>INCIDENT WALKTHROUGH / 03:38 / SILENT</span><h2>Inspect the recorded evidence sequence.</h2></div><a class="video-link" href="https://github.com/nhatminh06/quorumkv/releases/download/portfolio-v1/quorumkv-demo.mp4">WATCH INCIDENT WALKTHROUGH ↗</a></section>
   </main>
-  <footer><span>QUORUMKV / INCIDENT RECORD M25</span><span>Portfolio status: feature-frozen.</span></footer>
+
+  <footer><span>QUORUMKV / INCIDENT 001 / CANONICAL M25</span><span>PORTFOLIO STATUS: FEATURE-FROZEN</span></footer>
 </body>
 </html>

@@ -11,156 +11,203 @@ const evidenceFiles = [
 ];
 
 const $ = (selector) => document.querySelector(selector);
-const formatNumber = (value) => new Intl.NumberFormat("en-US").format(value);
-const eventLabels = {
-  cluster_ready: "Cluster ready",
-  load_started: "Load started",
-  leader_crashed: "Leader crashed",
-  replacement_leader: "Replacement leader",
-  post_failover_progress: "Post-failover progress",
-  old_leader_restarted: "Old leader restarted",
-  old_leader_caught_up: "Old leader caught up",
-  acknowledged_writes_verified: "ACKed writes verified",
+const number = (value) => new Intl.NumberFormat("en-US").format(value);
+
+const eventMeta = {
+  cluster_ready: { label: "Cluster ready", marker: "○", kind: "normal" },
+  load_started: { label: "Load started", marker: "○", kind: "normal" },
+  leader_crashed: { label: "Leader killed", marker: "×", kind: "failure" },
+  replacement_leader: { label: "Replacement leader", marker: "●", kind: "election" },
+  post_failover_progress: { label: "Progress resumed", marker: "○", kind: "normal" },
+  old_leader_restarted: { label: "Node restarted", marker: "○", kind: "normal" },
+  old_leader_caught_up: { label: "Node caught up", marker: "○", kind: "normal" },
+  acknowledged_writes_verified: { label: "Writes verified", marker: "✓", kind: "verification" },
 };
+
+function setText(selector, value) {
+  $(selector).textContent = value;
+}
 
 async function loadEvidence() {
   const responses = await Promise.all(evidenceFiles.map((file) => fetch(`data/${file}`)));
-  const failed = responses.findIndex((response) => !response.ok);
-  if (failed !== -1) throw new Error(`${evidenceFiles[failed]} returned ${responses[failed].status}`);
+  const failure = responses.findIndex((response) => !response.ok);
+  if (failure !== -1) throw new Error(`${evidenceFiles[failure]} returned ${responses[failure].status}`);
   const [manifest, timeline, workload, acknowledgements, initial, failover, final] = await Promise.all(responses.map((response) => response.json()));
   if (manifest.schema_version !== 1) throw new Error(`unsupported schema version ${manifest.schema_version}`);
   return { manifest, timeline, workload, acknowledgements, checkpoints: { initial, failover, final } };
 }
 
-function setText(selector, value) { $(selector).textContent = value; }
-
-function renderSummary({ manifest, acknowledgements }) {
-  setText("#hero-nodes", `${manifest.cluster.nodes} nodes`);
-  setText("#hero-clients", `${manifest.workload.workers} clients`);
-  setText("#hero-failure", `${manifest.failure.method} leader`);
-  setText("#hero-verified", `${formatNumber(acknowledgements.verified_acknowledged)} / ${formatNumber(acknowledgements.total_acknowledged)}`);
-  setText("#ack-total", formatNumber(acknowledgements.total_acknowledged));
-  setText("#ack-verified", formatNumber(acknowledgements.verified_acknowledged));
-  setText("#ack-missing", formatNumber(acknowledgements.verification_missing));
-  setText("#ack-before", formatNumber(acknowledgements.acknowledged_before_crash));
-  setText("#ack-after", formatNumber(acknowledgements.acknowledged_after_failover));
-}
-
-function eventDetail(event) {
+function eventDescription(event) {
   switch (event.event) {
     case "cluster_ready": return `Node ${event.leader} is leader in term ${event.term}.`;
-    case "load_started": return `${event.workers} workers begin a ${event.put_percent}% PUT / ${event.get_percent}% GET workload.`;
-    case "leader_crashed": return `Node ${event.node}, the active leader, receives ${event.signal}.`;
-    case "replacement_leader": return `Node ${event.node} is observed as leader in term ${event.term}.`;
-    case "post_failover_progress": return "Clients continue receiving definite acknowledgments after leadership changes.";
+    case "load_started": return `${event.workers} workers begin ${event.put_percent}% PUT / ${event.get_percent}% GET traffic.`;
+    case "leader_crashed": return `Node ${event.node}, the current leader, receives ${event.signal}.`;
+    case "replacement_leader": return `Node ${event.node} is observed as replacement leader in term ${event.term}.`;
+    case "post_failover_progress": return "The surviving quorum continues committing client writes.";
     case "old_leader_restarted": return `Node ${event.node} restarts from ${event.data_directory}; same data directory: ${event.same_data_directory ? "yes" : "no"}.`;
-    case "old_leader_caught_up": return `Node ${event.node} is observed caught up through ordinary replication.`;
-    case "acknowledged_writes_verified": return `${formatNumber(event.count)} definitely acknowledged writes are readable after recovery.`;
+    case "old_leader_caught_up": return `Node ${event.node} is observed caught up through normal replication.`;
+    case "acknowledged_writes_verified": return `${number(event.count)} definitely acknowledged writes remain readable after recovery.`;
     default: return "Recorded canonical event.";
   }
 }
 
-function svgElement(name, attributes = {}) {
-  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
-  Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
-  return element;
+function formatTime(seconds) {
+  return seconds.toFixed(3).padStart(6, "0");
 }
 
-function renderTimeline({ timeline }) {
-  const svg = $("#cluster-timeline");
-  const left = 155, right = 1050, width = right - left, maxTime = Math.max(...timeline.map((event) => event.at_seconds));
-  const x = (seconds) => left + (seconds / maxTime) * width;
-  const crash = timeline.find((event) => event.event === "leader_crashed");
-  const replacement = timeline.find((event) => event.event === "replacement_leader");
-  const restart = timeline.find((event) => event.event === "old_leader_restarted");
-  const rows = [{ label: "NODE 1", sub: "leader → down → follower", y: 72 }, { label: "NODE 2", sub: "follower → leader", y: 142 }, { label: "NODE 3", sub: "follower", y: 212 }, { label: "CLIENTS", sub: "16-worker workload", y: 282 }];
-  rows.forEach((row) => {
-    const label = svgElement("text", { x: 22, y: row.y - 4, class: "track-label" }); label.textContent = row.label; svg.append(label);
-    const sub = svgElement("text", { x: 22, y: row.y + 14, class: "track-sub" }); sub.textContent = row.sub; svg.append(sub);
-  });
-  svg.append(svgElement("line", { x1: left, y1: 72, x2: x(crash.at_seconds), y2: 72, class: "track-leader" }));
-  svg.append(svgElement("line", { x1: x(crash.at_seconds), y1: 72, x2: x(restart.at_seconds), y2: 72, class: "track-down" }));
-  svg.append(svgElement("line", { x1: x(restart.at_seconds), y1: 72, x2: right, y2: 72, class: "track-line" }));
-  svg.append(svgElement("line", { x1: left, y1: 142, x2: x(replacement.at_seconds), y2: 142, class: "track-line" }));
-  svg.append(svgElement("line", { x1: x(replacement.at_seconds), y1: 142, x2: right, y2: 142, class: "track-leader" }));
-  svg.append(svgElement("line", { x1: left, y1: 212, x2: right, y2: 212, class: "track-line" }));
-  svg.append(svgElement("line", { x1: left, y1: 282, x2: right, y2: 282, class: "track-client" }));
+function renderNode(id, node, mode) {
+  const element = $(`#node-${id}`);
+  const isDown = !node || node.reachable === false;
+  const isRestartedPending = mode === "restart-pending" && id === "1";
+  const isRecovered = mode === "final" && id === "1";
+  let role = isDown ? "DOWN" : String(node.role).toUpperCase();
+  if (isRestartedPending) role = "RESTARTED";
+  element.className = `topology-node node-${["zero", "one", "two", "three"][Number(id)]} ${isDown ? "down" : node?.role === "leader" ? "leader" : isRecovered ? "recovered" : "follower"}`;
+  const values = isDown || isRestartedPending
+    ? [["TERM", isRestartedPending ? "—" : node?.term ?? "—"], ["COMMIT", "—"], ["APPLIED", "—"]]
+    : [["TERM", node.term], ["COMMIT", number(node.commit_index)], ["APPLIED", number(node.last_applied)]];
+  const note = isRecovered ? "RESTARTED / CAUGHT UP" : isRestartedPending ? "STATE NOT RECORDED AT THIS INSTANT" : isDown ? "DISCONNECTED / SIGKILL" : "";
+  element.innerHTML = `<header><span class="node-code">NODE 0${id}</span><span class="node-status"><i class="status-indicator" aria-hidden="true"></i>${role}</span></header><strong class="node-role">${role}</strong><dl class="node-values">${values.map(([label, value]) => `<div><dt>${label}</dt><dd>${value}</dd></div>`).join("")}</dl>${note ? `<span class="node-note">${note}</span>` : ""}`;
+}
 
-  const markerY = [72, 298, 72, 142, 298, 72, 72, 298];
-  timeline.forEach((event, index) => {
-    const group = svgElement("g", { class: `event-button ${event.event === "leader_crashed" ? "crash" : event.event.includes("restart") || event.event.includes("caught_up") ? "recovery" : ""}`, role: "button", tabindex: index === 0 ? "0" : "-1", "aria-label": `${eventLabels[event.event]}, ${event.at_seconds.toFixed(3)} seconds` });
-    group.dataset.index = index;
-    group.append(svgElement("circle", { cx: x(event.at_seconds), cy: markerY[index], r: 8 }));
-    const text = svgElement("text", { x: x(event.at_seconds), y: markerY[index] + (markerY[index] > 250 ? 27 : -17), "text-anchor": index < 2 ? "start" : index === timeline.length - 1 ? "end" : "middle" });
-    text.textContent = event.event.replaceAll("_", " "); group.append(text); svg.append(group);
+function topologyText(states, mode) {
+  return ["1", "2", "3"].map((id) => {
+    const node = states[id];
+    if (mode === "restart-pending" && id === "1") return "Node 1 restarted; its status at that instant was not captured.";
+    if (!node || node.reachable === false) return `Node ${id} is down and unreachable.`;
+    return `Node ${id} is ${node.role}, term ${node.term}, commit ${node.commit_index}, applied ${node.last_applied}.`;
+  }).join(" ");
+}
+
+function renderTopology(states, label, mode = "checkpoint") {
+  ["1", "2", "3"].forEach((id) => renderNode(id, states[id], mode));
+  setText("#checkpoint-label", label);
+  setText("#topology-description", topologyText(states, mode));
+  $("#failure-stamp").hidden = mode !== "crash";
+  $("#active-links").style.stroke = mode === "crash" ? "var(--red)" : "var(--blue)";
+}
+
+function eventState(data, index) {
+  if (index <= 1) return { states: data.checkpoints.initial, label: "CHECKPOINT / BEFORE FAILURE", mode: "initial", checkpoint: "initial" };
+  if (index === 2) {
+    const states = structuredClone(data.checkpoints.initial);
+    states["1"] = { reachable: false };
+    return { states, label: "EVENT STATE / LEADER KILLED", mode: "crash", checkpoint: null };
+  }
+  if (index <= 4) return { states: data.checkpoints.failover, label: "CHECKPOINT / DURING FAILOVER", mode: "failover", checkpoint: "failover" };
+  if (index === 5) {
+    const states = structuredClone(data.checkpoints.failover);
+    states["1"] = { reachable: true, role: "restarted" };
+    return { states, label: "EVENT STATE / RESTART OBSERVED", mode: "restart-pending", checkpoint: null };
+  }
+  return { states: data.checkpoints.final, label: "CHECKPOINT / FINAL CONVERGENCE", mode: "final", checkpoint: "final" };
+}
+
+function setCheckpointSelection(name) {
+  document.querySelectorAll("[role=tab]").forEach((tab) => {
+    const selected = tab.dataset.checkpoint === name;
+    tab.setAttribute("aria-selected", selected ? "true" : "false");
+    tab.tabIndex = selected ? 0 : -1;
   });
-  const controls = [...svg.querySelectorAll(".event-button")];
-  const select = (index) => {
-    controls.forEach((control, item) => { control.setAttribute("aria-current", item === index ? "true" : "false"); control.setAttribute("tabindex", item === index ? "0" : "-1"); });
-    const event = timeline[index];
-    setText("#event-index", `Event ${String(index + 1).padStart(2, "0")} / ${String(timeline.length).padStart(2, "0")}`);
-    setText("#event-name", eventLabels[event.event]);
-    setText("#event-time", `T + ${event.at_seconds.toFixed(3)} s · observed in this capture`);
-    setText("#event-detail", eventDetail(event));
+}
+
+function setupIncidentControls(data) {
+  const list = $("#event-list");
+  list.innerHTML = data.timeline.map((event, index) => {
+    const meta = eventMeta[event.event];
+    return `<li><button class="event-control ${meta.kind}" data-event-index="${index}" aria-selected="false"><span class="event-time">${formatTime(event.at_seconds)}</span><span class="event-marker" aria-hidden="true">${meta.marker}</span><span class="event-name">${meta.label}</span></button></li>`;
+  }).join("");
+  const controls = [...document.querySelectorAll(".event-control")];
+
+  const selectEvent = (index, focus = false) => {
+    controls.forEach((control, item) => {
+      const selected = item === index;
+      control.setAttribute("aria-selected", selected ? "true" : "false");
+      control.tabIndex = selected ? 0 : -1;
+    });
+    const event = data.timeline[index];
+    const meta = eventMeta[event.event];
+    const state = eventState(data, index);
+    renderTopology(state.states, state.label, state.mode);
+    setCheckpointSelection(state.checkpoint);
+    setText("#selected-sequence", `EVENT ${String(index + 1).padStart(2, "0")} / ${String(data.timeline.length).padStart(2, "0")}`);
+    setText("#selected-event", meta.label);
+    setText("#selected-time", `T + ${event.at_seconds.toFixed(3)} S / OBSERVED IN THIS CAPTURE`);
+    setText("#selected-detail", eventDescription(event));
+    if (focus) controls[index].focus();
   };
+
   controls.forEach((control, index) => {
-    control.addEventListener("click", () => select(index));
+    control.addEventListener("click", () => selectEvent(index));
     control.addEventListener("keydown", (event) => {
-      if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+      if (!["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
       event.preventDefault();
-      let target = index + (event.key === "ArrowRight" ? 1 : -1);
-      if (event.key === "Home") target = 0;
-      if (event.key === "End") target = controls.length - 1;
-      target = Math.max(0, Math.min(controls.length - 1, target)); select(target); controls[target].focus();
+      let next = index + (["ArrowDown", "ArrowRight"].includes(event.key) ? 1 : -1);
+      if (event.key === "Home") next = 0;
+      if (event.key === "End") next = controls.length - 1;
+      next = Math.max(0, Math.min(controls.length - 1, next));
+      selectEvent(next, true);
     });
   });
-  $("#timeline-text").innerHTML = timeline.map((event) => `<li>${event.at_seconds.toFixed(3)} seconds: ${eventLabels[event.event]}. ${eventDetail(event)}</li>`).join("");
-  select(0);
-}
 
-function renderCheckpoint(name, data) {
-  const ids = ["1", "2", "3"];
-  $("#checkpoint-nodes").innerHTML = ids.map((id) => {
-    const node = data[id];
-    const role = node?.reachable === false || !node ? "down" : node.role;
-    const meta = node?.reachable === false || !node ? "Process unreachable" : `Term ${node.term} · leader ${node.leader}`;
-    return `<article class="node-card ${role}"><span class="node-id">NODE ${id}</span><strong class="role">${role.toUpperCase()}</strong><span class="meta">${meta}</span></article>`;
-  }).join("");
-  const reachable = ids.map((id) => data[id]).filter((node) => node?.reachable !== false);
-  const leader = reachable.find((node) => node.role === "leader") || reachable[0];
-  const details = name === "final" ? [["Term", leader.term], ["Commit", leader.commit_index], ["Applied", leader.last_applied], ["Apply lag", leader.apply_lag], ["Membership", `${leader.voters.length} voters`]] : [["Term", leader.term], ["Leader", `Node ${leader.leader}`]];
-  $("#checkpoint-details").innerHTML = details.map(([term, value]) => `<div><dt>${term}</dt><dd>${value}</dd></div>`).join("");
-}
-
-function setupCheckpointTabs(data) {
   const tabs = [...document.querySelectorAll("[role=tab]")];
-  const activate = (tab) => {
-    tabs.forEach((item) => { const selected = item === tab; item.setAttribute("aria-selected", selected); item.tabIndex = selected ? 0 : -1; });
-    $("#checkpoint-panel").setAttribute("aria-labelledby", tab.id); renderCheckpoint(tab.dataset.checkpoint, data.checkpoints[tab.dataset.checkpoint]);
-  };
   tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => activate(tab));
-    tab.addEventListener("keydown", (event) => { if (!event.key.startsWith("Arrow")) return; event.preventDefault(); const next = (index + (event.key === "ArrowRight" || event.key === "ArrowDown" ? 1 : tabs.length - 1)) % tabs.length; activate(tabs[next]); tabs[next].focus(); });
+    tab.addEventListener("click", () => {
+      setCheckpointSelection(tab.dataset.checkpoint);
+      renderTopology(data.checkpoints[tab.dataset.checkpoint], `CHECKPOINT / ${tab.querySelector("strong").textContent.toUpperCase()}`, tab.dataset.checkpoint);
+    });
+    tab.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      let next = index + (event.key === "ArrowRight" ? 1 : -1);
+      if (event.key === "Home") next = 0;
+      if (event.key === "End") next = tabs.length - 1;
+      next = Math.max(0, Math.min(tabs.length - 1, next));
+      tabs[next].click();
+      tabs[next].focus();
+    });
   });
-  activate(tabs[0]);
+
+  selectEvent(0);
 }
 
-function renderProtocol({ workload }) {
-  const counts = [["STALE_REQUEST", workload.stale_requests], ["REQUEST_CONFLICT", workload.request_conflicts], ["Unexpected errors", workload.unexpected_protocol_errors], ["Ambiguous writes", workload.ambiguous_write_outcomes], ["Retired sessions", workload.retired_sessions], ["Transient reads", workload.transient_read_failures]];
-  $("#protocol-counts").innerHTML = counts.map(([label, value]) => `<div><dt>${label}</dt><dd>${formatNumber(value)}</dd></div>`).join("");
-}
+function renderStaticEvidence(data) {
+  const { manifest, acknowledgements, workload } = data;
+  setText("#header-spec", `${manifest.cluster.nodes} NODES · ${manifest.workload.workers} CLIENTS · RAFT · ${manifest.failure.method}`);
+  setText("#workload-workers", `${manifest.workload.workers} WORKERS`);
+  setText("#workload-mix", `${manifest.workload.put_percent}% PUT · ${manifest.workload.get_percent}% GET`);
+  setText("#ack-total", number(acknowledgements.total_acknowledged));
+  setText("#ack-verified", number(acknowledgements.verified_acknowledged));
+  setText("#ack-missing", number(acknowledgements.verification_missing));
+  setText("#ack-before", number(acknowledgements.acknowledged_before_crash));
+  setText("#ack-after", number(acknowledgements.acknowledged_after_failover));
 
-function renderRecovery({ manifest, timeline, checkpoints }) {
-  const restart = timeline.find((event) => event.event === "old_leader_restarted");
-  const node = checkpoints.final[String(manifest.recovery.restarted_node_id)];
-  setText("#recovery-path", restart.data_directory); setText("#same-directory", manifest.recovery.same_data_directory ? "Yes" : "No");
-  setText("#recovery-role", node.role.toUpperCase()); setText("#recovery-term", node.term); setText("#recovery-commit", formatNumber(node.commit_index)); setText("#recovery-applied", formatNumber(node.last_applied)); setText("#recovery-lag", node.apply_lag);
-}
+  const protocol = [
+    ["STALE_REQUEST", workload.stale_requests],
+    ["REQUEST_CONFLICT", workload.request_conflicts],
+    ["UNEXPECTED", workload.unexpected_protocol_errors],
+    ["AMBIGUOUS", workload.ambiguous_write_outcomes],
+  ];
+  $("#protocol-readout").innerHTML = protocol.map(([label, value]) => `<div><dt>${label}</dt><dd>${number(value)}</dd></div>`).join("");
 
-function renderProvenance({ manifest }) {
   const shortCommit = `${manifest.quorumkv_commit.slice(0, 8)}…`;
-  setText("#capture-source", shortCommit); $("#capture-link").href = `https://github.com/nhatminh06/quorumkv/commit/${manifest.quorumkv_commit}`;
-  setText("#tool-schema", manifest.capture_tool_version); setText("#platform", manifest.platform);
+  setText("#capture-source", shortCommit);
+  $("#capture-link").href = `https://github.com/nhatminh06/quorumkv/commit/${manifest.quorumkv_commit}`;
+  setText("#tool-schema", manifest.capture_tool_version);
+  setText("#platform", manifest.platform);
 }
 
-loadEvidence().then((data) => { renderSummary(data); renderTimeline(data); setupCheckpointTabs(data); renderProtocol(data); renderRecovery(data); renderProvenance(data); }).catch((error) => { console.error("Evidence unavailable", error); $("#load-error").hidden = false; });
+loadEvidence()
+  .then((data) => {
+    renderStaticEvidence(data);
+    setupIncidentControls(data);
+    if (window.matchMedia("(max-width: 720px)").matches) {
+      const scroller = $(".topology-scroll");
+      scroller.scrollLeft = (scroller.scrollWidth - scroller.clientWidth) / 2;
+    }
+  })
+  .catch((error) => {
+    console.error("Evidence unavailable", error);
+    $("#load-error").hidden = false;
+    $("#control-board").setAttribute("aria-disabled", "true");
+  });
