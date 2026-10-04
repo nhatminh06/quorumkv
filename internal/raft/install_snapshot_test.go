@@ -63,7 +63,7 @@ func TestInstallSnapshotZeroLengthFinalChunkRoundTrip(t *testing.T) {
 // Stable{1:"A"}. The trailing configuration section is
 // EncodeMembership(StableMembership({1:"A"})): version(1)=1,
 // mode(1)=Stable(1), voterCount(4)=1, nodeID(8)=1, addrLen(2)=1, addr="A"
-// — 17 bytes total, prefixed by its own 8-byte length.
+// -- 17 bytes total, prefixed by its own 8-byte length.
 func TestInstallSnapshotKnownByteVector(t *testing.T) {
 	got, err := EncodeInstallSnapshot(sampleInstallSnapshot())
 	if err != nil {

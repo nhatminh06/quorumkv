@@ -352,7 +352,7 @@ func peersFor(addrs map[int]string, self int) map[int]string {
 // TestRealProcessThreeNodeClusterPutGet is the mandatory M15 process
 // integration test: three real "quorumkv node" OS processes, real TCP,
 // real persistent directories, a real election, and a real PUT/GET
-// through the actual qkv binary — no in-process test cluster, no
+// through the actual qkv binary -- no in-process test cluster, no
 // test-only hooks.
 func TestRealProcessThreeNodeClusterPutGet(t *testing.T) {
 	quorumkvPath, qkvPath := buildBinaries(t)
@@ -400,7 +400,7 @@ func TestRealProcessThreeNodeClusterPutGet(t *testing.T) {
 		t.Fatalf("get: code=%d out=%q stderr=%q", code, out, stderr)
 	}
 
-	// 3 is qkv's own exitNotFound (cmd/qkv/main.go) — a different
+	// 3 is qkv's own exitNotFound (cmd/qkv/main.go) -- a different
 	// package main in a different directory, so its unexported constant
 	// isn't reachable from here; the value is part of qkv's documented,
 	// stable exit-code contract (see docs/operations.md).
@@ -447,7 +447,7 @@ func TestRealProcessFailover(t *testing.T) {
 		t.Fatalf("put x=1: code=%d out=%q stderr=%q", code, out, stderr)
 	}
 
-	nodes[leaderID].kill(t) // a real crash — SIGKILL, no graceful shutdown
+	nodes[leaderID].kill(t) // a real crash -- SIGKILL, no graceful shutdown
 
 	survivors := survivorAddrs(addrs, leaderID)
 	waitForAnyLeader(t, qkvPath, survivors, 10*time.Second)
@@ -462,14 +462,14 @@ func TestRealProcessFailover(t *testing.T) {
 		t.Fatalf("put y=2 after failover: code=%d out=%q", code, out)
 	}
 
-	// Restart the old leader from the SAME data directory/args — proving
+	// Restart the old leader from the SAME data directory/args -- proving
 	// real disk persistence, not in-memory survival.
 	nodes[leaderID].launch(t)
 	t.Cleanup(func() { nodes[leaderID].kill(t) })
 
 	// Poll status DIRECTLY on the restarted node (no redirect, no
 	// ReadIndex) so this actually proves ITS OWN local state caught up
-	// — a GET against this node's address would just follow a
+	// -- a GET against this node's address would just follow a
 	// NOT_LEADER redirect to whichever node is currently leader and
 	// prove nothing about this specific node's own replication state.
 	//
@@ -478,7 +478,7 @@ func TestRealProcessFailover(t *testing.T) {
 	// own mandatory current-term no-op commit barrier before it can
 	// safely serve that read (see docs/read-index.md), so the real
 	// final index legitimately depends on exactly when that happened
-	// relative to "put y" — both are still committed and applied
+	// relative to "put y" -- both are still committed and applied
 	// regardless of which index each one landed at.
 	if !waitFor(t, 15*time.Second, func() bool {
 		out, _, code := runQkv(t, qkvPath, "--addr", addrs[leaderID], "--timeout", "1s", "status")

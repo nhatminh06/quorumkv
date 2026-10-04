@@ -18,7 +18,7 @@ How to run, inspect, and administer a QuorumKV cluster with the real
 
 `--id`, `--listen`, and `--data` are required. `--peer ID=ADDR` may be
 repeated once per other node. A single listener address serves both
-Raft RPCs and the client/admin protocol — there is no separate port.
+Raft RPCs and the client/admin protocol -- there is no separate port.
 
 ### Metrics, probes, and logs
 
@@ -41,14 +41,14 @@ between two node processes.
 ### Bootstrap membership vs. persisted membership
 
 `--peer` flags only matter the first time a node starts with an empty
-data directory — they define who the node bootstraps its Raft group
+data directory -- they define who the node bootstraps its Raft group
 with (itself plus the given peers, all as voters). On every later
 restart, the membership actually persisted in that node's log/snapshot
 is authoritative; `--peer` flags are still required (to give the node a
 current, dialable address for each other node) but do **not** override
 persisted membership, even if they list a different peer set. If a
 node's real cluster membership has changed since it last started
-(voters added/removed), pass its current peer list — passing a stale
+(voters added/removed), pass its current peer list -- passing a stale
 one does not roll membership back.
 
 ### Graceful shutdown
@@ -60,10 +60,10 @@ finish, then the node closes. A single signal is enough.
 ### Corrupt persistent storage
 
 If a node's data directory contains corrupted state (a torn write or
-mid-log corruption — see [crash-consistency.md](crash-consistency.md)),
+mid-log corruption -- see [crash-consistency.md](crash-consistency.md)),
 startup fails loudly and the process exits non-zero **before** serving
 any request. It does not delete, reset, or reinterpret the corrupted
-file. Do not delete files to "fix" this — see
+file. Do not delete files to "fix" this -- see
 [runbook-failover.md](runbook-failover.md#corrupted-node-storage).
 
 ## The qkv CLI
@@ -74,16 +74,16 @@ qkv --addr 127.0.0.1:7001 [--addr 127.0.0.1:7002 ...] [--timeout 5s] <command> [
 
 `--addr` may be repeated to give more than one entry point into the
 cluster; `--timeout` bounds every network operation (default 5s) via
-`context.WithTimeout` — no command waits forever. Every command supports
+`context.WithTimeout` -- no command waits forever. Every command supports
 `-h`/`--help`.
 
-Values are treated as UTF-8 text throughout — `put`/`get`/`delete` take
+Values are treated as UTF-8 text throughout -- `put`/`get`/`delete` take
 plain string keys/values, there is no hex/binary encoding option.
 
 Each `qkv` invocation is a fresh process with a fresh client identity:
 there is no session persistence across invocations. A `put`/`delete`
 retried by running `qkv` again is a genuinely new request as far as the
-cluster's dedup table is concerned — see
+cluster's dedup table is concerned -- see
 [request-dedup.md](request-dedup.md). Within a single invocation, automatic
 write retries retain the same request identity.
 
@@ -125,8 +125,8 @@ same request identity across automatic retries.
 qkv --addr 127.0.0.1:7001 status
 ```
 
-Reports the addressed node's own observable state — role, term,
-log/commit/apply indices, snapshot boundary, and membership — directly
+Reports the addressed node's own observable state -- role, term,
+log/commit/apply indices, snapshot boundary, and membership -- directly
 from that node, without redirecting elsewhere. This is deliberately
 **not** a linearizable read: it does not run ReadIndex or touch any
 term/log/commit/membership/timer state. It is operational metadata,
@@ -134,7 +134,7 @@ useful for understanding what one node currently believes, not for
 reading application data (use `get` for that).
 
 `qkv status --all` queries every configured `--addr` in turn and prints
-each result — there is no cluster discovery, so it can only ever see
+each result -- there is no cluster discovery, so it can only ever see
 the addresses given.
 
 Example output:
@@ -168,7 +168,7 @@ qkv --addr 127.0.0.1:7001 snapshot
 
 Leader-only. Triggers `Node.CreateSnapshot` on the addressed node and
 reports the resulting boundary, e.g. `OK snapshot-index=12
-snapshot-term=4`. There is no automatic snapshot scheduling — see
+snapshot-term=4`. There is no automatic snapshot scheduling -- see
 [snapshots.md](snapshots.md).
 
 ### transfer-leadership
@@ -179,7 +179,7 @@ qkv --addr 127.0.0.1:7001 transfer-leadership --target 2
 
 Leader-only. Only reports success (`leadership transferred to node 2`)
 once the current leader has real evidence the target actually became
-leader — never merely that the handoff request was accepted. Do not
+leader -- never merely that the handoff request was accepted. Do not
 blindly retry a timed-out transfer; inspect `status` on both nodes
 first. See [runbook-leadership-transfer.md](runbook-leadership-transfer.md).
 
@@ -206,11 +206,11 @@ membership change is already in progress"). See
   doesn't currently know who the leader is (mid-election, or isolated);
   wait briefly and retry, or try a different `--addr`.
 - **`server is busy (overloaded)`** (`BUSY`): the server's proposal
-  queue or admission bound is full; back off briefly and retry — see
+  queue or admission bound is full; back off briefly and retry -- see
   [performance.md](performance.md).
 - **`timed out waiting for a definite outcome`**: an admin operation's
   outcome is genuinely unknown from the client's point of view. Check
-  `status` before deciding whether to retry — do not blindly resend a
+  `status` before deciding whether to retry -- do not blindly resend a
   membership or leadership-transfer request.
 
 ## Exit codes
@@ -222,10 +222,10 @@ CLI contract.
 
 ## Known operational limitations
 
-- The client/admin wire protocols are unauthenticated and unencrypted —
+- The client/admin wire protocols are unauthenticated and unencrypted --
   intended for a local or trusted-network/educational environment, not
   a public network. No TLS, no authentication.
-- No automatic cluster discovery, leader balancing, or reconfiguration —
+- No automatic cluster discovery, leader balancing, or reconfiguration --
   every membership and leadership change is operator-initiated.
 - No repair tooling for corrupted persistent storage; a corrupted node
   must be replaced via the normal Raft membership procedure

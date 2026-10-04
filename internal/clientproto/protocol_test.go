@@ -82,7 +82,7 @@ func TestDeleteRequestKnownByteVector(t *testing.T) {
 }
 
 // TestGetRequestKnownByteVector independently derives the expected wire
-// bytes for a GET x request — zero ClientID/Sequence.
+// bytes for a GET x request -- zero ClientID/Sequence.
 func TestGetRequestKnownByteVector(t *testing.T) {
 	got, err := EncodeRequest(Request{Operation: OpGet, Key: []byte("x")})
 	if err != nil {
@@ -153,8 +153,8 @@ func TestRequestConflictResponseKnownByteVector(t *testing.T) {
 
 // TestBusyResponseKnownByteVector independently derives the expected
 // wire bytes for a BUSY response (Milestone 13): protocolVersion is
-// unchanged (2) — BUSY is purely an additive status value, not a format
-// change — and the byte layout is otherwise identical to any other
+// unchanged (2) -- BUSY is purely an additive status value, not a format
+// change -- and the byte layout is otherwise identical to any other
 // value-less response like REQUEST_CONFLICT.
 func TestBusyResponseKnownByteVector(t *testing.T) {
 	got, err := EncodeResponse(Response{Status: StatusBusy})

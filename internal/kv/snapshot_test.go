@@ -31,7 +31,7 @@ func TestSnapshotRestoreRoundTrip(t *testing.T) {
 
 // TestSnapshotIsDeterministicRegardlessOfInsertionOrder proves the same
 // logical state produces byte-identical snapshots no matter what order
-// keys were inserted in — map iteration order must not leak through.
+// keys were inserted in -- map iteration order must not leak through.
 func TestSnapshotIsDeterministicRegardlessOfInsertionOrder(t *testing.T) {
 	m1 := NewStateMachine()
 	m1.Put([]byte("a"), []byte("1"))
@@ -57,7 +57,7 @@ func TestSnapshotIsDeterministicRegardlessOfInsertionOrder(t *testing.T) {
 // TestSnapshotKnownByteVector independently derives the expected bytes
 // for state {a:1, b:2} with no client dedup records: version 2, the same
 // KV section Milestone 7 had, followed by an empty (clientCount=0)
-// client section — Snapshot always produces version 2 now, even when
+// client section -- Snapshot always produces version 2 now, even when
 // the dedup table is empty.
 func TestSnapshotKnownByteVector(t *testing.T) {
 	m := NewStateMachine()

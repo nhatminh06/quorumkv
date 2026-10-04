@@ -19,18 +19,18 @@ import (
 // infer meaning purely from Command's byte content. EntryApplication is
 // deliberately the zero value: every LogEntry{...} literal anywhere in
 // this codebase (an enormous, pre-existing test surface) that never
-// mentions Kind continues to mean exactly what it always meant — an
-// ordinary application command — with no mechanical rewrite required.
+// mentions Kind continues to mean exactly what it always meant -- an
+// ordinary application command -- with no mechanical rewrite required.
 type EntryKind uint8
 
 const (
 	// EntryApplication is an ordinary opaque application command, handed
-	// to ApplyFunc once committed. The zero value — see the type doc.
+	// to ApplyFunc once committed. The zero value -- see the type doc.
 	EntryApplication EntryKind = iota
 	// EntryNoop is Raft's internal current-term commit barrier (see
 	// docs/read-index.md): committed and advances lastApplied, but never
 	// reaches ApplyFunc. Command is conventionally empty for a
-	// newly-written EntryNoop, but Kind — not Command's length — is what
+	// newly-written EntryNoop, but Kind -- not Command's length -- is what
 	// decides this for any entry written under the current (version 3)
 	// log format; only legacy-format decoding still infers Noop from an
 	// empty Command (see decodeLogFile).
@@ -58,7 +58,7 @@ func (k EntryKind) String() string {
 
 // LogEntry is one entry in a node's replicated Raft log: the term it was
 // created in, its kind, and an opaque payload. The log storage layer
-// never interprets Command — that's the application/Node layer's job,
+// never interprets Command -- that's the application/Node layer's job,
 // once committed entries are applied.
 type LogEntry struct {
 	Term    Term
@@ -74,17 +74,17 @@ type LogEntry struct {
 // Since Milestone 7, a Log may be compacted by a snapshot: baseIndex/
 // baseTerm ("the log's own boundary, before any suffix truncation") is
 // the (lastIncludedIndex, lastIncludedTerm) of the most recent
-// compaction — 0/0 if the log has never been compacted, which folds back
+// compaction -- 0/0 if the log has never been compacted, which folds back
 // into the original index-0 sentinel case exactly. Log stores physical
 // entries 0-based internally; entries[i] is logical index baseIndex+i+1.
 // The command bytes for index baseIndex itself are never retained after
-// compaction — only its index/term remain, which is all Raft needs.
+// compaction -- only its index/term remain, which is all Raft needs.
 
 var logFileMagic = [4]byte{'R', 'L', 'G', '1'}
 
 // logFileVersion1 is the pre-Milestone-7 format: no base index/term
 // fields, always equivalent to baseIndex=0, baseTerm=0. logFileVersion2
-// (Milestone 7) added those fields but has no per-entry Kind byte —
+// (Milestone 7) added those fields but has no per-entry Kind byte --
 // every entry decodes as EntryNoop if Command is empty, EntryApplication
 // otherwise (the only two kinds that existed before Milestone 10).
 // logFileVersion3 (Milestone 10) adds an explicit per-entry Kind byte,
@@ -107,7 +107,7 @@ const maxCommandSize = 256 * 1024 // 256 KiB
 
 // Per-entry on-disk record (version 3): term(8) + kind(1) +
 // commandLength(4) + command + checksum(4). Versions 1/2 have no kind
-// byte — see decodeLogFile.
+// byte -- see decodeLogFile.
 const (
 	logEntryHeaderSizeV2 = 8 + 4     // term + commandLength (versions 1/2)
 	logEntryHeaderSizeV3 = 8 + 1 + 4 // term + kind + commandLength (version 3+)
@@ -268,7 +268,7 @@ func decodeLogFile(data []byte) (baseIndex LogIndex, baseTerm Term, entries []Lo
 		if legacy {
 			// Versions 1/2 predate EntryKind entirely: the only two
 			// kinds that existed then were an ordinary application
-			// command and Milestone 8's reserved-empty-command no-op —
+			// command and Milestone 8's reserved-empty-command no-op --
 			// exactly the same rule apply.go used to use directly.
 			if cmdLen == 0 {
 				kind = EntryNoop
@@ -349,7 +349,7 @@ func (l *Log) LastTerm() Term {
 
 // Term returns the term stored at index. ok is false if index is outside
 // what this log can answer for: before the compaction boundary (its
-// history was discarded — "compacted/unavailable", not fabricated as 0),
+// history was discarded -- "compacted/unavailable", not fabricated as 0),
 // or past the last retained entry. Term(BaseIndex()) always succeeds,
 // returning BaseTerm(), even though no physical entry backs it anymore.
 func (l *Log) Term(index LogIndex) (term Term, ok bool) {
@@ -363,7 +363,7 @@ func (l *Log) Term(index LogIndex) (term Term, ok bool) {
 }
 
 // Entry returns a defensive copy of the entry at index. ok is false if it
-// doesn't exist or index is at or before the compaction boundary — the
+// doesn't exist or index is at or before the compaction boundary -- the
 // command bytes at BaseIndex() are not retained after compaction; only its
 // index/term are (via Term).
 func (l *Log) Entry(index LogIndex) (LogEntry, bool) {
@@ -402,14 +402,14 @@ func (l *Log) EntriesFrom(from LogIndex) []LogEntry {
 // compaction boundary is treated as BaseIndex()+1), stopping before
 // including an entry that would push the running encoded-wire-size total
 // (see encodedEntrySize) beyond maxEncodedBytes. The first entry is
-// always included regardless of its own size — a single entry larger
+// always included regardless of its own size -- a single entry larger
 // than maxEncodedBytes is still returned alone rather than becoming
 // unsendable, matching the caller's normal-batch-target-vs-single-large-
 // entry distinction (see MaxAppendEntriesBytes). Returns nil if from is
 // past the end of the log or maxEntries <= 0.
 //
 // Unlike EntriesFrom, this never copies more of the retained log than
-// the returned result actually needs — EntriesFrom, unbounded, would
+// the returned result actually needs -- EntriesFrom, unbounded, would
 // clone an entire multi-thousand-entry retained suffix just to form one
 // small replication batch.
 func (l *Log) EntriesRange(from LogIndex, maxEntries int, maxEncodedBytes int) []LogEntry {
@@ -561,7 +561,7 @@ func (l *Log) TruncateAndAppend(fromIndex LogIndex, entries []LogEntry) error {
 // them with the snapshot boundary (newBaseIndex, newBaseTerm), and
 // persists the result. It is the caller's responsibility to have already
 // durably persisted a snapshot covering newBaseIndex before calling
-// Compact — this method only removes physical log records; it neither
+// Compact -- this method only removes physical log records; it neither
 // creates nor validates a snapshot itself.
 //
 // Compact is a no-op if newBaseIndex <= the log's current base (it never
@@ -595,8 +595,8 @@ func (l *Log) Compact(newBaseIndex LogIndex, newBaseTerm Term) error {
 // InstallSnapshotBoundary resets the log's compaction boundary to
 // (newBaseIndex, newBaseTerm), used when installing a snapshot received
 // from a leader rather than compacting the node's own already-consistent
-// history. Unlike Compact — which only ever shrinks a prefix the log
-// already agrees with — this may need to discard the log's ENTIRE
+// history. Unlike Compact -- which only ever shrinks a prefix the log
+// already agrees with -- this may need to discard the log's ENTIRE
 // retained suffix: if the local log doesn't reach newBaseIndex, or the
 // entry it has there has a different term, local history cannot be
 // trusted to lead into this snapshot and is discarded wholesale. If the

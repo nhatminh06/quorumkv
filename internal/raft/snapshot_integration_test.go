@@ -66,7 +66,7 @@ func TestLeaderInstallsSnapshotToStaleFollower(t *testing.T) {
 	net.setBlocked("C", true)
 
 	// Commit more entries via A+B only (a majority without C), then
-	// compact A's log past what C has — this is the state that forces a
+	// compact A's log past what C has -- this is the state that forces a
 	// snapshot transfer rather than ordinary catch-up.
 	_ = proposeAsLeaderAndWaitApplied(t, a.Node, "two")
 	i3 := proposeAsLeaderAndWaitApplied(t, a.Node, "three")
@@ -187,7 +187,7 @@ func TestAppendEntriesPrevLogAtSnapshotBoundary(t *testing.T) {
 
 // snapshottingTCPCluster wires three snapshotting nodes over real loopback
 // TCP transport (package transport, Milestone 2), for the mandatory
-// snapshot catch-up scenario — no in-process shortcut for this path.
+// snapshot catch-up scenario -- no in-process shortcut for this path.
 type snapshottingTCPCluster struct {
 	t        *testing.T
 	nodes    map[NodeID]*snapshottingNode
@@ -250,7 +250,7 @@ func (c *snapshottingTCPCluster) close(id NodeID) {
 }
 
 // restart closes id's transport (simulating the process stopping) and, on
-// a later call, would reopen it — used by the restart-proof step (item
+// a later call, would reopen it -- used by the restart-proof step (item
 // 97). Here it simply reopens from the same on-disk directory with a
 // fresh in-memory Node/state machine and a new TCP listener, then updates
 // every other node's peer map to the new address (a real restart gets a
@@ -349,7 +349,7 @@ func TestSnapshotCatchUpEndToEndRealTCP(t *testing.T) {
 		t.Fatalf("C did not catch up via real-TCP InstallSnapshot: LastApplied()=%d, want >= %d", cc.LastApplied(), i4)
 	}
 
-	// Step 10: verify convergence — C's restored+replayed application
+	// Step 10: verify convergence -- C's restored+replayed application
 	// state matches exactly what A and B have.
 	got := cc.state.snapshotOf()
 	want := []string{"first", "second", "third", "fourth"}
@@ -391,7 +391,7 @@ func TestLargeSnapshotOverRealTCP(t *testing.T) {
 	go b.Run(ctx)
 
 	// Build several 100 KiB commands (each under the log's per-command
-	// limit) so the resulting snapshot totals ~800 KiB — well over the
+	// limit) so the resulting snapshot totals ~800 KiB -- well over the
 	// 256 KiB InstallSnapshot chunk size and the transport's single-frame
 	// limit if it were ever sent whole.
 	const numCmds = 8
@@ -409,7 +409,7 @@ func TestLargeSnapshotOverRealTCP(t *testing.T) {
 		index = proposeAsLeaderAndWaitApplied(t, a.Node, cmd)
 	}
 
-	// Take B offline, snapshot past it on A, then bring B back — forcing
+	// Take B offline, snapshot past it on A, then bring B back -- forcing
 	// the whole large payload through InstallSnapshot rather than
 	// AppendEntries.
 	if !waitFor(5*time.Second, func() bool { return b.LastLogIndex() >= index }) {

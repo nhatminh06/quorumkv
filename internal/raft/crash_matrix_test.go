@@ -9,17 +9,17 @@ import (
 )
 
 // This file contains the genuine-process-crash (subprocess, os.Exit-based)
-// crash matrix — the "preferred strong approach" proof that a real crash
+// crash matrix -- the "preferred strong approach" proof that a real crash
 // at each durability boundary, with no defers/Close/rollback ever
 // running, still leaves disk state exactly old-or-new. The broader
 // stage-by-stage matrix is already covered in-process by
 // crashpoint_test.go (I/O-failure-injection variant); these tests are a
 // representative subset proving that variant is not hiding behavior a
-// real crash would exhibit differently — see docs/crash-consistency.md.
+// real crash would exhibit differently -- see docs/crash-consistency.md.
 
 // TestStableStateRealCrashOldOrNew proves a real process crash mid-Save
 // of term/vote state, at the pre-publication and post-publication
-// boundaries, leaves the file exactly old or exactly new — read back by
+// boundaries, leaves the file exactly old or exactly new -- read back by
 // a genuinely fresh Store in the (still-running) parent process.
 func TestStableStateRealCrashOldOrNew(t *testing.T) {
 	for _, stage := range atomicFileStages {
@@ -134,7 +134,7 @@ func TestLegacyMigrationRealCrashPreservesHistory(t *testing.T) {
 // TestLogConflictRepairRealCrashOldOrNew proves a real process crash
 // mid-TruncateAndAppend (the conflicting-suffix-repair path a follower
 // uses when AppendEntries reports a mismatch) leaves the log exactly the
-// pre-repair suffix or exactly the replaced suffix — never a mix.
+// pre-repair suffix or exactly the replaced suffix -- never a mix.
 func TestLogConflictRepairRealCrashOldOrNew(t *testing.T) {
 	for _, stage := range atomicFileStages {
 		t.Run(stage, func(t *testing.T) {
@@ -207,7 +207,7 @@ func TestCommitMetaRealCrashOldOrNew(t *testing.T) {
 // canonical snapshot exactly as before CreateSnapshot ran; a crash at or
 // after snapshot publication (including anywhere during the following
 // log compact) must leave a snapshot that covers at least as much as the
-// log's new base — reopening a fresh Node from disk must succeed and
+// log's new base -- reopening a fresh Node from disk must succeed and
 // reconcile the two files correctly either way.
 func TestCreateSnapshotRealCrashCrossFileConsistency(t *testing.T) {
 	stages := []struct {
@@ -242,7 +242,7 @@ func TestCreateSnapshotRealCrashCrossFileConsistency(t *testing.T) {
 					t.Fatalf("after crash at %s.%s: log was compacted (base=%d) but no snapshot exists to cover it", s.domain, s.stage, l.BaseIndex())
 				}
 				if snap.LastIncludedIndex < l.BaseIndex() {
-					t.Fatalf("after crash at %s.%s: snapshot boundary %d < log base %d — a gap no reader could recover from",
+					t.Fatalf("after crash at %s.%s: snapshot boundary %d < log base %d -- a gap no reader could recover from",
 						s.domain, s.stage, snap.LastIncludedIndex, l.BaseIndex())
 				}
 			}
@@ -262,7 +262,7 @@ func TestCreateSnapshotRealCrashCrossFileConsistency(t *testing.T) {
 // crash during installSnapshot's three-step sequence (snapshot publish,
 // then log boundary rewrite, then commit metadata) always leaves a state
 // a fresh Node can open and that is at least as advanced as whichever of
-// those steps durably completed — never "snapshot published but log
+// those steps durably completed -- never "snapshot published but log
 // left behind it," which no reader could recover from.
 func TestInstallSnapshotRealCrashCrossFileConsistency(t *testing.T) {
 	stages := []struct {
@@ -332,7 +332,7 @@ func TestInstallSnapshotRealCrashCrossFileConsistency(t *testing.T) {
 // real AppendEntries call, returns Success=true, and the process is
 // killed immediately afterward with no cleanup. The acked entry must
 // still be present, with the correct term and command, when a genuinely
-// fresh Node opens the same directory — an ack must never be sent before
+// fresh Node opens the same directory -- an ack must never be sent before
 // the entry it describes is actually durable.
 func TestAppendEntriesAckedEntryRealCrashSurvives(t *testing.T) {
 	dir := t.TempDir()

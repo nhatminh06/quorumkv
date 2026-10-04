@@ -14,7 +14,7 @@ import (
 var ErrReadIndexUnavailable = errors.New("raft: could not confirm read quorum")
 
 // pendingBarrier tracks (at most) one in-flight current-term commit
-// barrier — a Raft-internal no-op entry appended solely so a ReadIndex
+// barrier -- a Raft-internal no-op entry appended solely so a ReadIndex
 // call has a current-term committed index to point to (see "why
 // current-term commit is required" in docs/read-index.md). Guarded by
 // Node.mu; a second ensureCurrentTermCommitted call for the same term
@@ -27,7 +27,7 @@ type pendingBarrier struct {
 }
 
 // hasCurrentTermCommitLocked reports whether the highest committed index
-// is known to carry the current term — the safety precondition a leader
+// is known to carry the current term -- the safety precondition a leader
 // needs before any ReadIndex read, per Raft's ReadIndex protocol. This is
 // snapshot-boundary aware: Log.Term already answers correctly for
 // commitIndex == the log's compaction boundary (returning the snapshot's
@@ -44,7 +44,7 @@ func (n *Node) hasCurrentTermCommitLocked() bool {
 // nextReadContextLocked returns a new ReadContext value, unique among
 // this process's currently active ReadIndex probes and never the
 // reserved 0. Must be called with n.mu held. Not persisted (see
-// docs/read-index.md) — uniqueness only needs to hold for one process
+// docs/read-index.md) -- uniqueness only needs to hold for one process
 // run's concurrently active reads.
 func (n *Node) nextReadContextLocked() ReadContext {
 	n.readContextCounter++
@@ -70,7 +70,7 @@ func (n *Node) nextReadContextLocked() ReadContext {
 // barrier keeps trying in the background so a differently-timed
 // concurrent (or later) caller in the same term can still benefit from
 // it, and eventual outcomes (superseded entry, node Close) still resolve
-// it rather than leaking the goroutine — see docs/read-index.md.
+// it rather than leaking the goroutine -- see docs/read-index.md.
 func (n *Node) ensureCurrentTermCommitted(ctx context.Context) error {
 	n.mu.Lock()
 	if n.role != Leader {
@@ -159,7 +159,7 @@ type readProbeResult struct {
 // its current term and returns a committed log index safe to read
 // through: the caller must WaitApplied(ctx, readIndex, 0) before
 // consulting application state (ReadIndex does not itself read or wait
-// for application — see docs/read-index.md for the full read path and
+// for application -- see docs/read-index.md for the full read path and
 // linearization point).
 //
 // ReadIndex fails with:
@@ -181,8 +181,8 @@ func (n *Node) ReadIndex(ctx context.Context) (index LogIndex, err error) {
 	n.mu.Lock()
 	if n.transfer != nil && n.transfer.phase == transferHandoff {
 		// Handoff freeze (see leadership_transfer.go): this leader is
-		// intentionally giving up leadership: it must not serve — or even
-		// start establishing quorum for — a new read once that's underway.
+		// intentionally giving up leadership: it must not serve -- or even
+		// start establishing quorum for -- a new read once that's underway.
 		// (ensureCurrentTermCommitted's own internal barrier proposal
 		// would also be blocked by proposeLocked's identical check, but a
 		// read that reuses an already-established barrier would otherwise
@@ -211,7 +211,7 @@ func (n *Node) ReadIndex(ctx context.Context) (index LogIndex, err error) {
 	membership := n.membership
 	n.mu.Unlock()
 
-	acked := map[NodeID]bool{leaderID: true} // self, counted immediately — no network I/O for a single-node cluster
+	acked := map[NodeID]bool{leaderID: true} // self, counted immediately -- no network I/O for a single-node cluster
 	if membership.HasQuorum(acked) {
 		return n.finalizeReadIndex(term)
 	}
@@ -274,7 +274,7 @@ func (n *Node) ReadIndex(ctx context.Context) (index LogIndex, err error) {
 
 // finalizeReadIndex re-verifies this node is still Leader in the term the
 // quorum was confirmed for, then returns its current commitIndex as the
-// safe read boundary — which may be newer than it was when ReadIndex was
+// safe read boundary -- which may be newer than it was when ReadIndex was
 // called (safe: a later commit only means more state is now certifiably
 // committed). It does not return an uncommitted lastLogIndex.
 func (n *Node) finalizeReadIndex(term Term) (LogIndex, error) {

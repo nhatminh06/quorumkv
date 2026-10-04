@@ -4,14 +4,14 @@ import "sync"
 
 // failpointFunc is called by checkFailpoint for every atomicWriteFile
 // durability stage, identified as "<domain>.<stage>" (e.g.
-// "stable.after-rename" — see atomicWriteFile for the domain/stage
+// "stable.after-rename" -- see atomicWriteFile for the domain/stage
 // vocabulary). Returning a non-nil error injects a controlled I/O
 // failure at that exact point, indistinguishable to the caller from a
-// real one — this is how this package's in-process failure-injection
+// real one -- this is how this package's in-process failure-injection
 // tests work (see crashpoint_test.go). A test may instead terminate the
 // process inside this func (e.g. os.Exit) to simulate a real crash at
 // that exact durability boundary, with none of the calling operation's
-// own error-handling/cleanup ever running — this is how the subprocess
+// own error-handling/cleanup ever running -- this is how the subprocess
 // crash helper works (see cmd_crashhelper_test.go); a returned error is
 // never equivalent to that, since a real crash allows no defers, no
 // Close, no in-memory rollback.
@@ -23,7 +23,7 @@ var (
 )
 
 // setFailpoint installs fn as the active failpoint and returns a func
-// that restores whatever was active before — intended for `defer`.
+// that restores whatever was active before -- intended for `defer`.
 // Guarded by failpointMu so concurrent goroutines within one test (e.g.
 // a leader replicating to several peers) never race on the package
 // global, but this package's tests never run two failpoint-injecting
@@ -43,7 +43,7 @@ func setFailpoint(fn failpointFunc) (restore func()) {
 }
 
 // checkFailpoint invokes the active failpoint (if any) for
-// "<domain>.<stage>", returning nil when none is installed — the
+// "<domain>.<stage>", returning nil when none is installed -- the
 // zero-overhead, always-real-behavior production path.
 func checkFailpoint(domain, stage string) error {
 	failpointMu.Lock()

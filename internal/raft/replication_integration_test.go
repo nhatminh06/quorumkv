@@ -11,7 +11,7 @@ import (
 
 // setupThreeNodeFakeCluster wires three nodes (1="A", 2="B", 3="C")
 // together with an in-process fakeNetwork for both RequestVote and
-// AppendEntries — no sockets, no timing assumptions beyond each node's
+// AppendEntries -- no sockets, no timing assumptions beyond each node's
 // own timers/heartbeat loop.
 func setupThreeNodeFakeCluster(t *testing.T) (a, b, c *Node, net *fakeNetwork) {
 	t.Helper()
@@ -33,7 +33,7 @@ func setupThreeNodeFakeCluster(t *testing.T) (a, b, c *Node, net *fakeNetwork) {
 }
 
 // waitFor polls cond until it's true or timeout elapses, sleeping briefly
-// between checks — used instead of a fixed sleep so tests finish as soon
+// between checks -- used instead of a fixed sleep so tests finish as soon
 // as the condition is met rather than always waiting the full timeout.
 func waitFor(timeout time.Duration, cond func() bool) bool {
 	deadline := time.Now().Add(timeout)
@@ -123,12 +123,12 @@ func TestNoMajorityCommit(t *testing.T) {
 	}
 
 	// Give replication attempts a real chance to run (and fail) before
-	// asserting commitIndex never moved — this is checking an invariant
+	// asserting commitIndex never moved -- this is checking an invariant
 	// holds throughout a window, not polling for a condition to become
 	// true.
 	time.Sleep(200 * time.Millisecond)
 	if a.CommitIndex() != 0 {
-		t.Fatalf("CommitIndex() = %d, want 0 — a local append without majority replication must never be committed", a.CommitIndex())
+		t.Fatalf("CommitIndex() = %d, want 0 -- a local append without majority replication must never be committed", a.CommitIndex())
 	}
 }
 
@@ -180,7 +180,7 @@ func TestConflictRepairShortFollowerCatchUp(t *testing.T) {
 // production timers for ~1.2s (well over the 300ms max election timeout,
 // far more than the 50ms heartbeat interval) and verifies the elected
 // leader stays leader, the term never changes, and followers never start
-// their own election — the first scenario in this project where a stable
+// their own election -- the first scenario in this project where a stable
 // leader is demonstrated.
 func TestHeartbeatStabilityKeepsLeader(t *testing.T) {
 	a, b, c, _ := setupThreeNodeFakeCluster(t)
@@ -214,7 +214,7 @@ func TestHeartbeatStabilityKeepsLeader(t *testing.T) {
 // TestRequestVoteRealLogStaleCandidateDenied proves RequestVote now uses
 // real log metadata (not the Milestone 3 hardcoded (0,0)): a voter with a
 // longer, newer-term log denies a candidate whose log has a higher index
-// but an older term — index cannot compensate for a stale term.
+// but an older term -- index cannot compensate for a stale term.
 func TestRequestVoteRealLogStaleCandidateDenied(t *testing.T) {
 	// Voter's real log ends at lastLogTerm=4, lastLogIndex=8.
 	entries := make([]LogEntry, 8)
@@ -227,7 +227,7 @@ func TestRequestVoteRealLogStaleCandidateDenied(t *testing.T) {
 	}
 
 	// Candidate claims lastLogTerm=3, lastLogIndex=100: a much higher
-	// index, but an older term — must still be denied.
+	// index, but an older term -- must still be denied.
 	resp, err := voter.HandleRequestVote(RequestVoteRequest{Term: 1, CandidateID: 2, LastLogIndex: 100, LastLogTerm: 3})
 	if err != nil {
 		t.Fatalf("HandleRequestVote: %v", err)
@@ -274,8 +274,8 @@ func TestElectionAfterReplicationStaleCandidateLoses(t *testing.T) {
 }
 
 // TestLeaderFailureUncommittedEntryNeverTreatedAsCommitted proves an
-// entry the (now-gone) leader only ever appended to its own log — never
-// replicated to a majority — is not committed.
+// entry the (now-gone) leader only ever appended to its own log -- never
+// replicated to a majority -- is not committed.
 func TestLeaderFailureUncommittedEntryNeverTreatedAsCommitted(t *testing.T) {
 	a, _, _, net := setupThreeNodeFakeCluster(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -294,7 +294,7 @@ func TestLeaderFailureUncommittedEntryNeverTreatedAsCommitted(t *testing.T) {
 	time.Sleep(150 * time.Millisecond) // let replication attempts fail
 
 	if a.CommitIndex() >= index {
-		t.Fatalf("CommitIndex() = %d, want < %d — never-replicated entry must not be committed", a.CommitIndex(), index)
+		t.Fatalf("CommitIndex() = %d, want < %d -- never-replicated entry must not be committed", a.CommitIndex(), index)
 	}
 	a.Close() // "A disappears"
 }
@@ -323,8 +323,8 @@ func TestLeaderFailureCommittedEntryPreserved(t *testing.T) {
 	net.setBlocked("A", true)
 
 	// PreVote's leader-contact safeguard would otherwise make C reject
-	// B's PreVote — C only just accepted AppendEntries from A moments of
-	// real wall-clock time ago — so simulate enough real time having
+	// B's PreVote -- C only just accepted AppendEntries from A moments of
+	// real wall-clock time ago -- so simulate enough real time having
 	// passed rather than sleeping for it.
 	for _, n := range []*Node{b, c} {
 		n.mu.Lock()

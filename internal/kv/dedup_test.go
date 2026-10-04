@@ -21,7 +21,7 @@ func TestFirstIdentifiedRequestApplies(t *testing.T) {
 }
 
 // TestExactDuplicateDoesNotMutate is item 27: the central dedup
-// behavior — same ClientID, same sequence, same fingerprint must not
+// behavior -- same ClientID, same sequence, same fingerprint must not
 // mutate state a second time, and reports AppliedDuplicate.
 func TestExactDuplicateDoesNotMutate(t *testing.T) {
 	m := NewStateMachine()
@@ -43,7 +43,7 @@ func TestExactDuplicateDoesNotMutate(t *testing.T) {
 }
 
 // TestSameIDDifferentPayloadIsConflict is item 28: same (ClientID,
-// Sequence) but a different fingerprint must not return cached OK — it
+// Sequence) but a different fingerprint must not return cached OK -- it
 // is a RequestConflict, and must not mutate state.
 func TestSameIDDifferentPayloadIsConflict(t *testing.T) {
 	m := NewStateMachine()
@@ -102,7 +102,7 @@ func TestSequenceGapIsRejected(t *testing.T) {
 		t.Fatalf("Apply() for the correct next sequence = %v, want AppliedNew", outcome)
 	}
 	// The earlier-rejected sequence 3 must now be re-appliable as a new,
-	// later entry (not retroactively — this call represents that new
+	// later entry (not retroactively -- this call represents that new
 	// entry), and must succeed.
 	if outcome := m.Apply(NewIdentifiedPutCommand(id, 3, []byte("x"), []byte("3"))); outcome != AppliedNew {
 		t.Fatalf("Apply() for sequence 3 after the gap was filled = %v, want AppliedNew", outcome)

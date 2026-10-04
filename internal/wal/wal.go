@@ -208,7 +208,7 @@ func encodeRecord(cmd kv.Command) ([]byte, error) {
 
 // Append encodes cmd and writes it to the log. A successful return means
 // the record was fully passed to the operating system (all bytes written),
-// not that it is durable against a crash or power loss — call Sync for
+// not that it is durable against a crash or power loss -- call Sync for
 // that guarantee.
 func (w *WAL) Append(cmd kv.Command) error {
 	buf, err := encodeRecord(cmd)

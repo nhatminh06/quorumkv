@@ -167,7 +167,7 @@ func TestInvalidHasVotedForEncodingRejected(t *testing.T) {
 	full, _ := os.ReadFile(path)
 	corrupt := append([]byte(nil), full...)
 	corrupt[13] = 7 // hasVotedFor byte; only 0/1 are valid, and this also
-	// breaks the checksum — either way Load must reject the file.
+	// breaks the checksum -- either way Load must reject the file.
 	writeRawState(t, path, corrupt)
 
 	_, err := NewStore(path).Load()

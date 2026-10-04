@@ -13,14 +13,14 @@ import (
 )
 
 // Snapshot is a durable Raft snapshot: the application state machine's
-// serialized bytes (opaque to this package — see internal/kv's Snapshot/
+// serialized bytes (opaque to this package -- see internal/kv's Snapshot/
 // Restore for what they actually mean) plus the Raft boundary it
 // represents. lastIncludedIndex/lastIncludedTerm become part of the Raft
 // log's logical history even after the physical entries they cover are
 // compacted away (see Log's baseIndex/baseTerm).
 //
 // Configuration is the STABLE membership as of this boundary (never a
-// Joint one — CreateSnapshot refuses while a membership transition is in
+// Joint one -- CreateSnapshot refuses while a membership transition is in
 // progress, see ErrMembershipChangeInProgress). ConfigurationPresent is
 // false only for a version-1 (pre-Milestone-10) snapshot file, which
 // predates this field entirely; a Node loading such a snapshot falls back
@@ -43,8 +43,8 @@ const (
 )
 
 // maxSnapshotPayloadSize bounds the application payload this package will
-// accept, matching kv.MaxSnapshotSize (raft does not import kv — the
-// application snapshot format is opaque here — but the two bounds must
+// accept, matching kv.MaxSnapshotSize (raft does not import kv -- the
+// application snapshot format is opaque here -- but the two bounds must
 // stay in sync so a legal kv snapshot always fits a legal raft one).
 const maxSnapshotPayloadSize = 64 * 1024 * 1024 // 64 MiB
 
@@ -57,7 +57,7 @@ const snapshotMetaSize = 8 + 8 + 8
 const snapshotChecksumSize = 4
 
 // ErrCorruptSnapshot indicates a snapshot file exists but failed
-// validation. A missing file is not corruption — it means no snapshot
+// validation. A missing file is not corruption -- it means no snapshot
 // has been taken yet.
 var ErrCorruptSnapshot = errors.New("raft: corrupt snapshot")
 
@@ -76,7 +76,7 @@ func NewSnapshotStore(path string) *SnapshotStore {
 	return &SnapshotStore{path: path}
 }
 
-// Load reads the canonical snapshot. A missing file returns (nil, nil) —
+// Load reads the canonical snapshot. A missing file returns (nil, nil) --
 // "no snapshot yet" (lastIncludedIndex/Term are 0), not an error.
 func (s *SnapshotStore) Load() (*Snapshot, error) {
 	data, err := os.ReadFile(s.path)

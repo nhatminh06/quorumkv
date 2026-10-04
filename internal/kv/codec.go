@@ -13,16 +13,16 @@ import (
 // knowledge of Raft; it only guarantees that encoding is deterministic and
 // bounded so the result always fits in one legal Raft log entry.
 //
-// GET is never encoded here — it is a read, not a replicated command.
+// GET is never encoded here -- it is a read, not a replicated command.
 //
 // Since Milestone 9 there are two on-disk/wire shapes, both readable
 // forever (existing committed logs/snapshots must never become
-// unreadable — see docs/request-dedup.md):
+// unreadable -- see docs/request-dedup.md):
 //
 //   - version 1 (commandVersion1): the original Milestone 1 shape, no
 //     request identity. EncodeCommand still produces this for any
 //     Command with a zero ClientID (the shape NewPutCommand/
-//     NewDeleteCommand build) — byte-for-byte identical to every
+//     NewDeleteCommand build) -- byte-for-byte identical to every
 //     Milestone 1-8 command.
 //   - version 2 (commandVersion2): adds ClientID/Sequence for
 //     deduplication. EncodeCommand produces this for any Command with a
@@ -55,7 +55,7 @@ const commandV2FixedHeaderSize = 1 + 1 + 16 + 8 + 4 + 4
 
 // ErrMalformedCommand indicates a command payload failed validation on
 // decode (wrong version, unknown operation, an oversized/inconsistent
-// declared length, a DELETE carrying a value, or — for version 2 — an
+// declared length, a DELETE carrying a value, or -- for version 2 -- an
 // invalid request identity).
 var ErrMalformedCommand = errors.New("kv: malformed command")
 
@@ -69,7 +69,7 @@ var ErrMalformedCommand = errors.New("kv: malformed command")
 //	version(1B) | operation(1B) | clientID(16B) | sequence(8B) | keyLength(4B) | valueLength(4B) | key | value
 //
 // All integers big-endian. A DELETE command must not carry a value. An
-// identified command (non-zero ClientID) must have a non-zero Sequence —
+// identified command (non-zero ClientID) must have a non-zero Sequence --
 // 0 is reserved as invalid/unassigned (see internal/reqid).
 func EncodeCommand(cmd Command) ([]byte, error) {
 	if cmd.Type != CommandPut && cmd.Type != CommandDelete {

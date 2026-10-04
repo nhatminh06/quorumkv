@@ -89,7 +89,7 @@ func proposeAndWait(t *testing.T, n *Node, cmd string) LogIndex {
 // wins. Before doing so, it clears every still-running cluster member's
 // lastLeaderContact: PreVote's leader-contact safeguard (see
 // docs/raft-election.md) means a voter that has recently accepted
-// AppendEntries from a leader rejects a hypothetical PreVote — correct
+// AppendEntries from a leader rejects a hypothetical PreVote -- correct
 // production behavior (an election legitimately waits out that window in
 // real time), but these deterministic tests deliberately never sleep for
 // it, so this simulates "enough real time has passed" the same
@@ -112,7 +112,7 @@ func electAndWaitLeader(t *testing.T, c *faultCluster, id NodeID) {
 
 // TestCommittedWriteSurvivesLeaderCrash is Scenario 1: a write
 // acknowledged (committed + applied) by the leader must still be present
-// — as the identical log entry, not just an equal final KV value — in
+// -- as the identical log entry, not just an equal final KV value -- in
 // whichever node the surviving majority elects next.
 func TestCommittedWriteSurvivesLeaderCrash(t *testing.T) {
 	kvA, kvB, kvC := newFakeKV(), newFakeKV(), newFakeKV()
@@ -124,11 +124,11 @@ func TestCommittedWriteSurvivesLeaderCrash(t *testing.T) {
 	committedEntry, _ := c.node(1).LogEntry(index)
 
 	// A's own commit is immediate on majority ack, but a follower only
-	// learns commitIndex from the *next* heartbeat/AppendEntries — wait
+	// learns commitIndex from the *next* heartbeat/AppendEntries -- wait
 	// for that to actually land before killing A. Without it, B would
 	// have the entry replicated but wouldn't yet know it was committed,
 	// and (per the current-term commit rule) a new leader cannot commit
-	// an old-term entry through its own majority computation either — it
+	// an old-term entry through its own majority computation either -- it
 	// can only inherit that knowledge via leaderCommit while the old
 	// leader was still alive, or by committing a fresh entry of its own
 	// term (which implicitly commits everything before it too).
@@ -197,7 +197,7 @@ func TestIsolatedLeaderCannotCommitButMajorityElectsNewLeader(t *testing.T) {
 		t.Fatalf("Propose: %v", err)
 	}
 	// Give replication attempts a real chance to run (and fail) before
-	// asserting the invariant holds — this is checking it holds
+	// asserting the invariant holds -- this is checking it holds
 	// throughout a window, not polling for a one-shot condition.
 	time.Sleep(150 * time.Millisecond)
 	if c.node(1).CommitIndex() >= index {
@@ -220,7 +220,7 @@ func TestIsolatedLeaderCannotCommitButMajorityElectsNewLeader(t *testing.T) {
 // TestOldLeaderStepsDownAndDivergentEntryIsRepaired covers Scenario 4:
 // after the partition heals, the old leader must learn of the higher
 // term through the protocol itself (not a manual role reset) and its
-// uncommitted divergent entry must be repaired away — it must never have
+// uncommitted divergent entry must be repaired away -- it must never have
 // been, and must never become, applied anywhere.
 func TestOldLeaderStepsDownAndDivergentEntryIsRepaired(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
@@ -306,7 +306,7 @@ func TestStaleFollowerCatchesUpAfterPartitionHeal(t *testing.T) {
 }
 
 // TestStaleFollowerCatchesUpAfterRestart strengthens Scenario 5 per item
-// 25: the follower doesn't just reconnect — it is stopped, its
+// 25: the follower doesn't just reconnect -- it is stopped, its
 // persistent files are reused to construct a genuinely new Node, and
 // only then reconnected, proving persisted stale state plus replication
 // converges.
@@ -334,8 +334,8 @@ func TestStaleFollowerCatchesUpAfterRestart(t *testing.T) {
 
 // TestDivergentUncommittedSuffixIsRepairedPreservingPrefix is Scenario 6:
 // a follower with a matching committed prefix but a divergent
-// uncommitted suffix must have exactly that suffix replaced — the
-// matching prefix must be byte-identical before and after repair — and
+// uncommitted suffix must have exactly that suffix replaced -- the
+// matching prefix must be byte-identical before and after repair -- and
 // the repair must persist across a restart.
 func TestDivergentUncommittedSuffixIsRepairedPreservingPrefix(t *testing.T) {
 	c := newFaultCluster(t, 2, nil)
@@ -627,7 +627,7 @@ func TestCommitMetaSurvivesCrash(t *testing.T) {
 
 // TestQuorumDenominatorDoesNotShrinkWithDeadNodes is item 94: a
 // three-node cluster's majority requirement stays 2 even when only the
-// leader is alive — a failed node is unavailable, not removed from the
+// leader is alive -- a failed node is unavailable, not removed from the
 // cluster's quorum denominator.
 func TestQuorumDenominatorDoesNotShrinkWithDeadNodes(t *testing.T) {
 	c := newFaultCluster(t, 3, nil)
@@ -641,7 +641,7 @@ func TestQuorumDenominatorDoesNotShrinkWithDeadNodes(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond)
 	if c.node(1).CommitIndex() >= index {
-		t.Fatalf("CommitIndex() = %d, want < %d — the sole surviving node cannot form a majority of 3 alone", c.node(1).CommitIndex(), index)
+		t.Fatalf("CommitIndex() = %d, want < %d -- the sole surviving node cannot form a majority of 3 alone", c.node(1).CommitIndex(), index)
 	}
 }
 
@@ -659,12 +659,12 @@ func TestRepeatedFailoverCyclesRemainStable(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		last = proposeAndWait(t, c.node(1), "PUT a1 x")
 	}
-	// proposeAndWait only waits for the LEADER's own lastApplied — i.e.
+	// proposeAndWait only waits for the LEADER's own lastApplied -- i.e.
 	// majority commit, not full replication to every follower. Node 2 is
 	// about to be elected next; without this wait it could still be
 	// legitimately behind node 3 at the exact moment node 1 stops,
 	// making its own PreVote/election correctly lose to node 3's fresher
-	// log — a real Raft outcome, not a bug, but not what this test
+	// log -- a real Raft outcome, not a bug, but not what this test
 	// (which always elects 2 next) is set up to tolerate.
 	eventually(t, 2*time.Second, func() bool {
 		return c.node(2).LastApplied() >= last && c.node(3).LastApplied() >= last

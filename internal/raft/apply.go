@@ -10,8 +10,8 @@ import (
 // application state machine. Node calls it with entries strictly in log
 // order, exactly once each per running process, and never while holding
 // Node's internal state lock (though it is serialized against
-// SnapshotFunc/RestoreFunc via an internal lock — see CreateSnapshot).
-// Command is opaque to Raft — ApplyFunc (and whatever it decodes Command
+// SnapshotFunc/RestoreFunc via an internal lock -- see CreateSnapshot).
+// Command is opaque to Raft -- ApplyFunc (and whatever it decodes Command
 // with) is the only place that gives it meaning.
 type ApplyFunc func(index LogIndex, command []byte) error
 
@@ -21,7 +21,7 @@ var ErrNodeClosed = errors.New("raft: node closed")
 
 // ErrEntryLost is returned by WaitApplied when the log entry at the
 // waited-on index was superseded (its term changed) before ever being
-// applied — the caller's proposal was overwritten by conflict repair
+// applied -- the caller's proposal was overwritten by conflict repair
 // before it committed, most likely because this node lost leadership.
 // This does not mean the original command definitely never committed
 // anywhere; it means this node can no longer confirm that outcome.
@@ -36,7 +36,7 @@ type applyWaiter struct {
 // checkEntryLocked reports whether the entry at index is still the one
 // this waiter is waiting on: if term is 0 no check is performed (used for
 // "wait until caught up to at least this already-committed index", where
-// supersession cannot happen — a committed entry is permanently fixed by
+// supersession cannot happen -- a committed entry is permanently fixed by
 // Raft's safety property). Must be called with n.mu held.
 func (n *Node) checkEntryLocked(index LogIndex, term Term) error {
 	if term == 0 {
@@ -103,7 +103,7 @@ func (n *Node) applyLoop() {
 		// current-term barrier; EntryConfiguration carries membership
 		// changes, which Node derives from its local log directly (see
 		// membership.go), not through ApplyFunc. Neither carries
-		// application meaning, so ApplyFunc must never see them — advance
+		// application meaning, so ApplyFunc must never see them -- advance
 		// lastApplied directly instead.
 		if entry.Kind != EntryApplication {
 			n.mu.Lock()
@@ -116,7 +116,7 @@ func (n *Node) applyLoop() {
 		// applyMu (not n.mu, the Raft state lock) serializes this call
 		// against CreateSnapshot's own application-state access, so a
 		// snapshot always captures state as of exactly the lastApplied
-		// index it claims — never mid-apply, never one command ahead.
+		// index it claims -- never mid-apply, never one command ahead.
 		n.applyMu.Lock()
 		err := fn(nextIndex, cloneBytes(entry.Command))
 		n.applyMu.Unlock()
@@ -140,7 +140,7 @@ func (n *Node) applyLoop() {
 // (error), or lastApplied has reached its index (success). Must be called
 // with n.mu held.
 func (n *Node) notifyWaitersLocked() {
-	// lastApplied may have just crossed membershipEntryIndex — wake every
+	// lastApplied may have just crossed membershipEntryIndex -- wake every
 	// AddVoter/RemoveVoter caller waiting on that (see config_change.go
 	// and notifyMembershipChangedLocked).
 	n.notifyMembershipChangedLocked()

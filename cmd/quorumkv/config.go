@@ -65,7 +65,7 @@ func (p *peerFlag) Set(s string) error {
 // parseNodeConfig parses and validates "quorumkv node" flags. Rejects a
 // malformed --peer, a duplicate peer NodeID or address, a zero/missing
 // --id, this node's own ID given as a --peer, and any missing required
-// flag — nothing is silently ignored or defaulted around.
+// flag -- nothing is silently ignored or defaulted around.
 func parseNodeConfig(args []string) (nodeConfig, error) {
 	fs := flag.NewFlagSet("quorumkv node", flag.ContinueOnError)
 	var idRaw uint64

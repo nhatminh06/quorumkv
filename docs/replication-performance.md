@@ -21,7 +21,7 @@ Two concrete problems followed from this:
 
 - `Log.EntriesFrom` cloned the entire retained suffix from the requested
   index to the end, even when only the first 64 entries would ever be
-  used — real, measurable waste for a follower behind by thousands of
+  used -- real, measurable waste for a follower behind by thousands of
   entries.
 - The 64-entry count bound was never actually a byte bound: 64 entries
   near the 256 KiB command-size limit would encode to several megabytes,
@@ -36,27 +36,27 @@ Two concrete problems followed from this:
 unbounded-then-truncated pattern: it stops adding entries once the next
 one would push the running encoded-byte total past the budget, and never
 copies more of the retained log than the result needs. The first entry
-is always included regardless of its own size — see §3.
+is always included regardless of its own size -- see §3.
 
 ## 3. AppendEntries byte accounting
 
 `encodedEntrySize`/`appendEntriesEncodedSize`
 (`internal/raft/append_entries.go`) are the one place that compute how
-many wire bytes an entry or a whole request costs — shared by
+many wire bytes an entry or a whole request costs -- shared by
 `EncodeAppendEntries` (encoding) and `EntriesRange` (deciding what to
 include before encoding anything), so there is exactly one calculation,
 never two that could drift apart.
 
 Two distinct bounds exist, deliberately different sizes:
 
-- `MaxAppendEntriesBytes` (512 KiB) — the *soft target* `EntriesRange`
+- `MaxAppendEntriesBytes` (512 KiB) -- the *soft target* `EntriesRange`
   builds a normal batch against.
-- `maxAppendEntriesEncodedSize` (`transport.MaxPayloadSize` − 64 KiB) —
+- `maxAppendEntriesEncodedSize` (`transport.MaxPayloadSize` − 64 KiB) --
   the *hard ceiling* `EncodeAppendEntries` itself rejects anything past.
 
 The gap between them is what lets a single valid entry up to
 `maxCommandSize` (256 KiB) always be sent alone even though it alone
-exceeds the normal batch target — `EntriesRange` always includes the
+exceeds the normal batch target -- `EntriesRange` always includes the
 first entry unconditionally, so batching a target smaller than the
 absolute maximum never makes an otherwise-valid large command
 unsendable.
@@ -73,14 +73,14 @@ unsendable.
 ## 5. Replication-worker lifecycle
 
 One `replicationWorker` exists per current replication target while
-this node is Leader — created and destroyed in exactly one place,
+this node is Leader -- created and destroyed in exactly one place,
 `reconcileReplicationWorkersLocked`, called from `becomeLeaderLocked`
 (the initial set) and from every `rebuildMembershipLocked` (whenever
 effective membership might have changed, including a just-appended,
 not-yet-committed Joint entry adding a new voter). A worker's own
 goroutine context is a child of the current leadership term's context,
 so losing leadership cancels every worker at once with no separate
-bookkeeping — `stepToFollowerLocked` also drops the worker map itself,
+bookkeeping -- `stepToFollowerLocked` also drops the worker map itself,
 so a later `becomeLeaderLocked` starts completely clean.
 
 Workers are purely runtime scheduling state: nothing about them is
@@ -94,7 +94,7 @@ a replication round directly (a proposal batch persisting, a
 configuration entry appending, the ReadIndex no-op barrier appending)
 now instead pings every current worker's channel; so does the heartbeat
 ticker. A non-blocking send that finds the buffer already occupied is a
-no-op — the pending wake will still cause the worker to observe
+no-op -- the pending wake will still cause the worker to observe
 whatever the current state is once it runs, so 100 proposals landing
 before a worker gets scheduled collapse into one wake, not 100.
 
@@ -119,9 +119,9 @@ Each peer carries a `replicationGeneration` counter, incremented when:
 
 Every request captures the generation it was built under; a response is
 only allowed to mutate `nextIndex`/`matchIndex`/trigger a commit-index
-recheck if the peer's CURRENT generation still matches. Anything else —
+recheck if the peer's CURRENT generation still matches. Anything else --
 an older generation, an older term, a peer no longer present in the
-worker map — is discarded exactly like a response that never arrived.
+worker map -- is discarded exactly like a response that never arrived.
 
 ## 8. Stale-response handling
 
@@ -130,14 +130,14 @@ before Milestone 14 (a higher term still forces step-down; a response
 for a role/term this node has moved past is still dropped) and adds the
 missing piece: two responses for the SAME term and role can still
 disagree about whether they are stale, which only a per-peer,
-monotonically-invalidated generation counter — not term or role alone —
+monotonically-invalidated generation counter -- not term or role alone --
 can distinguish.
 
 ## 9. Failure / backtracking
 
 Unchanged conflict-repair algorithm: a current-generation failure backs
 `nextIndex` off by exactly one (never below 1) and lets the worker's own
-step loop retry immediately with the corrected value — no conflict-term
+step loop retry immediately with the corrected value -- no conflict-term
 hint, no second algorithm invented for this milestone.
 
 ## 10. Pipeline window
@@ -145,7 +145,7 @@ hint, no second algorithm invented for this milestone.
 Milestone 14 deliberately does **not** implement multiple
 simultaneously in-flight AppendEntries requests per peer.
 `replicationWorker`'s inner loop is single-flight: send one batch, apply
-its response, decide whether to send the next — matching the milestone's
+its response, decide whether to send the next -- matching the milestone's
 own explicit "window 1 is a legitimate, complete answer" scope
 allowance. Reasoning:
 
@@ -163,8 +163,8 @@ allowance. Reasoning:
   request without corrupting `nextIndex`, and every one of those paths
   needs its own deterministic reordering tests.
 - Event-driven immediate re-send (§21 below) already captures the
-  primary, measured win — a follower advances batch after batch with no
-  wait in between — independent of whether more than one of those
+  primary, measured win -- a follower advances batch after batch with no
+  wait in between -- independent of whether more than one of those
   batches is ever in flight at once.
 
 Given the transport architecture (§17) and no evidence a wider window
@@ -177,7 +177,7 @@ explicitly undone.
 
 When a peer's `nextIndex` falls at or before the log's compacted
 boundary, its worker's step performs the InstallSnapshot chunk-loop
-transfer synchronously (still with no network I/O under `Node.mu` —
+transfer synchronously (still with no network I/O under `Node.mu` --
 each chunk round-trip unlocks before sending) instead of a normal
 AppendEntries batch, having already bumped the peer's generation before
 starting so no AppendEntries response still in flight from before the
@@ -186,28 +186,28 @@ takeover can apply itself afterward. On a fully successful transfer,
 generation is bumped again (a fresh epoch for the resumed suffix), and
 the worker's step reports whether more (ordinary) catch-up work remains
 so it continues immediately rather than waiting for another wake. A
-failed transfer changes nothing — the existing retry-on-next-wake
+failed transfer changes nothing -- the existing retry-on-next-wake
 behavior is unchanged.
 
 ## 12. Membership interaction
 
 `reconcileReplicationWorkersLocked` is membership-mode-aware only
 through `n.membership.Targets()`, which already implements the Joint
-union(old, new) rule (Milestone 10) — a worker exists for exactly the
+union(old, new) rule (Milestone 10) -- a worker exists for exactly the
 current effective target set, Joint or Stable, with no separate logic
 here for which mode is active. A newly added voter (even before its
 Joint entry commits) gets a worker immediately; a peer that a final
 Stable entry excludes has its worker canceled and its `nextIndex`/
 `matchIndex`/`replicationGeneration` entries removed in the same pass.
 A stale response arriving after removal finds no worker and no
-generation to match, so it is discarded — it cannot recreate the peer's
+generation to match, so it is discarded -- it cannot recreate the peer's
 state or affect quorum.
 
 ## 13. Leadership-transfer interaction
 
 `waitForTransferCatchUp` (`leadership_transfer.go`, unchanged by this
 milestone) already only watches `matchIndex[target]` via the existing
-`transferChanged` signal — it never drove replication itself. Replacing
+`transferChanged` signal -- it never drove replication itself. Replacing
 the replication engine underneath it required no changes there: the
 transfer target's own worker now catches it up event-drivenly, and
 `waitForTransferCatchUp` simply observes progress faster. The mandatory
@@ -219,7 +219,7 @@ unaffected.
 Unchanged and unaffected: a ReadIndex quorum probe
 (`read_index.go`) sends its own AppendEntries-with-`ReadContext`
 directly via `n.sendAppend`, never through a replication worker, and
-never calls `applyReplicationResponse` — it inspects only the response's
+never calls `applyReplicationResponse` -- it inspects only the response's
 `Term`/`ReadContext` for quorum confirmation. It does not consume a
 worker's wake slot, does not advance `matchIndex`, and does not touch
 any peer's generation.
@@ -245,7 +245,7 @@ go test ./internal/service -run '^$' -bench 'BenchmarkFollowerCatchUp' -benchtim
 | Entries/sec | 1,265 | 18,583 | **14.7x** |
 
 This is the milestone's primary targeted improvement, and it is
-material — not noise. See §18 for why: this benchmark's lagging follower
+material -- not noise. See §18 for why: this benchmark's lagging follower
 scenario is exactly the "wait for the next heartbeat between batches"
 case Milestone 13 documented as unaddressed, and event-driven immediate
 re-send removes that wait entirely.
@@ -275,7 +275,7 @@ go tool pprof -top -cum /tmp/cpu.prof
 ```
 
 shows `Log.rewrite`/`encodeLogFile` (the follower's own whole-log
-atomic rewrite on every received batch — see
+atomic rewrite on every received batch -- see
 [docs/raft-log-replication.md](raft-log-replication.md)) at ~41%
 cumulative time, with associated GC pressure (`scanObject`,
 `memmove`, `growslice`) from repeatedly re-encoding and copying the
@@ -292,18 +292,18 @@ whole-log rewrites; see [raft-log-storage.md](raft-log-storage.md).
 - At Milestone 14, the follower's log was still rewritten as a whole file on
   every received batch. Milestone 20 resolves this historical limitation with
   append-oriented Raft-log segments; see §18.
-- No multi-request replication pipelining (window is fixed at 1 — see
+- No multi-request replication pipelining (window is fixed at 1 -- see
   §10); the transport still opens roughly one connection per RPC (also
-  unchanged this milestone — see
+  unchanged this milestone -- see
   [docs/performance.md](performance.md)'s own limitations list).
-- No follower-side out-of-order request buffering — not needed at
+- No follower-side out-of-order request buffering -- not needed at
   window 1, and deliberately not built as speculative infrastructure for
   a wider window that was not implemented.
 - No observational stats for the replication path itself (RPC counts,
-  bytes sent, pipeline resets, stale-responses-ignored) — Milestone 13's
+  bytes sent, pipeline resets, stale-responses-ignored) -- Milestone 13's
   `Node.Stats()` covers proposal admission/batching only; extending it
   to replication was not done this milestone.
-- Snapshot chunk size/protocol (Milestone 7) unchanged — InstallSnapshot
+- Snapshot chunk size/protocol (Milestone 7) unchanged -- InstallSnapshot
   now runs inside a peer's own worker step, but the chunking mechanism
   itself was not touched.
 

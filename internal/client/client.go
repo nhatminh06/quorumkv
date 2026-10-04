@@ -5,11 +5,11 @@
 // leader and remembers it as a hint for the next call.
 //
 // Since Milestone 9, PUT/DELETE carry a stable request identity
-// (ClientID + a monotonic per-client Sequence — see internal/reqid) so a
+// (ClientID + a monotonic per-client Sequence -- see internal/reqid) so a
 // server can recognize and safely suppress a retried write's second
 // effect. This lets the client safely retry a PUT/DELETE after a
 // transport failure, a server-reported TIMEOUT, or a NOT_LEADER
-// redirect — cases Milestone 5-8 conservatively treated as unretryable
+// redirect -- cases Milestone 5-8 conservatively treated as unretryable
 // because the outcome was ambiguous. GET carries no
 // request identity and searches seeds and bounded leader hints on discovery
 // or transport failures. Consistency remains quorum-confirmed on the server
@@ -20,7 +20,7 @@
 // identity for its own lifetime, not across a process restart. A caller
 // that needs retry safety across reconstructing its Client object must
 // use NewWithID to supply (and, after a successful write, itself
-// persist) a stable ClientID — this package does not implement client-
+// persist) a stable ClientID -- this package does not implement client-
 // side session persistence. See docs/request-dedup.md.
 package client
 
@@ -44,7 +44,7 @@ const maxRedirects = 3
 
 // writeRetryDelay is a small fixed backoff between write retry passes
 // (transport failure, TIMEOUT, or a redirect chain exceeding
-// maxRedirects) — enough to avoid busy-looping an unavailable cluster,
+// maxRedirects) -- enough to avoid busy-looping an unavailable cluster,
 // small enough not to matter for a healthy one. It is context-aware (a
 // timer/select, never an unconditional sleep), so it never outlasts the
 // caller's ctx.
@@ -55,7 +55,7 @@ var (
 	// hint to offer, or redirects were exhausted without reaching one.
 	ErrNoLeaderKnown = errors.New("client: no leader currently known")
 	// ErrTimeout means the contacted node reported it gave up waiting for
-	// commit+apply — the operation's outcome is uncertain, not negative.
+	// commit+apply -- the operation's outcome is uncertain, not negative.
 	// For GET this is terminal; for PUT/DELETE, do implicitly retries
 	// with the same request identity (see the package doc).
 	ErrTimeout = errors.New("client: server-side wait timed out; outcome is uncertain")
@@ -68,12 +68,12 @@ var (
 	// ErrInternal means the contacted node reported an internal failure.
 	ErrInternal = errors.New("client: internal server error")
 	// ErrRequestConflict means the server reported that this Client's
-	// (ClientID, Sequence) was already used for a different operation —
+	// (ClientID, Sequence) was already used for a different operation --
 	// a serious client-identity bug, not a legitimate retry outcome.
 	// Terminal: never retried, and the local sequence is not advanced.
 	ErrRequestConflict = errors.New("client: request identity reused for a different operation")
 	// ErrStaleRequest means the server reported that this Client's
-	// Sequence does not match what it expects next for this ClientID —
+	// Sequence does not match what it expects next for this ClientID --
 	// the server and this Client's local session state disagree.
 	// Terminal: never retried, and the local sequence is not advanced.
 	ErrStaleRequest = errors.New("client: sequence rejected as stale by the server")
@@ -83,7 +83,7 @@ var (
 	ErrSequenceExhausted = reqid.ErrSequenceExhausted
 	// ErrBusy means the contacted node rejected the request due to
 	// bounded overload (a full proposal queue or a full service-level
-	// concurrency bound) before it ever touched Raft — nothing was
+	// concurrency bound) before it ever touched Raft -- nothing was
 	// proposed or applied. For PUT/DELETE this Client already retries a
 	// BUSY response automatically with the same request identity (see
 	// doWrite); ErrBusy from Get is returned to the caller instead,
@@ -124,7 +124,7 @@ type Client struct {
 // New constructs a Client with a freshly generated random ClientID (see
 // internal/reqid.NewClientID). At least one seed address is required.
 // Panics if the underlying crypto/rand source fails, which does not
-// happen on any supported platform under normal operation — the same
+// happen on any supported platform under normal operation -- the same
 // posture Go's stdlib crypto/rand callers generally take.
 func New(seedAddrs ...string) *Client {
 	id, err := reqid.NewClientID()
@@ -134,7 +134,7 @@ func New(seedAddrs ...string) *Client {
 	return NewWithID(id, seedAddrs...)
 }
 
-// NewWithID constructs a Client with a caller-supplied, stable ClientID —
+// NewWithID constructs a Client with a caller-supplied, stable ClientID --
 // required for deterministic tests, and for a caller that wants to
 // preserve safe retry identity across reconstructing its Client object
 // (e.g. after its own process restart): persist id and the next sequence
@@ -180,7 +180,7 @@ func (c *Client) Delete(ctx context.Context, key []byte) error {
 // write from this Client via writeMu), retry the exact same
 // (ClientID, Sequence, operation, key, value) across transport failures,
 // TIMEOUT, and NOT_LEADER redirects until it reaches a terminal outcome
-// or ctx is done, then — only on success — advance the local sequence.
+// or ctx is done, then -- only on success -- advance the local sequence.
 func (c *Client) write(ctx context.Context, op clientproto.Operation, key, value []byte) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
@@ -204,8 +204,8 @@ func (c *Client) write(ctx context.Context, op clientproto.Operation, key, value
 
 // doWrite sends req, retrying with the exact same bytes (per
 // docs/request-dedup.md's "never change request identity during retry")
-// on any outcome ambiguous enough to be safely retryable — a transport
-// failure, StatusTimeout, or a NOT_LEADER chain exceeding maxRedirects —
+// on any outcome ambiguous enough to be safely retryable -- a transport
+// failure, StatusTimeout, or a NOT_LEADER chain exceeding maxRedirects --
 // until a terminal outcome or ctx.Done(). Never advances or mutates req.
 func (c *Client) doWrite(ctx context.Context, req clientproto.Request) error {
 	c.mu.Lock()
@@ -245,7 +245,7 @@ func (c *Client) doWrite(ctx context.Context, req clientproto.Request) error {
 					// Same treatment as StatusTimeout: retry the exact
 					// same request identity after the existing
 					// context-aware backoff below, never allocating a
-					// new sequence — nothing was proposed or applied for
+					// new sequence -- nothing was proposed or applied for
 					// a BUSY rejection (see docs/request-dedup.md).
 					addr = ""
 				case clientproto.StatusRequestConflict:
@@ -259,7 +259,7 @@ func (c *Client) doWrite(ctx context.Context, req clientproto.Request) error {
 				}
 			} else if errors.Is(sendErr, ErrBadRequest) {
 				// A request that fails to even encode (oversized
-				// key/value) will fail identically on every retry —
+				// key/value) will fail identically on every retry --
 				// terminal, not a transport failure.
 				return sendErr
 			} else if errors.Is(sendErr, transport.ErrClosed) {
@@ -268,7 +268,7 @@ func (c *Client) doWrite(ctx context.Context, req clientproto.Request) error {
 				// Transport-level failure: previously treated as
 				// unretryable (the outcome on the far end was unknown).
 				// It is now safely retryable with the same request
-				// identity — see the package doc.
+				// identity -- see the package doc.
 				addr = ""
 			}
 		}
@@ -377,7 +377,7 @@ func (c *Client) doRead(ctx context.Context, req clientproto.Request) (clientpro
 }
 
 // attempt sends req to addr once and returns the decoded response, or a
-// transport/encode-level error (never a status-derived error — callers
+// transport/encode-level error (never a status-derived error -- callers
 // interpret resp.Status themselves).
 func (c *Client) attempt(ctx context.Context, addr string, req clientproto.Request) (clientproto.Response, error) {
 	payload, err := clientproto.EncodeRequest(req)

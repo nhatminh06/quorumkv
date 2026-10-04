@@ -13,12 +13,12 @@ import (
 	"quorumkv/internal/transport"
 )
 
-// TestInstallSnapshotDedupSurvives is items 79/118 — mandatory, powerful
+// TestInstallSnapshotDedupSurvives is items 79/118 -- mandatory, powerful
 // evidence that request identity survives stale-follower snapshot
 // recovery: C is isolated while A+B commit several writes (including one
 // specific client request), A snapshots and compacts that request out of
 // its log entirely, C is reconnected and catches up via a real
-// InstallSnapshot transfer (not a log replay — the entry no longer
+// InstallSnapshot transfer (not a log replay -- the entry no longer
 // exists to replay), C is then made leader legitimately, and the client
 // retries its original request against C. C must recognize it from its
 // installed dedup table and must not mutate state again.
@@ -89,7 +89,7 @@ func TestInstallSnapshotDedupSurvives(t *testing.T) {
 	// (a real election, not a forced role). Close() stops each node's own
 	// background work but does not reset its role: A's RPC handler stays
 	// reachable and, being closed rather than truly gone, still correctly
-	// insists it is Leader — so C must win using B's vote alone (B, a
+	// insists it is Leader -- so C must win using B's vote alone (B, a
 	// Follower whose own last leader contact is long past by this point
 	// in the test, has no such objection). This models "unreachable" as
 	// this test suite already does elsewhere (isolatedSender), not a
@@ -100,12 +100,12 @@ func TestInstallSnapshotDedupSurvives(t *testing.T) {
 
 	// Snapshot the mutation count here, right before the retry: it
 	// already includes the legitimate suffix-replay mutation for the
-	// unrelated "other" request from catch-up — the assertion below
+	// unrelated "other" request from catch-up -- the assertion below
 	// must check the count did not advance *further*, not that it is
 	// zero.
 	before := cNode.applied.Load()
 
-	// Retry the tracked request — same ClientID, same sequence — against
+	// Retry the tracked request -- same ClientID, same sequence -- against
 	// the now-leader C.
 	retry := client.NewWithID(target.ID(), cNode.addr())
 	retryCtx, retryCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -126,7 +126,7 @@ func TestInstallSnapshotDedupSurvives(t *testing.T) {
 // isolatedSender gates real-transport RPC sends for one node behind a
 // blocked-address set, honoring Milestone 6's directional-fault-control
 // design (item 92: reuse/extend the existing fault harness rather than
-// building a new one) — extended here to also cover Milestone 7's
+// building a new one) -- extended here to also cover Milestone 7's
 // InstallSnapshot RPC, which the original internal/service faultNet
 // (Milestone 6) predates.
 type isolatedSender struct {

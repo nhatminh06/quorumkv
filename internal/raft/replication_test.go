@@ -295,7 +295,7 @@ func TestHandleAppendEntriesHigherTermFailsIfStatePersistenceFails(t *testing.T)
 		t.Fatalf("HandleAppendEntries succeeded despite term-persistence failure, want error")
 	}
 	if n.CurrentTerm() != 0 {
-		t.Fatalf("CurrentTerm() = %d, want unchanged 0 — must not act as though the higher term was accepted", n.CurrentTerm())
+		t.Fatalf("CurrentTerm() = %d, want unchanged 0 -- must not act as though the higher term was accepted", n.CurrentTerm())
 	}
 }
 
@@ -369,7 +369,7 @@ func TestApplyAppendEntriesResponseMatchIndexNeverRegresses(t *testing.T) {
 	n.applyStructuredReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a", "b", "c")},
 		AppendEntriesResponse{Term: term, Success: true, MatchIndex: 3})
 	// ...then a stale, older success for a smaller prefix arrives late
-	// (same generation — this proves ordinary out-of-order-arrival
+	// (same generation -- this proves ordinary out-of-order-arrival
 	// monotonicity, independent of the generation mechanism).
 	n.applyStructuredReplicationResponse(2, term, gen, AppendEntriesRequest{Term: term, PrevLogIndex: 0, Entries: entriesOf("a")},
 		AppendEntriesResponse{Term: term, Success: true, MatchIndex: 1})
@@ -486,7 +486,7 @@ func TestProposeFailsIfLogPersistenceFails(t *testing.T) {
 		t.Fatalf("log must remain empty after a failed Propose")
 	}
 	if n.CommitIndex() != 0 {
-		t.Fatalf("CommitIndex() = %d, want 0 — a failed local append is never committed", n.CommitIndex())
+		t.Fatalf("CommitIndex() = %d, want 0 -- a failed local append is never committed", n.CommitIndex())
 	}
 }
 

@@ -32,7 +32,7 @@ type testNode struct {
 
 // startCluster brings up n real nodes on real loopback TCP listeners,
 // each running its own raft.Node + Service, wired to each other. It does
-// not elect a leader — callers do that explicitly for determinism.
+// not elect a leader -- callers do that explicitly for determinism.
 func startCluster(t testing.TB, n int) []*testNode {
 	t.Helper()
 	nodes := make([]*testNode, n)
@@ -77,7 +77,7 @@ func startCluster(t testing.TB, n int) []*testNode {
 		// t.Cleanup runs LIFO: register the node's own Close first and its
 		// transport's Close second, so the transport (registered last)
 		// stops accepting/dispatching inbound RPCs *before* the node
-		// begins closing — otherwise a still-open listener can dispatch a
+		// begins closing -- otherwise a still-open listener can dispatch a
 		// HandleAppendEntries call into a node that Close() is
 		// concurrently tearing down, a genuine (if narrow) data race.
 		t.Cleanup(rNodes[i].Close)
@@ -92,7 +92,7 @@ func (tn *testNode) addr() string { return tn.tr.Addr() }
 // electLeader triggers an election on nodes[leaderIdx] and then waits
 // until every other still-alive node in voters has learned it is the
 // leader (via that leader's first heartbeat actually landing over real
-// TCP) — StartElection returning only means the vote was won, not that
+// TCP) -- StartElection returning only means the vote was won, not that
 // followers have heard from the new leader yet, and callers that
 // immediately contact a follower need the latter. voters lets a caller
 // exclude nodes it has already shut down (e.g. during a failover test).
@@ -107,7 +107,7 @@ func electLeaderAmong(t testing.TB, voters []*testNode, nodes []*testNode, leade
 	// PreVote's leader-contact safeguard (see docs/raft-election.md)
 	// means a voter that has recently accepted AppendEntries from a
 	// leader rejects a hypothetical PreVote for a real amount of wall
-	// time (up to ~150ms) — correct production behavior, but this test
+	// time (up to ~150ms) -- correct production behavior, but this test
 	// helper is also used for a failover election immediately after
 	// stopping the old leader, well within that window. raft.Node has no
 	// exported hook to fast-forward this from outside its own package, so
@@ -222,12 +222,12 @@ func TestFollowerReturnsNotLeaderWithHint(t *testing.T) {
 		t.Fatalf("LeaderHint = %q, want %q", resp.LeaderHint, nodes[0].addr())
 	}
 	if nodes[0].svc.node.LastLogIndex() != before {
-		t.Fatalf("leader's log changed after a follower rejected a PUT — follower must never propose")
+		t.Fatalf("leader's log changed after a follower rejected a PUT -- follower must never propose")
 	}
 }
 
 func TestUnknownLeaderReturnsEmptyHint(t *testing.T) {
-	nodes := startCluster(t, 3) // no election triggered — nobody knows a leader
+	nodes := startCluster(t, 3) // no election triggered -- nobody knows a leader
 
 	req, _ := clientproto.EncodeRequest(clientproto.Request{Operation: clientproto.OpGet, Key: []byte("x")})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -260,7 +260,7 @@ func TestClientFollowsRedirectToLeader(t *testing.T) {
 	if err := c.Put(ctx, []byte("x"), []byte("1")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	// The write only succeeded via the leader (A) proposing it — B's own
+	// The write only succeeded via the leader (A) proposing it -- B's own
 	// refusal to propose anything as a follower is proven directly in
 	// TestFollowerReturnsNotLeaderWithHint; here we confirm the redirect
 	// path actually reached A by checking A committed it.
@@ -385,7 +385,7 @@ func TestNoMajorityClientWriteTimesOut(t *testing.T) {
 	}
 
 	if nodes[0].svc.node.CommitIndex() != 0 {
-		t.Fatalf("CommitIndex() = %d, want 0 — a local append without majority must never commit", nodes[0].svc.node.CommitIndex())
+		t.Fatalf("CommitIndex() = %d, want 0 -- a local append without majority must never commit", nodes[0].svc.node.CommitIndex())
 	}
 	if nodes[0].svc.node.LastLogIndex() != 1 {
 		t.Fatalf("LastLogIndex() = %d, want 1 (appended locally despite no majority)", nodes[0].svc.node.LastLogIndex())

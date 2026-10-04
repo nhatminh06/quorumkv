@@ -10,7 +10,7 @@ import (
 
 // TestRestartRebuildAppliesOnlyCommittedPrefix constructs a log with a
 // committed prefix and an uncommitted suffix, destroys the in-memory
-// Node, and opens a fresh one from the same files — proving startup
+// Node, and opens a fresh one from the same files -- proving startup
 // replays only entries 1..commitIndex, exactly matching Milestone 5's
 // "restart replays only committed prefix" requirement.
 func TestRestartRebuildAppliesOnlyCommittedPrefix(t *testing.T) {

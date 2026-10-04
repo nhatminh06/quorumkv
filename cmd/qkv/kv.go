@@ -11,12 +11,12 @@ import (
 
 // newClient builds a client.Client seeded with gf's addresses. Every
 // invocation of qkv is a fresh process, so this always generates a new
-// random ClientID (see internal/client.New) — there is no cross-process
+// random ClientID (see internal/client.New) -- there is no cross-process
 // client-session persistence in this CLI. A PUT/DELETE within a single
 // qkv invocation is still safely retried by internal/client itself
 // (transport failure, TIMEOUT, BUSY, NOT_LEADER redirect); what does NOT
 // survive is running qkv a second time to "retry" a write whose result
-// you never saw — that is a new ClientID/Sequence and, if the original
+// you never saw -- that is a new ClientID/Sequence and, if the original
 // write actually landed, a second logical write. See docs/operations.md.
 func newClient(gf globalFlags) *client.Client {
 	return client.New(gf.addrs...)
@@ -80,7 +80,7 @@ func cmdGet(gf globalFlags, args []string) int {
 
 // humanClientError turns an internal/client error into the kind of
 // message an operator can act on without knowing this codebase's
-// internal status codes — see docs/operations.md.
+// internal status codes -- see docs/operations.md.
 func humanClientError(err error) string {
 	switch {
 	case errors.Is(err, client.ErrNoLeaderKnown):

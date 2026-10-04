@@ -13,7 +13,7 @@ AppendEntries, commit rule) and [docs/state-machine.md](state-machine.md)
 Before this milestone, a follower that fell behind recovered only by
 replaying the leader's complete retained log from its old `nextIndex`.
 That works only as long as the full historical log stays on disk forever
-— every write, forever, on every node. A follower offline for a long time,
+-- every write, forever, on every node. A follower offline for a long time,
 or a fresh node joining with nothing, had no bounded way to catch up.
 Snapshots break that: once a prefix of the log is known to be safely
 captured in a point-in-time state-machine snapshot, that prefix can be
@@ -25,24 +25,24 @@ transfer of the snapshot instead of an unbounded replay.
 `Log` now tracks `baseIndex`/`baseTerm` in addition to its physical entry
 slice: physical entry `entries[i]` corresponds to logical index
 `baseIndex + i + 1`. Before any compaction, `baseIndex = 0, baseTerm = 0`
-— exactly Milestone 3's original empty-log sentinel — so every
+-- exactly Milestone 3's original empty-log sentinel -- so every
 Milestone 3–6 log file and test fixture still loads correctly with no
 migration step (see §4).
 
 `LastIndex()`/`LastTerm()`/`Term(index)`/`Entry(index)`/`EntriesFrom(from)`
 are all boundary-aware:
 
-- `Term(baseIndex)` returns `(baseTerm, true)` — the boundary itself is
+- `Term(baseIndex)` returns `(baseTerm, true)` -- the boundary itself is
   always answerable, never fabricated.
 - `Term(index)` for `index < baseIndex` returns `(0, false)`: an explicit
   "compacted, unavailable" signal, never a fabricated term. Only a
   genuinely out-of-range query (`index < 0` conceptually, or in this log's
   case `index < baseIndex`) gets `false`; nothing downstream is allowed to
   treat that `false` as "index 0" or "term 0 is real."
-- `Entry(index)` returns `false` for `index <= baseIndex` — command bytes
+- `Entry(index)` returns `false` for `index <= baseIndex` -- command bytes
   are never retained past the boundary, even for the boundary index
   itself (its term is known; its command is not, and was never meant to
-  be — the snapshot is what stands in for it).
+  be -- the snapshot is what stands in for it).
 - `EntriesFrom(from)` clamps `from <= baseIndex` up to `baseIndex + 1`, so
   a caller that still thinks a compacted prefix exists doesn't get handed
   entries logically before the boundary.
@@ -59,19 +59,19 @@ version(1B) | kvEntryCount(4B) | repeated{ keyLen(4B) valLen(4B) key val }
 ```
 
 Keys are sorted (`sort.Strings`) and client records are sorted by
-`ClientID` before encoding — both specifically because Go map iteration
-order is randomized — so two snapshots of identical state must produce
+`ClientID` before encoding -- both specifically because Go map iteration
+order is randomized -- so two snapshots of identical state must produce
 byte-identical output regardless of insertion order, proven by
 `TestSnapshotIsDeterministicRegardlessOfInsertionOrder` and
 `TestSnapshotClientRecordsSortedByClientID`. Version 1 (the original
-Milestone 7 shape, KV entries only) still decodes — with an empty dedup
-table — and `Snapshot` always produces version 2 going forward, the same
+Milestone 7 shape, KV entries only) still decodes -- with an empty dedup
+table -- and `Snapshot` always produces version 2 going forward, the same
 pattern the command codec (§below, and
 [docs/request-dedup.md](request-dedup.md)) uses. Bounds
 (`MaxSnapshotEntries`/`MaxSnapshotClients`, per-key/value size vs.
 `kv.MaxKeySize`/`MaxValueSize`) are checked before allocating anything,
 and `Restore` only replaces state after the entire input has decoded
-successfully — a malformed snapshot never partially mutates live state
+successfully -- a malformed snapshot never partially mutates live state
 (`TestRestoreIsAtomicOnMalformedInput`). See
 [docs/request-dedup.md](request-dedup.md) for why the dedup table must
 live inside the snapshot at all: without it, compaction would silently
@@ -92,20 +92,20 @@ magic(4B "SNP1") | version(1B) | lastIncludedIndex(8B) | lastIncludedTerm(8B)
 ```
 
 `membership` (Milestone 10, version bumped to 2) is
-`EncodeMembership(StableMembership(cfg))` — the stable voter set as of
+`EncodeMembership(StableMembership(cfg))` -- the stable voter set as of
 this boundary; see [docs/membership.md](membership.md) §8 for why it
 must always be Stable (never a Joint config) and how a version 1 file
 (no membership section, `ConfigurationPresent=false`) falls back to a
 node's own bootstrap configuration instead of being treated as
-corruption. A missing file is `(nil, nil)` from `Load` — "no snapshot
+corruption. A missing file is `(nil, nil)` from `Load` -- "no snapshot
 yet," not an error. `Data` is opaque to this package (it's whatever
 `kv.Snapshot` produced); the 64 MiB bound here is kept in sync with
 `kv.MaxSnapshotSize` so a legal KV snapshot always fits a legal Raft one.
 
 The on-disk `Log` format grew a version 2 header (`baseIndex(8B) +
 baseTerm(8B)` after the existing magic+version) to carry the boundary.
-Version 1 files (no such fields) still decode correctly — implicitly
-`baseIndex=0, baseTerm=0` — and any subsequent mutation of a v1 file
+Version 1 files (no such fields) still decode correctly -- implicitly
+`baseIndex=0, baseTerm=0` -- and any subsequent mutation of a v1 file
 transparently upgrades it to v2 on the next rewrite
 (`TestLogV1FileStillLoads`).
 
@@ -120,7 +120,7 @@ no-op if `newBaseIndex <= baseIndex` (never regresses).
 general operation a **follower installing a leader-sent snapshot** needs:
 the follower's own log may be shorter than the snapshot boundary, or
 diverge from it entirely. It checks `Term(newBaseIndex)` against
-`newBaseTerm` — if they match, the verified suffix beyond the boundary is
+`newBaseTerm` -- if they match, the verified suffix beyond the boundary is
 retained (identical effect to `Compact`); if they don't match (including
 the case where the follower's log doesn't reach that far at all), the
 **entire local log is discarded**, since none of it can be trusted to
@@ -133,12 +133,12 @@ told me to trust" would blur a real safety distinction.
 ## 6. Snapshot/apply atomicity (`applyMu`)
 
 A snapshot's `(lastIncludedIndex, data)` pair must describe *exactly* the
-same logical state — never one command ahead of, or behind, what
+same logical state -- never one command ahead of, or behind, what
 `lastIncludedIndex` claims. `Node` now has a second lock, `applyMu`
 (distinct from `mu`, the Raft bookkeeping lock), held by both the apply
 loop's `ApplyFunc` call and `CreateSnapshot`'s `SnapshotFunc` call. This
 guarantees the two can never interleave, while still never holding the
-cheap-to-contend `Node.mu` during a potentially large serialization —
+cheap-to-contend `Node.mu` during a potentially large serialization --
 `CreateSnapshot` reads `lastApplied` and unlocks `mu` before calling
 `SnapshotFunc`.
 
@@ -148,18 +148,18 @@ cheap-to-contend `Node.mu` during a potentially large serialization —
 func (n *Node) CreateSnapshot() error
 ```
 
-is this milestone's only snapshot trigger — there is no automatic
+is this milestone's only snapshot trigger -- there is no automatic
 size/count threshold policy; a caller (test or future operator surface)
 decides when to call it. It captures `index = lastApplied`, serializes via
 `SnapshotFunc`, and **only after `SnapshotStore.Save` succeeds** calls
 `Log.Compact`. If `Save` fails, the log is left exactly as it was
-(`TestCreateSnapshotSaveFailureLeavesLogUncompacted`) — this package never
+(`TestCreateSnapshotSaveFailureLeavesLogUncompacted`) -- this package never
 performs "delete log, hope snapshot succeeds."
 
 ## 8. Crash-window recovery on startup
 
 A crash between "snapshot persisted" and "log compacted" is possible and
-expected — `NewNode` treats it as ordinary recovery, not corruption. On
+expected -- `NewNode` treats it as ordinary recovery, not corruption. On
 startup, if a loaded snapshot's `LastIncludedIndex > log.BaseIndex()`,
 `NewNode` calls `Log.Compact` to finish the interrupted step (idempotent:
 a no-op if already done) *before* validating `commitIndex <=
@@ -172,7 +172,7 @@ the snapshot is replayed on top (`TestRestartFinishesInterruptedCompaction`,
 ## 9. InstallSnapshot RPC and chunking
 
 Snapshots can exceed transport's 1 MiB single-frame limit, so
-`InstallSnapshot` is chunked — bounded to 256 KiB (`maxSnapshotChunkSize`)
+`InstallSnapshot` is chunked -- bounded to 256 KiB (`maxSnapshotChunkSize`)
 per RPC, never one giant frame:
 
 ```
@@ -185,7 +185,7 @@ InstallSnapshotResponse: term(8B) success(1B) nextOffset(8B)
 `config` (Milestone 10) is the same `EncodeMembership(StableMembership(cfg))`
 encoding as the persisted snapshot file's own membership section, sent on
 every chunk (not only the final one); the follower installs it once the
-transfer completes — see [docs/membership.md](membership.md) §8.
+transfer completes -- see [docs/membership.md](membership.md) §8.
 
 `dataLength` is validated against `maxSnapshotChunkSize` before
 allocation. A follower accumulates chunks in memory
@@ -201,12 +201,12 @@ installed until the final (`done=true`) chunk arrives.
 
 `replicateToAllPeers` now branches per peer: if `baseIndex > 0` (this
 leader has compacted) and that peer's `nextIndex <= baseIndex`, the
-entries it would need have already been discarded — an ordinary
+entries it would need have already been discarded -- an ordinary
 AppendEntries there would fail forever. Instead of building an
 AppendEntries request for that peer, the leader starts (or lets continue,
 guarded by `snapshotSending[peer]` so a second transfer never starts
 concurrently) a background transfer via `sendSnapshotToPeer`, which loops
-sending sequential 256 KiB chunks — bound to the node's own long-lived
+sending sequential 256 KiB chunks -- bound to the node's own long-lived
 background context, not the short-lived `ctx` of whichever heartbeat tick
 or `Propose` call happened to trigger it, since a transfer can span far
 longer than either. On the final chunk's success, `matchIndex`/`nextIndex`
@@ -222,7 +222,7 @@ the election timer). Once the final chunk arrives, installation happens
 in this fixed order, matching §7's leader-side rule:
 
 1. Persist the canonical snapshot (`SnapshotStore.Save`).
-2. Reconcile the log boundary (`Log.InstallSnapshotBoundary` — retain a
+2. Reconcile the log boundary (`Log.InstallSnapshotBoundary` -- retain a
    verified suffix or discard entirely; see §5).
 3. Advance and persist `commitIndex` if the snapshot boundary is beyond
    it.
@@ -232,7 +232,7 @@ in this fixed order, matching §7's leader-side rule:
 
 A snapshot at or behind the follower's current `lastApplied` is
 acknowledged successfully without reinstalling anything
-(`TestHandleInstallSnapshotStaleSnapshotIsIdempotent`) — a
+(`TestHandleInstallSnapshotStaleSnapshotIsIdempotent`) -- a
 duplicate or superseded transfer is a no-op, not an error, and never
 regresses state.
 
@@ -256,7 +256,7 @@ hand-derived byte vector (`internal/raft/snapshot_test.go`),
 (`internal/raft/install_snapshot_test.go`), log compaction/boundary
 behavior (`internal/raft/log_test.go`), and `CreateSnapshot`/
 `HandleInstallSnapshot`/restart-from-snapshot
-(`internal/raft/snapshot_node_test.go`) — stale/higher term, session
+(`internal/raft/snapshot_node_test.go`) -- stale/higher term, session
 identity, offset mismatch, multi-chunk accumulation, boundary
 retain-vs-discard, mid-transfer term change, and interrupted-compaction
 recovery.
@@ -264,7 +264,7 @@ recovery.
 Integration coverage (`internal/raft/snapshot_integration_test.go`):
 in-process leader-driven detection and catch-up
 (`TestLeaderInstallsSnapshotToStaleFollower`); the mandatory real-TCP
-three-node scenario (`TestSnapshotCatchUpEndToEndRealTCP`) — C goes
+three-node scenario (`TestSnapshotCatchUpEndToEndRealTCP`) -- C goes
 offline, A+B commit past it, A snapshots and compacts, more commits
 follow, C restarts from stale disk over a fresh real TCP port, A detects
 C is behind its compacted prefix and sends `InstallSnapshot`, ordinary
@@ -280,7 +280,7 @@ client-facing snapshot/compact API; no generic pluggable storage engine
 (the KV state machine's `Snapshot`/`Restore` are specific to
 `internal/kv`); no distributed snapshot coordination between nodes (each
 node decides independently when to call `CreateSnapshot`); no membership
-changes; no request deduplication — all unchanged from prior milestones'
+changes; no request deduplication -- all unchanged from prior milestones'
 documented scope. As of Milestone 8, ReadIndex/quorum-confirmed
 linearizable GET exists (see [docs/read-index.md](read-index.md)) and is
 correctly snapshot-boundary aware: a current-term commit barrier that

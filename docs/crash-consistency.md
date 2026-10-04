@@ -16,22 +16,22 @@ filesystem semantics this implementation relies on.**
 No test here powers off a machine, unmounts a filesystem, or corrupts a
 physical device. There is no loopback/ext4 mount, no VM reboot, no sudo.
 Every "crash" is a real `os.Exit` of a real OS process at a specific,
-named point in a real durable write — proving that no in-process cleanup
+named point in a real durable write -- proving that no in-process cleanup
 (defers, `Close`, in-memory rollback) was ever load-bearing for the
 guarantee.
 
 ## Persistence dependency graph
 
 ```text
-currentTerm / votedFor (Store)         — independent of everything else
-Raft log (Log)                         — entries after the snapshot boundary
-  ├─ baseIndex/baseTerm                — the compaction boundary
+currentTerm / votedFor (Store)         -- independent of everything else
+Raft log (Log)                         -- entries after the snapshot boundary
+  ├─ baseIndex/baseTerm                -- the compaction boundary
   └─ entries[baseIndex+1 .. lastIndex]
-commit metadata (CommitStore)          — must be >= the snapshot boundary
+commit metadata (CommitStore)          -- must be >= the snapshot boundary
                                           once a snapshot exists
 Raft snapshot (SnapshotStore)
-  ├─ lastIncludedIndex/lastIncludedTerm — the log's baseIndex/baseTerm once applied
-  ├─ Configuration                      — the stable membership as of the boundary
+  ├─ lastIncludedIndex/lastIncludedTerm -- the log's baseIndex/baseTerm once applied
+  ├─ Configuration                      -- the stable membership as of the boundary
   └─ Data (opaque to internal/raft)
         └─ kv.StateMachine's own encoding of:
               ├─ KV entries
@@ -48,7 +48,7 @@ furthest behind.
 Membership and dedup are not separate persistence concerns: a
 configuration-change entry is an ordinary `LogEntry`, persisted by the
 same log rewrite as any other command, and the dedup table is encoded
-inside the same opaque `Snapshot.Data` blob as KV state — neither has its
+inside the same opaque `Snapshot.Data` blob as KV state -- neither has its
 own failure mode beyond the log's and the snapshot's.
 
 ## The durability primitive
@@ -62,7 +62,7 @@ manifest use `atomicWriteFile` (`internal/raft/atomic_file.go`):
 4. rename it over the target path (atomic replace on POSIX)
 5. fsync the containing directory (so the rename itself survives a crash)
 
-A reader — including a freshly restarted process — observes either the
+A reader -- including a freshly restarted process -- observes either the
 complete previous file or the complete new file. The Raft log's entry data is
 the exception: ordinary records append to an active segment and are fsynced
 before success. Recovery truncates an incomplete active tail to its last
@@ -72,7 +72,7 @@ new logical history. See [raft-log-storage.md](raft-log-storage.md) for the
 segment, generation, migration, and corruption rules.
 
 **Checksums are not durability.** Every file format here also carries a
-CRC32C checksum, but that only detects corruption after the fact — it is
+CRC32C checksum, but that only detects corruption after the fact -- it is
 the write/fsync ordering and, for metadata, `atomicWriteFile`'s
 write/fsync/rename/dir-fsync ordering that decide *which* durable state a
 reader sees. **Rename
@@ -85,14 +85,14 @@ filesystems.
 
 - **I/O failure injection** (`crashpoint_test.go`): a failpoint returns
   an error from inside `atomicWriteFile` at a named stage. The caller's
-  normal Go error handling runs — this is indistinguishable from a real
+  normal Go error handling runs -- this is indistinguishable from a real
   disk error, and proves the *return-early* path never leaves a
   malformed file.
 - **Crash injection** (`crash_subprocess_test.go`, `crash_matrix_test.go`,
   `internal/service/crash_dedup_test.go`): the test binary re-executes
   itself as a subprocess (the standard
   `exec.Command(os.Args[0], "-test.run=...")` pattern), which performs
-  the real operation and calls `os.Exit` at the target point — no
+  the real operation and calls `os.Exit` at the target point -- no
   defers, no `Close`, no in-memory rollback ever run. The parent verifies
   the subprocess actually reached that point (a distinct exit code *and*
   a stderr marker; a subprocess that exits any other way fails the test)
@@ -102,8 +102,8 @@ filesystems.
 These are deliberately not conflated: a returned error still allows
 cleanup to run; a real crash never does. The failpoint hook
 (`internal/raft/failpoint.go`) is a single function type
-(`func(name string) error`) that serves both modes — return an error for
-the first, call `os.Exit` inside it for the second — but no production
+(`func(name string) error`) that serves both modes -- return an error for
+the first, call `os.Exit` inside it for the second -- but no production
 code path is ever gated on an environment variable; the hook is `nil`
 (a no-op) unless a test installs one, and only test files ever do.
 
@@ -111,7 +111,7 @@ code path is ever gated on an environment variable; the hook is `nil`
 
 The invariant proved throughout is: after a crash during a durable
 write, the observed state is *exactly* the complete old value or
-*exactly* the complete new value — never a state that mixes fields from
+*exactly* the complete new value -- never a state that mixes fields from
 each in a way that was never legally reachable together. For example, a
 term/vote crash test never accepts "term is 5 or 6" and "vote is A or B"
 as independent possibilities; it accepts only the single old
@@ -153,8 +153,8 @@ Only rows with an executed, currently-passing test are marked PASS.
 `NewNode`'s startup reconciliation used `Log.Compact` to advance the log
 to a loaded snapshot's boundary, which requires the log to already reach
 that index. A crash between `installSnapshot`'s snapshot publish and its
-own log-boundary rewrite leaves exactly the opposite — a durable
-snapshot whose boundary the log does not yet reach — and `Compact`
+own log-boundary rewrite leaves exactly the opposite -- a durable
+snapshot whose boundary the log does not yet reach -- and `Compact`
 rejected it outright, so a restart in that window could fail to open at
 all. The fix (`internal/raft/node.go`) replaces that call with
 `Log.InstallSnapshotBoundary`, the same general reconciliation
@@ -165,12 +165,12 @@ already present.
 ## No false success
 
 - A follower never returns `AppendEntries.Success = true` for an entry
-  that is not yet durable — proved by `TestAppendEntriesAckedEntryRealCrashSurvives`
+  that is not yet durable -- proved by `TestAppendEntriesAckedEntryRealCrashSurvives`
   killing the process immediately after a real ack and confirming the
   entry survives.
 - `HandleInstallSnapshot` never acknowledges a chunk before every
   preceding durable step (snapshot save, log boundary, commit metadata)
-  for that installation has completed — see `installSnapshot`'s ordering
+  for that installation has completed -- see `installSnapshot`'s ordering
   in `internal/raft/snapshot_node.go`.
 - A client-visible OK is never returned for a write this node could not
   itself durably persist; existing Milestone 9 dedup/retry tests
@@ -237,7 +237,7 @@ service regression covers the acknowledged-prefix failover case.
   and stable membership at a snapshot boundary is an ordinary
   `Snapshot.Configuration` field covered by
   `TestCreateSnapshotRealCrashCrossFileConsistency`/`TestInstallSnapshotRealCrashCrossFileConsistency`
-  — no membership-specific durability code path exists that those don't
+  -- no membership-specific durability code path exists that those don't
   already exercise.
 - Short-write, fsync-failure, and rename-failure injection are exercised
   generically via the failpoint mechanism (any stage can return an

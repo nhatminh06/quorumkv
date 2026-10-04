@@ -52,7 +52,7 @@ func TestAppendEntriesEmptyEntriesRoundTrip(t *testing.T) {
 // TestAppendEntriesKnownByteVector independently derives the expected
 // wire bytes for term=4, leaderId=1, prevLogIndex=2, prevLogTerm=3,
 // entries=[{term=4,kind=EntryApplication,command="x"}], leaderCommit=1,
-// readContext=0 (ordinary replication — not a ReadIndex probe).
+// readContext=0 (ordinary replication -- not a ReadIndex probe).
 func TestAppendEntriesKnownByteVector(t *testing.T) {
 	got, err := EncodeAppendEntries(sampleAppendEntries())
 	if err != nil {
@@ -80,7 +80,7 @@ func TestAppendEntriesKnownByteVector(t *testing.T) {
 // TestAppendEntriesReadProbeKnownByteVector independently derives the
 // expected wire bytes for a ReadIndex probe: term=9, leaderId=2,
 // prevLogIndex=20, prevLogTerm=8, no entries, leaderCommit=20,
-// readContext=12345 — proving the field is encoded independently of the
+// readContext=12345 -- proving the field is encoded independently of the
 // ordinary (readContext=0) path above, not merely round-tripped through
 // the production encoder.
 func TestAppendEntriesReadProbeKnownByteVector(t *testing.T) {
@@ -244,7 +244,7 @@ func TestAppendEntriesResponseEncodeDecodeRoundTrip(t *testing.T) {
 
 // TestAppendEntriesResponseKnownByteVector independently derives the
 // expected wire bytes for term=5, success=false, matchIndex=0,
-// readContext=12345 — the shape a read-probe response takes when the
+// readContext=12345 -- the shape a read-probe response takes when the
 // follower rejects the log-prefix check (Success=false) but still echoes
 // the ReadContext, which is what lets it count toward ReadIndex quorum
 // despite the replication failure (see docs/read-index.md).

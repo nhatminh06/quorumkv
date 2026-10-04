@@ -7,20 +7,20 @@ exact sequence against real processes.
 ## A node has stopped responding
 
 1. `qkv --addr <that node> status` to confirm it's actually unreachable
-   (vs. slow — respect `--timeout`).
+   (vs. slow -- respect `--timeout`).
 2. `qkv --addr <other node> status` against the remaining nodes to see
    whether a majority is still up. If it is, the cluster continues to
    serve writes/reads normally; only the failed node's own data is
    unavailable until it returns.
 3. If the failed node was leader, the survivors elect a replacement
-   automatically (real election timers — no manual intervention). Poll
+   automatically (real election timers -- no manual intervention). Poll
    `status` on the survivors, or `qkv status --all`, until one reports
    `role: leader`.
 
 ## Restarting a failed node
 
 Restart it with the **same** `--id`, `--listen`, `--data`, and a
-current `--peer` list (see [operations.md](operations.md#bootstrap-membership-vs-persisted-membership) —
+current `--peer` list (see [operations.md](operations.md#bootstrap-membership-vs-persisted-membership) --
 persisted membership is authoritative, `--peer` just needs to give
 correct, current addresses for dialing). It will:
 
@@ -39,13 +39,13 @@ the expected index.
 
 If a node's data directory is corrupted (a torn write or mid-log
 corruption), `quorumkv node` refuses to start and exits non-zero rather
-than serving with unverified state — see
+than serving with unverified state -- see
 [crash-consistency.md](crash-consistency.md). When this happens:
 
 - **Do not** delete the corrupted files and let the node "start fresh."
   A node given a corrupted-then-erased data directory does not
   automatically know it needs to be re-added to the cluster's
-  membership — it would start as if brand new.
+  membership -- it would start as if brand new.
 - **Do not** manually edit persisted files to attempt repair. There is
   no supported repair tool for canonical storage corruption.
 - Preserve the corrupted data directory for diagnosis (copy it aside if
@@ -54,16 +54,16 @@ than serving with unverified state — see
   normal Raft membership procedure: `remove-voter` its old ID once a
   quorum of the remaining voters agrees it's gone, bring up a
   replacement node with a fresh (empty) data directory and a new ID,
-  and `add-voter` it in — see
+  and `add-voter` it in -- see
   [runbook-membership.md](runbook-membership.md). Do not try to reuse
   the old node's ID for a node with different history.
 
 ## A node keeps losing elections it should win, or the cluster won't
 ## settle on a leader
 
-1. Check every reachable node's `status` — term and role. A term that
+1. Check every reachable node's `status` -- term and role. A term that
    keeps climbing without any node settling into `leader` usually means
-   a real network partition, not a bug — see
+   a real network partition, not a bug -- see
    [failure-testing.md](failure-testing.md) and
    [raft-election.md](raft-election.md) for how PreVote is meant to
    behave here.
@@ -71,6 +71,6 @@ than serving with unverified state — see
    reachable address of every other voter. A stale address prevents
    heartbeats from reaching that peer, which looks like election
    instability from the other side.
-3. Do not "fix" this by lengthening timeouts as a first move — inspect
+3. Do not "fix" this by lengthening timeouts as a first move -- inspect
    terms, roles, and connectivity first (see the election-timeout
    guidance in `CLAUDE.md`).

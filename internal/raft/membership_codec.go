@@ -6,7 +6,7 @@ import (
 )
 
 // EncodeMembership/DecodeMembership define the deterministic binary
-// encoding of a Membership — used both as a Configuration log entry's
+// encoding of a Membership -- used both as a Configuration log entry's
 // payload (see EntryConfiguration) and as a Raft snapshot's stable-
 // membership metadata (see Snapshot). No JSON, no gob: an explicit,
 // bounded, sorted-by-NodeID byte layout, so two calls encoding logically
@@ -96,7 +96,7 @@ func encodeConfigInto(buf []byte, c Configuration) error {
 // counts/lengths are validated against MaxVoters/MaxPeerAddrLen before
 // any allocation based on them. A decoded Configuration is validated the
 // same way NewConfiguration validates one built programmatically (no
-// zero NodeID, no empty address, no duplicate — duplicates are
+// zero NodeID, no empty address, no duplicate -- duplicates are
 // impossible here since decoding writes directly into a map keyed by
 // NodeID, so a repeated NodeID in the stream silently coalesces; that
 // would only occur for corrupt/hostile input given this package's own

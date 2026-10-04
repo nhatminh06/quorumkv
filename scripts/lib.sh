@@ -66,7 +66,7 @@ start_node() {
 	echo "$!" >"$(node_pid_file "$id")"
 }
 
-# kill_node sends SIGKILL to node $1 — a real crash, not a graceful exit.
+# kill_node sends SIGKILL to node $1 -- a real crash, not a graceful exit.
 kill_node() {
 	local pid_file
 	pid_file="$(node_pid_file "$1")"

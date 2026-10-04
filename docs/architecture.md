@@ -2,7 +2,7 @@
 
 A portfolio-level overview of how QuorumKV fits together. Each section
 links to the design document with the actual protocol detail and test
-list — this page is meant to orient, not duplicate.
+list -- this page is meant to orient, not duplicate.
 
 ## 1. System overview
 
@@ -66,7 +66,7 @@ and [state-machine.md](state-machine.md).
 
 ## 4. Linearizable read path
 
-GET carries no request identity — it is idempotent by nature. The
+GET carries no request identity -- it is idempotent by nature. The
 leader confirms it is still leader by contacting a quorum (`ReadIndex`)
 before serving from local state, eliminating stale reads from an
 isolated old leader. See [read-index.md](read-index.md).
@@ -74,8 +74,8 @@ isolated old leader. See [read-index.md](read-index.md).
 ## 5. Election path
 
 Every node runs a randomized election timer. Before a real election, a
-node runs a PreVote round — "would you vote for me?", touching no
-persistent state — and only starts a real election if that reaches
+node runs a PreVote round -- "would you vote for me?", touching no
+persistent state -- and only starts a real election if that reaches
 quorum; a voter that recently heard from a healthy leader rejects the
 hypothetical vote outright. This keeps an isolated, repeatedly-timing-
 out node from bumping the cluster's term. See
@@ -110,7 +110,7 @@ or a full service-level admission bound fails fast with a retryable
 ## 8. Persistence model
 
 Every persisted file uses an explicit, checksummed, bounds-validated
-binary format — no `gob` or other opaque serialization for
+binary format -- no `gob` or other opaque serialization for
 correctness-critical state. The Raft log uses immutable 4 MiB segments and
 one appendable active segment; conflict repair and snapshot compaction publish
 atomic generations while reusing unaffected segments. Writes that must be durable before an
@@ -128,7 +128,7 @@ are documented in [allocation-performance.md](allocation-performance.md).
 ## 9. Snapshot and compaction
 
 Snapshotting is caller-triggered (`qkv snapshot` / `Node.CreateSnapshot`)
-— there is no automatic threshold or schedule. Once a snapshot exists,
+-- there is no automatic threshold or schedule. Once a snapshot exists,
 the log below its boundary is compacted away; a follower that has
 fallen behind that boundary catches up via `InstallSnapshot` instead of
 replaying entries that no longer exist. See [snapshots.md](snapshots.md).
@@ -136,7 +136,7 @@ replaying entries that no longer exist. See [snapshots.md](snapshots.md).
 ## 10. Request dedup
 
 See section 3; full mechanism, the exact-next-sequence admission
-policy, and the dedup table's lifetime (no GC yet — see Limitations) in
+policy, and the dedup table's lifetime (no GC yet -- see Limitations) in
 [request-dedup.md](request-dedup.md).
 
 ## 11. Membership changes
@@ -160,7 +160,7 @@ new write/read/membership admission freezes only once handoff begins,
 and an authorized `TimeoutNow` triggers the target's election
 (deliberately bypassing PreVote, since the current leader already
 authorized it). Success is reported only once the old leader observes
-real evidence the target won — never merely that `TimeoutNow` was
+real evidence the target won -- never merely that `TimeoutNow` was
 accepted. See [leadership-transfer.md](leadership-transfer.md).
 
 ## 14. Crash consistency
@@ -176,18 +176,18 @@ exactly one of its two valid states. See
 A separate, small admin wire protocol (status, snapshot,
 transfer-leadership, add-voter, remove-voter) lets an operator inspect
 and administer a node without reading its files directly. `status` is
-explicitly non-linearizable observational metadata — it never runs
+explicitly non-linearizable observational metadata -- it never runs
 ReadIndex or touches term/log/commit/membership/timer state. Every
 admin operation beyond status is a thin wrapper directly over the same
-`raft.Node` methods used internally — see
+`raft.Node` methods used internally -- see
 [internal/service/admin.go](../internal/service/admin.go). This
-protocol is unauthenticated and unencrypted, like the client protocol —
+protocol is unauthenticated and unencrypted, like the client protocol --
 see Known limits below and [operations.md](operations.md). Full
 CLI/runbook detail in [operations.md](operations.md).
 
 ## 16. Known limits
 
-- Crash fault model only — not Byzantine fault tolerant.
+- Crash fault model only -- not Byzantine fault tolerant.
 - No TLS, no authentication, on either wire protocol.
 - No client-side session persistence across a process restart (`qkv` is
   stateless per invocation).
@@ -196,7 +196,7 @@ CLI/runbook detail in [operations.md](operations.md).
   learner/observer role as a public feature, no automatic rebalancing
   or discovery.
 - Snapshot creation is manually triggered; no scheduling policy.
-- No repair tooling for corrupted persistent storage — see
+- No repair tooling for corrupted persistent storage -- see
   [runbook-failover.md](runbook-failover.md#corrupted-node-storage).
 - Sequential persistent TCP sessions for Raft peers and bounded pools of
   sequential sessions for long-lived external clients; no wire multiplexing.

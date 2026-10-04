@@ -5,13 +5,13 @@ import "quorumkv/internal/reqid"
 // ApplyOutcome classifies the effect an Apply call had, distinguishing a
 // genuinely new mutation from the dedup outcomes a retried identified
 // command can produce (see docs/request-dedup.md). An unidentified
-// command (zero ClientID — every pre-Milestone-9 command, and any
+// command (zero ClientID -- every pre-Milestone-9 command, and any
 // internal command with no client session) is always AppliedNew: dedup
 // only exists for identified commands.
 type ApplyOutcome uint8
 
 const (
-	// AppliedNew means the command mutated state for the first time —
+	// AppliedNew means the command mutated state for the first time --
 	// either it carries no request identity, or it is the exact next
 	// sequence for a known/new ClientID.
 	AppliedNew ApplyOutcome = iota + 1
@@ -21,7 +21,7 @@ const (
 	AppliedDuplicate
 	// StaleRequest means Sequence does not match this ClientID's expected
 	// next sequence (either behind the last applied sequence, or ahead of
-	// it by more than one — a gap). State was not mutated.
+	// it by more than one -- a gap). State was not mutated.
 	StaleRequest
 	// RequestConflict means Sequence matches the last applied sequence
 	// for this ClientID, but the fingerprint differs: the same request
@@ -43,7 +43,7 @@ const ApplyStatusOK ApplyStatus = 1
 
 // ClientRecord is the durable, replicated dedup state kept for one
 // ClientID: only the LATEST request's sequence/fingerprint/result, not a
-// history of every request ever seen — sufficient because a client
+// history of every request ever seen -- sufficient because a client
 // serializes its own writes (see docs/request-dedup.md), and it keeps
 // this table's size bounded by the number of distinct known ClientIDs
 // rather than the number of requests ever made.
@@ -71,14 +71,14 @@ func NewStateMachine() *StateMachine {
 
 // Apply executes cmd against the state machine and returns what actually
 // happened. An unidentified command (zero ClientID) is always applied
-// unconditionally and returns AppliedNew — this is the entire
+// unconditionally and returns AppliedNew -- this is the entire
 // pre-Milestone-9 behavior, unchanged.
 //
 // An identified command (non-zero ClientID) is checked against that
 // ClientID's ClientRecord first (see classifyRequest): only a genuinely
 // new next-sequence request actually mutates state and updates the
 // record; a duplicate, stale, or conflicting request never does. This
-// makes Apply itself the single authoritative dedup point — regardless
+// makes Apply itself the single authoritative dedup point -- regardless
 // of what a leader-local shortcut above it decided, a command that
 // somehow reaches Apply twice can never mutate state twice.
 func (m *StateMachine) Apply(cmd Command) ApplyOutcome {
@@ -106,7 +106,7 @@ func (m *StateMachine) Apply(cmd Command) ApplyOutcome {
 // classifyRequest implements the exact-next-sequence dedup policy shared
 // by Apply and LookupRequest: given what's on record for a ClientID (the
 // zero ClientRecord if none), decide what an incoming (sequence,
-// fingerprint) means. It never mutates anything — callers act on the
+// fingerprint) means. It never mutates anything -- callers act on the
 // result.
 func classifyRequest(rec ClientRecord, seq reqid.Sequence, fp reqid.Fingerprint) ApplyOutcome {
 	switch {
@@ -126,7 +126,7 @@ func classifyRequest(rec ClientRecord, seq reqid.Sequence, fp reqid.Fingerprint)
 // with the given ClientID/Sequence/fingerprint, without applying
 // anything. This is an optimization the service layer uses to avoid
 // proposing a Raft entry for a request it can already answer from
-// replicated state — it is never itself authoritative; Apply's own
+// replicated state -- it is never itself authoritative; Apply's own
 // dedup check is (see docs/request-dedup.md item 34).
 func (m *StateMachine) LookupRequest(id reqid.ClientID, seq reqid.Sequence, fp reqid.Fingerprint) ApplyOutcome {
 	return classifyRequest(m.clients[id], seq, fp)

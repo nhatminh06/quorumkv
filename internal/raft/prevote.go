@@ -9,7 +9,7 @@ import (
 // without committing to anything: neither side's persistent state changes
 // as a result of a PreVote round, only of the real election that may
 // follow it. ProspectiveTerm is normally CurrentTerm+1 at the moment the
-// round starts — it is never written to persistent state merely to
+// round starts -- it is never written to persistent state merely to
 // construct this request. See docs/raft-election.md for the full
 // PreVote phase.
 type PreVoteRequest struct {
@@ -20,7 +20,7 @@ type PreVoteRequest struct {
 }
 
 // PreVoteResponse reports the responder's actual current term (never the
-// prospective one it was asked about — a responder that has not entered
+// prospective one it was asked about -- a responder that has not entered
 // ProspectiveTerm must not pretend it has) and whether it would grant a
 // real vote for that prospective election.
 type PreVoteResponse struct {
@@ -36,7 +36,7 @@ type PreVoteResponse struct {
 const preVoteSize = 8 + 8 + 8 + 8
 
 // preVoteResponseSize is the fixed wire size of a PreVoteResponse:
-// term(8) + voteGranted(1), big-endian — identical layout to
+// term(8) + voteGranted(1), big-endian -- identical layout to
 // RequestVoteResponse.
 const preVoteResponseSize = 8 + 1
 

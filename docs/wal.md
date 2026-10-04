@@ -43,7 +43,7 @@ without allocating a buffer for it.
 
 `Append` encodes a record and writes it with the operating system's
 `write(2)`, looping over any short write until all bytes are written or an
-error occurs. A successful `Append` means the bytes were handed to the OS —
+error occurs. A successful `Append` means the bytes were handed to the OS --
 it is **not** a durability guarantee; the write may still be lost on power
 loss or crash if not yet flushed to disk.
 
@@ -68,7 +68,7 @@ Two categories of malformed data are handled differently:
 - **Mid-log corruption**: a record's length prefix declares more than the
   maximum allowed size, its type byte is neither PUT nor DELETE, its
   encoded lengths are internally inconsistent, or its checksum does not
-  match its bytes — while the file continues past it. This can only mean
+  match its bytes -- while the file continues past it. This can only mean
   the file was corrupted, not that a write was interrupted mid-flight, so
   it is not safe to guess what data if any follows. `Open` returns
   `ErrCorrupt` immediately and does not replay anything past that point.

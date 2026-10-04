@@ -20,7 +20,7 @@ import (
 // constructs and attaches the Service, starts listening, begins the
 // election timer, then blocks until SIGINT/SIGTERM triggers a graceful
 // shutdown. Storage recovery failure (including canonical persistence
-// corruption — see docs/crash-consistency.md) is reported and returned
+// corruption -- see docs/crash-consistency.md) is reported and returned
 // without ever serving a single request; nothing is deleted, reset, or
 // silently reinterpreted.
 func serve(ctx context.Context, cfg nodeConfig) error {
@@ -54,7 +54,7 @@ func serve(ctx context.Context, cfg nodeConfig) error {
 		return fmt.Errorf("recovering persistent state: %w", err)
 	}
 	// Bootstrap membership (self + configured peers) only matters for a
-	// genuinely fresh node — NewNode already loaded any real persisted
+	// genuinely fresh node -- NewNode already loaded any real persisted
 	// membership history from the log/snapshot before this point, and
 	// that is authoritative forever regardless of what flags a later
 	// restart is given (see docs/membership.md and docs/operations.md).
@@ -111,7 +111,7 @@ func serve(ctx context.Context, cfg nodeConfig) error {
 	}
 
 	// Stop accepting/dispatching inbound work before tearing down the
-	// node (see docs/operations.md) — Transport.Close waits for every
+	// node (see docs/operations.md) -- Transport.Close waits for every
 	// in-flight handler to finish, so nothing can race a handler against
 	// Node.Close.
 	if err := tr.Close(); err != nil {
@@ -150,7 +150,7 @@ func logStartup(logger *slog.Logger, cfg nodeConfig, node *raft.Node) {
 }
 
 // logRoleChanges polls Role at a modest interval and logs only actual
-// transitions — startup/shutdown are logged unconditionally elsewhere;
+// transitions -- startup/shutdown are logged unconditionally elsewhere;
 // this covers "leadership gained/lost" without polling anything else or
 // producing output under normal idle operation (no per-heartbeat/
 // per-AppendEntries logging).

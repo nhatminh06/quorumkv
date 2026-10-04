@@ -1,7 +1,7 @@
 // Package raft implements Raft leader election from first principles:
 // persistent term/vote state, the RequestVote RPC, and majority-based
 // transition to leader for an empty-log cluster. It does not yet
-// implement AppendEntries, heartbeats, or log replication — see
+// implement AppendEntries, heartbeats, or log replication -- see
 // docs/raft-election.md for exactly what is and is not implemented.
 package raft
 
@@ -24,7 +24,7 @@ type NodeID uint64
 // no entries) with its responses. 0 is reserved for ordinary
 // replication/heartbeat traffic that isn't a read probe; a probe always
 // uses a non-zero value. It exists purely for in-process correlation
-// during one read operation — never persisted (a restart may reuse
+// during one read operation -- never persisted (a restart may reuse
 // low values; see docs/read-index.md) and never used as a client
 // request/dedup identifier.
 type ReadContext uint64

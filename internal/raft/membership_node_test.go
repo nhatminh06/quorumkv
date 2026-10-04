@@ -57,8 +57,8 @@ func TestSetPeersUpdatesBootstrapMembership(t *testing.T) {
 }
 
 // TestTargetsMatchesLegacyPeersBehavior proves the membership-derived
-// replication/election target set is exactly self's peers — the same set
-// legacy code iterated directly over n.peers — so this milestone's
+// replication/election target set is exactly self's peers -- the same set
+// legacy code iterated directly over n.peers -- so this milestone's
 // membership plumbing changes no observable targeting behavior yet
 // (until a real joint transition exists).
 func TestTargetsMatchesLegacyPeersBehavior(t *testing.T) {

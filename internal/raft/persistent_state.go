@@ -13,7 +13,7 @@ import (
 )
 
 // PersistentState is the Raft state that must survive a restart:
-// currentTerm and votedFor. Role is deliberately not part of this type —
+// currentTerm and votedFor. Role is deliberately not part of this type --
 // role is volatile and always starts as Follower on restart.
 type PersistentState struct {
 	CurrentTerm Term

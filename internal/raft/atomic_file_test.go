@@ -8,7 +8,7 @@ import (
 
 // shortWriter is a controllable io.Writer-shaped test double that writes
 // at most maxPerCall bytes per call, and returns errAfter (if set) once
-// its cumulative written count reaches errAt — used to prove writeFull
+// its cumulative written count reaches errAt -- used to prove writeFull
 // loops to completion across successive short writes, and to prove it
 // surfaces a real error immediately rather than continuing past it.
 type shortWriter struct {
@@ -38,7 +38,7 @@ func (w *shortWriter) Write(p []byte) (int, error) {
 
 // TestWriteFullHandlesShortWrites proves writeFull loops across
 // successive partial writes (n < len(p), nil error) until every byte is
-// written — the defensive handling this package's own single
+// written -- the defensive handling this package's own single
 // atomicWriteFile seam relies on for every durable file, even though the
 // real os.File it wraps in production is documented to never actually
 // do this.
@@ -57,7 +57,7 @@ func TestWriteFullHandlesShortWrites(t *testing.T) {
 }
 
 // TestWriteFullRejectsNoProgress proves a write that reports zero bytes
-// written with a nil error — which would otherwise loop forever — is
+// written with a nil error -- which would otherwise loop forever -- is
 // treated as a hard failure instead.
 func TestWriteFullRejectsNoProgress(t *testing.T) {
 	w := &shortWriter{zeroAtCall: 1}
@@ -80,7 +80,7 @@ func TestWriteFullSurfacesUnderlyingError(t *testing.T) {
 }
 
 // TestWriteFullEmptyDataIsNoop proves writeFull never calls Write at all
-// for empty input — matching atomicWriteFile's existing convention that
+// for empty input -- matching atomicWriteFile's existing convention that
 // an empty payload is still a legitimate (if unusual) file to publish.
 func TestWriteFullEmptyDataIsNoop(t *testing.T) {
 	w := &shortWriter{}

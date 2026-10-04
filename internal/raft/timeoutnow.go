@@ -6,7 +6,7 @@ import (
 )
 
 // TimeoutNowRequest tells a fully caught-up follower to start an
-// election immediately, bypassing its normal election timeout — used
+// election immediately, bypassing its normal election timeout -- used
 // only for an authorized leadership transfer (see leadership_transfer.go
 // and docs/leadership-transfer.md). It deliberately carries no log data:
 // the leader has already ensured the target is caught up before ever
@@ -18,7 +18,7 @@ type TimeoutNowRequest struct {
 
 // TimeoutNowResponse acknowledges that TimeoutNow was accepted (and an
 // immediate election attempt started) or rejected. Accepted does not by
-// itself mean the target went on to become leader — TransferLeadership
+// itself mean the target went on to become leader -- TransferLeadership
 // waits for separate, real evidence of that (see waitForTransferCompletion).
 type TimeoutNowResponse struct {
 	Term     Term

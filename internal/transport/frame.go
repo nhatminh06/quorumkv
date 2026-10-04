@@ -47,7 +47,7 @@ func isKnownMessageType(t MessageType) bool {
 //
 //	magic (4B) | version (1B) | type (1B) | payload length (4B, BE) | payload | checksum (4B, BE)
 //
-// The CRC32C checksum covers version, type, payload length, and payload —
+// The CRC32C checksum covers version, type, payload length, and payload --
 // not the magic and not itself. All integers are big-endian.
 func EncodeFrame(m Message) ([]byte, error) {
 	if !isKnownMessageType(m.Type) {
@@ -91,7 +91,7 @@ func WriteFrame(w io.Writer, m Message) error {
 //
 // If r is at a clean frame boundary and has no more data, ReadFrame
 // returns io.EOF. Any other incomplete read (a partial header, payload, or
-// checksum) is a truncated frame and returns ErrTruncatedFrame — it is
+// checksum) is a truncated frame and returns ErrTruncatedFrame -- it is
 // never treated as a valid message.
 //
 // The declared payload length is validated against MaxPayloadSize before

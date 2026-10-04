@@ -19,7 +19,7 @@ qkv --addr <current-leader> transfer-leadership --target <target-id>
 
 This only prints `leadership transferred to node <target-id>` once the
 old leader has real evidence the target actually won an election as the
-new leader — never merely that the target accepted a `TimeoutNow`. The
+new leader -- never merely that the target accepted a `TimeoutNow`. The
 target is brought fully caught-up (via ordinary replication, or
 `InstallSnapshot` if it was behind a compacted log) before the handoff
 is attempted; new write/read/membership admission is frozen only once
@@ -38,7 +38,7 @@ qkv --addr 127.0.0.1:7002 status                                  # confirm node
 
 - **"the target explicitly declined the leadership transfer"**: the
   target rejected the handoff (it may not be fully caught up, or has
-  its own reason to decline). Do not retry blindly — check
+  its own reason to decline). Do not retry blindly -- check
   `qkv status` on both the current leader and the intended target
   first.
 - **"a leadership transfer is already in progress"**: another transfer
@@ -47,11 +47,11 @@ qkv --addr 127.0.0.1:7002 status                                  # confirm node
 - **Timeout ("outcome is uncertain")**: check `status` on the original
   leader and the intended target before retrying. If the target already
   reports `role: leader`, the transfer in fact succeeded despite the
-  timeout — do not attempt a second transfer back based only on the
+  timeout -- do not attempt a second transfer back based only on the
   original command's exit status.
 - **"cannot transfer leadership to this node itself"**: `--target` must
   name a different voter.
 
 Do not automatically retry a leadership transfer on any failure or
-timeout without first inspecting `status` — an ambiguous transfer left
+timeout without first inspecting `status` -- an ambiguous transfer left
 unretried is always safer than compounding it with a second one.

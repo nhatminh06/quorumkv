@@ -7,7 +7,7 @@ import (
 )
 
 // MaxVoters bounds a single Configuration's voter count. MaxPeerAddrLen
-// bounds one voter's address string. Both are simple defensive bounds —
+// bounds one voter's address string. Both are simple defensive bounds --
 // nothing about the joint-consensus protocol itself needs a specific
 // number.
 const (
@@ -21,7 +21,7 @@ const (
 var ErrInvalidConfiguration = errors.New("raft: invalid configuration")
 
 // Configuration is one set of voters: NodeID -> address. It is the unit
-// Raft's majority quorum rule applies to — see Membership for how a
+// Raft's majority quorum rule applies to -- see Membership for how a
 // joint transition combines two of these.
 type Configuration struct {
 	Voters map[NodeID]string
@@ -54,7 +54,7 @@ func NewConfiguration(voters map[NodeID]string) (Configuration, error) {
 	return Configuration{Voters: out}, nil
 }
 
-// sortedIDs returns c's voter IDs in ascending order — the canonical
+// sortedIDs returns c's voter IDs in ascending order -- the canonical
 // iteration order for both deterministic encoding and quorum counting
 // (which doesn't itself care about order, but every caller that
 // serializes a Configuration must agree on one).
@@ -74,7 +74,7 @@ func (c Configuration) Has(id NodeID) bool {
 }
 
 // hasQuorum reports whether acked contains a majority of c's voters.
-// Only IDs present in c count — a response from a node outside this
+// Only IDs present in c count -- a response from a node outside this
 // configuration contributes nothing to it (relevant during Joint, where
 // a config-old-only or config-new-only ack must not count toward the
 // other side).
@@ -142,7 +142,7 @@ func (m MembershipMode) String() string {
 // Membership is a Raft node's effective configuration: either a single
 // Stable Configuration, or a Joint transition between Old and New. This
 // is the single representation every quorum-based decision (election,
-// commit, ReadIndex, the current-term no-op barrier) must go through —
+// commit, ReadIndex, the current-term no-op barrier) must go through --
 // see HasQuorum.
 type Membership struct {
 	Mode   MembershipMode
@@ -163,15 +163,15 @@ func JointMembership(oldC, newC Configuration) Membership {
 }
 
 // HasQuorum reports whether acked (a set of NodeIDs that have
-// acknowledged something — a vote, a replicated index, a read probe)
+// acknowledged something -- a vote, a replicated index, a read probe)
 // satisfies this Membership's quorum rule:
 //
 //	Stable: a majority of Stable.
 //	Joint:  a majority of Old AND a majority of New (never a majority of
-//	        their union — that is a materially weaker, incorrect rule;
+//	        their union -- that is a materially weaker, incorrect rule;
 //	        see docs/membership.md).
 //
-// A NodeID present in both Old and New (the common case — most voters
+// A NodeID present in both Old and New (the common case -- most voters
 // don't change) correctly contributes to both majority counts from a
 // single acknowledgement.
 func (m Membership) HasQuorum(acked map[NodeID]bool) bool {
@@ -199,7 +199,7 @@ func (m Membership) IsVoter(id NodeID) bool {
 	}
 }
 
-// Targets returns every effective voter's address except self's — the
+// Targets returns every effective voter's address except self's -- the
 // set a leader replicates/heartbeats to, a candidate requests votes
 // from, and ReadIndex probes. Stable: Stable minus self. Joint: union(Old,
 // New) minus self. The returned map is a fresh copy, safe to iterate

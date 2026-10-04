@@ -17,11 +17,11 @@ var atomicFileStages = []string{
 }
 
 // publicationCompletedAt reports whether stage occurs at-or-after the
-// real os.Rename has already happened — the actual moment a reader would
+// real os.Rename has already happened -- the actual moment a reader would
 // see the new file on POSIX filesystems. The trailing directory-fsync
 // stage only concerns whether that rename's own durability is confirmed
 // (surviving a hypothetical crash), not whether the new content is
-// already visible to an ordinary read right now — which it is, from
+// already visible to an ordinary read right now -- which it is, from
 // after-rename onward.
 func publicationCompletedAt(stage string) bool {
 	switch stage {
@@ -40,7 +40,7 @@ var errInjected = errors.New("injected failure")
 
 // failAt returns a failpointFunc that returns errInjected exactly once,
 // the first time it is called for target, and nil for every other name
-// (including subsequent calls for target) — so a single Save call that
+// (including subsequent calls for target) -- so a single Save call that
 // checks multiple stages only ever fails at the one being tested, and a
 // stale failpoint left installed across an unrelated later Save (there
 // shouldn't be one, but this is defensive) does not silently keep
@@ -60,8 +60,8 @@ func failAt(target string) failpointFunc {
 // matrix (I/O-failure-injection variant): for every atomicWriteFile
 // stage, an injected failure during Save(new) must leave the file
 // exactly as old (if the failure preceded real publication) or exactly
-// as new (if it occurred at-or-after the real rename — see
-// publicationCompletedAt) — never a malformed or hybrid state, proven
+// as new (if it occurred at-or-after the real rename -- see
+// publicationCompletedAt) -- never a malformed or hybrid state, proven
 // by reading the file back into a genuinely fresh Store.
 func TestStableStateFailpointOldOrNew(t *testing.T) {
 	for _, stage := range atomicFileStages {
@@ -196,7 +196,7 @@ func TestSnapshotFailpointOldOrNew(t *testing.T) {
 				t.Fatalf("Load after failed Save: %v", err)
 			}
 			if got == nil {
-				t.Fatalf("Load after failed Save returned nil — canonical snapshot must always remain readable")
+				t.Fatalf("Load after failed Save returned nil -- canonical snapshot must always remain readable")
 			}
 			want := old
 			if publicationCompletedAt(stage) {
@@ -212,7 +212,7 @@ func TestSnapshotFailpointOldOrNew(t *testing.T) {
 
 // TestFailpointStagesAllReached is item 75/76: a table-driven scan
 // proving every declared failpoint stage is actually exercised by the
-// tests above, for every domain — a failpoint added but never tested
+// tests above, for every domain -- a failpoint added but never tested
 // would otherwise go unnoticed.
 func TestFailpointStagesAllReached(t *testing.T) {
 	for _, domain := range []string{"stable", "log", "commit", "snapshot"} {

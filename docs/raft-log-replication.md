@@ -14,8 +14,8 @@ real entry); real entries start at index 1. `Log.Term(0)` is defined to be
 (`lastLogIndex=0, lastLogTerm=0`) and the AppendEntries prevLog sentinel
 check both fall out of the same rule with no special-casing.
 
-`internal/raft`'s `Log` is a dedicated component — **not** the Milestone 1
-`internal/wal` — since a Raft log needs prefix matching, truncation, and
+`internal/raft`'s `Log` is a dedicated component -- **not** the Milestone 1
+`internal/wal` -- since a Raft log needs prefix matching, truncation, and
 conflict replacement, which an application command WAL doesn't.
 
 ## Log entry and persistent format
@@ -29,7 +29,7 @@ type LogEntry struct {
 ```
 
 `Kind` (Milestone 10) makes an entry's meaning explicit rather than
-inferred from `Command`'s length — see
+inferred from `Command`'s length -- see
 [docs/membership.md](membership.md) §3 for why and for the log format's
 v2 -> v3 upgrade (a v1/v2 file still decodes, with `Kind` inferred
 exactly as it was inferred before this field existed).
@@ -39,8 +39,8 @@ exactly as it was inferred before this field existed).
 sequence as `PersistentState` (`atomicWriteFile`, shared by both). Because
 the file is always a complete, atomically-replaced image, there is no
 legitimate torn-tail case the way Milestone 1's append-only WAL has: any
-structural problem on open — short read, bad checksum, an inconsistent or
-oversized declared length — is `ErrCorruptLog`, never silently repaired or
+structural problem on open -- short read, bad checksum, an inconsistent or
+oversized declared length -- is `ErrCorruptLog`, never silently repaired or
 reset to empty.
 
 Per-entry record (big-endian), concatenated after a 5-byte file header
@@ -64,7 +64,7 @@ Both payloads travel inside a `transport.Message`, whose frame already
 carries a CRC32C over the whole payload, so neither RPC encoding
 duplicates that checksum. All integers big-endian.
 
-`AppendEntriesRequest` — fixed header (52 bytes) + entries:
+`AppendEntriesRequest` -- fixed header (52 bytes) + entries:
 
 ```
 term          8B
@@ -77,15 +77,15 @@ entryCount    4B
 [entries]     each: term(8B) + kind(1B) + commandLength(4B) + command(NB)
 ```
 
-A heartbeat is exactly this with `entryCount = 0` — there is no separate
+A heartbeat is exactly this with `entryCount = 0` -- there is no separate
 heartbeat RPC. `entryCount` is validated against `maxEntriesPerAppend`
-(64, a count-only decoder safety ceiling — see "Replication batch size"
+(64, a count-only decoder safety ceiling -- see "Replication batch size"
 below for the actual byte-accurate bound a leader builds a batch
 against) and each entry's `commandLength` against `maxCommandSize`
 before any per-entry allocation, so a corrupt or hostile peer cannot
 force an oversized allocation by declaring a huge count or length.
 
-`AppendEntriesResponse` — 25 bytes:
+`AppendEntriesResponse` -- 25 bytes:
 
 ```
 term        8B
@@ -98,8 +98,8 @@ This milestone uses simple `nextIndex--` backtracking on failure rather
 than a conflict-term hint, so a failure response's `matchIndex` is unused
 (sent as 0).
 
-`readContext` (since Milestone 8) correlates a ReadIndex quorum probe —
-an otherwise-ordinary, entries-free AppendEntries — with its response.
+`readContext` (since Milestone 8) correlates a ReadIndex quorum probe --
+an otherwise-ordinary, entries-free AppendEntries -- with its response.
 Critically, the response echoes it **even when `Success` is false** due
 to a `prevLogIndex`/`prevLogTerm` mismatch: a same-term response from a
 live peer proves current-term leadership regardless of whether that
@@ -112,13 +112,13 @@ not be confused with a ReadIndex quorum failure. See
 A leader builds each AppendEntries batch via `Log.EntriesRange(from,
 maxEntriesPerAppend, MaxAppendEntriesBytes)`, bounded by both an entry
 count (64) and an encoded-byte target (`MaxAppendEntriesBytes`, 512 KiB)
-— computed from the same `encodedEntrySize`/`appendEntriesEncodedSize`
+-- computed from the same `encodedEntrySize`/`appendEntriesEncodedSize`
 helpers `EncodeAppendEntries` itself uses (one source of size truth, not
 two independently-maintained calculations). `EntriesRange` never copies
 more of the retained log than the batch actually needs, unlike the
 unbounded `EntriesFrom` a full-suffix caller would otherwise have to
 truncate after the fact. A single entry larger than the byte target is
-still returned alone rather than becoming unsendable —
+still returned alone rather than becoming unsendable --
 `EncodeAppendEntries` separately enforces a hard ceiling
 (`maxAppendEntriesEncodedSize`) comfortably below `transport.MaxPayloadSize`,
 so a leader can never hand the transport layer an RPC oversized enough
@@ -131,8 +131,8 @@ replication workers" below) rather than waiting for another trigger.
 `defaultHeartbeatInterval` is 50ms, well below the 150–300ms election
 timeout range, so a healthy leader's heartbeats reliably beat a follower's
 timeout. A follower resets its election timer on *any* valid current-term
-(or higher-term) AppendEntries contact — even if the prevLog consistency
-check below fails — since the sender is still that term's leader and a
+(or higher-term) AppendEntries contact -- even if the prevLog consistency
+check below fails -- since the sender is still that term's leader and a
 rejected consistency check is not a reason to start an election.
 
 ## Term handling
@@ -140,10 +140,10 @@ rejected consistency check is not a reason to start an election.
 - `req.Term < currentTerm`: reject (`success=false`), no state change, no
   timer reset.
 - `req.Term > currentTerm`: persist the new term with `votedFor` cleared,
-  become Follower — before evaluating the rest of the request (reusing
+  become Follower -- before evaluating the rest of the request (reusing
   the same `stepDownLocked` RequestVote already uses).
 - `req.Term == currentTerm` and this node is Candidate or Leader: step
-  down to Follower without a term change (`stepToFollowerLocked`) — valid
+  down to Follower without a term change (`stepToFollowerLocked`) -- valid
   same-term leader contact proves another leader already exists for this
   term.
 
@@ -151,20 +151,20 @@ rejected consistency check is not a reason to start an election.
 
 A follower accepts entries only if `Term(prevLogIndex) == prevLogTerm`
 (the sentinel `prevLogIndex=0` always matches). Otherwise it rejects with
-`success=false` and makes no log change — the leader will back off
+`success=false` and makes no log change -- the leader will back off
 `nextIndex` and retry.
 
 If the check passes and entries are present, the follower scans forward
 for the first index where its own entry doesn't match the incoming one
 (same rule: missing entirely, or present with a different term). Only
 from that point does it truncate its suffix and append the leader's
-entries (`Log.TruncateAndAppend`) — the matching prefix before that point
+entries (`Log.TruncateAndAppend`) -- the matching prefix before that point
 is never touched. If every incoming entry already matches (an idempotent
 retransmission, or a plain heartbeat with no entries), nothing is written
 to disk at all. The resulting log is persisted before `success=true` is
 returned. Configuration entries (Milestone 10) participate in this exact
-same matching/truncation logic like any other entry — no special-casing
-— but truncation additionally triggers a full effective-membership
+same matching/truncation logic like any other entry -- no special-casing
+-- but truncation additionally triggers a full effective-membership
 rebuild, so a discarded uncommitted Configuration entry never leaves
 stale membership state behind; see [docs/membership.md](membership.md)
 §4.
@@ -177,14 +177,14 @@ lastLogIndex + 1`, `matchIndex[peer] = 0`. Neither is ever persisted.
 
 On a successful response, `matchIndex[peer]` advances to `prevLogIndex +
 len(entries)` from that request and `nextIndex[peer] = matchIndex[peer] +
-1` — but only if that's higher than the peer's current `matchIndex`, so a
+1` -- but only if that's higher than the peer's current `matchIndex`, so a
 stale-but-successful older response can never regress it. On failure,
 `nextIndex[peer]` decreases by one (never below 1) for a retry.
 
 Every applied response is first checked against current state: a response
 carrying a higher term forces step-down; a response whose sender's
 `sentTerm` no longer matches `currentTerm`, or whose recipient is no
-longer Leader, is stale and dropped without being applied — and (since
+longer Leader, is stale and dropped without being applied -- and (since
 Milestone 14) so is one whose generation no longer matches, see below.
 
 ## Per-peer replication workers and generations (since Milestone 14)
@@ -195,14 +195,14 @@ replication happening only as a side effect of a shared per-round call.
 A worker blocks on a coalescing wake signal, then repeatedly performs one
 bounded step (an AppendEntries batch, or an InstallSnapshot chunk-loop
 transfer if the peer has fallen behind the compacted boundary) for as
-long as each step reports more work remains — with no wait in between —
+long as each step reports more work remains -- with no wait in between --
 only returning to idle once the peer is genuinely caught up. Every
 place that used to trigger a replication round directly (a proposal
 batch, a configuration entry, the ReadIndex no-op barrier) now just
 wakes every current worker; the heartbeat ticker does the same on its
 own interval, which is what still provides heartbeat-cadence leader
 authority, follower election-timer resets, and commit-index propagation
-for an already-caught-up peer — heartbeatLoop sends no RPC itself.
+for an already-caught-up peer -- heartbeatLoop sends no RPC itself.
 Workers are children of the current leadership term's context, so
 stepping down cancels every one of them with no separate bookkeeping;
 worker lifecycle (start/stop) is decided in exactly one place,
@@ -214,7 +214,7 @@ whenever its replication assumptions are invalidated: a conflict
 backtrack, taking over for InstallSnapshot, resuming after it, or the
 worker being (re)created. Every in-flight request is validated against
 the CURRENT generation before its response is allowed to mutate
-`nextIndex`/`matchIndex`/`commitIndex` — a response captured under an
+`nextIndex`/`matchIndex`/`commitIndex` -- a response captured under an
 older generation is discarded exactly like one that never arrived,
 regardless of whether it reports success or failure, so a delayed reply
 to a since-superseded assumption can never regress or corrupt progress
@@ -235,13 +235,13 @@ commitIndex may advance to N only if:
 "A majority" means `Membership.HasQuorum` (Milestone 10): a plain
 majority of the current Stable configuration outside a transition, or a
 majority of *both* Old and New simultaneously during a Joint transition
-— see [docs/membership.md](membership.md) §5. There is exactly one
+-- see [docs/membership.md](membership.md) §5. There is exactly one
 commit-quorum implementation; this rule is not weakened for any entry
 kind, including a Configuration entry itself.
 
 The `currentTerm` restriction is mandatory: an older-term entry is never
 committed by majority replication alone. It can only become committed as
-a side effect of committing a later current-term entry — `commitIndex`
+a side effect of committing a later current-term entry -- `commitIndex`
 jumps straight to the highest qualifying `N`, which implicitly commits
 every earlier index too (Raft's Log Matching Property guarantees a
 majority holding a later matching entry also holds every entry before it
@@ -254,7 +254,7 @@ on any network round trip.
 ## Commit propagation to followers
 
 A leader advancing `commitIndex` does not push that fact to followers
-immediately — it rides along as `leaderCommit` on the next AppendEntries
+immediately -- it rides along as `leaderCommit` on the next AppendEntries
 or heartbeat. A follower sets `commitIndex = min(leaderCommit,
 lastLogIndex)`, and only if that's greater than its current value, so a
 follower's `commitIndex` never exceeds its own log and never decreases.
@@ -268,12 +268,12 @@ func (n *Node) Propose(command []byte) (LogIndex, error)
 Leader-only: returns `ErrNotLeader` otherwise. Copies `command` so caller
 mutation afterward cannot change the persisted entry. Appends `{currentTerm,
 command}` and persists it before returning; if that persistence fails, the
-log is left unchanged and the entry is never treated as proposed — no fake
+log is left unchanged and the entry is never treated as proposed -- no fake
 commit. On success it kicks off one immediate replication round in the
 background (in addition to the regular heartbeat cadence) and returns the
 new entry's index; it does not wait for replication or commitment.
 
-There is still no external client protocol — only internal Go code can
+There is still no external client protocol -- only internal Go code can
 call `Propose`. Client-facing writes wait for the next milestone, once
 committed entries are actually applied to the KV state machine.
 
@@ -281,8 +281,8 @@ committed entries are actually applied to the KV state machine.
 
 Unchanged from Milestone 3: a single mutex protects all of `Node`'s
 state, and RPCs (both RequestVote and AppendEntries) are never sent
-while it's held — `StartElection` and each peer's `replicationStep`
-(since Milestone 14 — see above) each snapshot what they need, unlock,
+while it's held -- `StartElection` and each peer's `replicationStep`
+(since Milestone 14 -- see above) each snapshot what they need, unlock,
 do the I/O, and re-lock only to apply the response.
 
 The leader's heartbeat loop and every replication worker are bound to
@@ -303,7 +303,7 @@ commit-advancing site (`maybeAdvanceCommitIndexLocked` on the leader, the
 new value before updating `Node`'s in-memory `commitIndex`, then triggers
 `Node`'s apply loop. `internal/service.Service` wires a client PUT/DELETE
 to wait on that pipeline (`Propose` then `WaitApplied`) before
-acknowledging — see [docs/client-protocol.md](client-protocol.md).
+acknowledging -- see [docs/client-protocol.md](client-protocol.md).
 
 ## Logical base index and log compaction (since Milestone 7)
 
@@ -311,13 +311,13 @@ acknowledging — see [docs/client-protocol.md](client-protocol.md).
 1. It tracks a `baseIndex`/`baseTerm` boundary; physical entry `entries[i]`
 is logical index `baseIndex + i + 1`. Before any compaction this is
 `(0, 0)`, identical to the sentinel this document already describes above
-— every invariant in this file (`Term(0) == (0, true)`, the AppendEntries
+-- every invariant in this file (`Term(0) == (0, true)`, the AppendEntries
 prevLog sentinel check, conflict repair, the commit rule) is unchanged and
 still holds exactly as written; compaction only affects how far back
 physical history reaches, never the logical indexing scheme itself.
 
 Once compacted, `Term(index)` for `index < baseIndex` returns `(0,
-false)` — an explicit "unavailable," never a fabricated term — and a
+false)` -- an explicit "unavailable," never a fabricated term -- and a
 leader whose `nextIndex` for some peer has fallen to or below its
 `baseIndex` falls back from AppendEntries to the `InstallSnapshot` RPC for
 that peer instead of retrying a request it can no longer satisfy. Full
@@ -332,7 +332,7 @@ compact safety ordering, and follower-side installation, is in
 - Membership changes exist since Milestone 10 (see
   [docs/membership.md](membership.md)) but are limited to one voter at a
   time, with no batched multi-node changes.
-- No quorum-confirmed linearizable reads is no longer accurate — see
+- No quorum-confirmed linearizable reads is no longer accurate -- see
   [docs/read-index.md](read-index.md).
 - No request deduplication / exactly-once write semantics.
 

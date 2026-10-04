@@ -20,14 +20,14 @@ import (
 const crashExitCode = 91
 
 // crashMarkerPrefix is written to stderr by the subprocess immediately
-// before os.Exit — the exit code alone is not proof of which failpoint
+// before os.Exit -- the exit code alone is not proof of which failpoint
 // fired, or that one fired at all rather than the process crashing for
 // some other reason.
 const crashMarkerPrefix = "QKV_CRASH_REACHED:"
 
 // runCrashSubprocess re-executes this test binary in helper mode
 // (TestCrashHelperSubprocess), instructing it to perform op against dir
-// and terminate via os.Exit at failpoint — a genuine process death with
+// and terminate via os.Exit at failpoint -- a genuine process death with
 // no defers, no Close, no in-memory rollback, unlike an injected error
 // return. It fails the test unless the subprocess both exited with
 // crashExitCode AND printed the marker for exactly this failpoint: a
@@ -143,8 +143,8 @@ func TestCrashHelperSubprocess(t *testing.T) {
 		// item 92 (mandatory): a follower must never report Success=true
 		// for an entry that is not yet durable. This op performs a real
 		// AppendEntries call and, only if it actually returned
-		// Success=true, crashes unconditionally right after — no
-		// failpoint, no mid-operation injection — proving the ack itself
+		// Success=true, crashes unconditionally right after -- no
+		// failpoint, no mid-operation injection -- proving the ack itself
 		// already implied durability rather than relying on whatever
 		// cleanup a graceful path might otherwise perform.
 		l, err := OpenLog(filepath.Join(dir, "log"))
@@ -169,7 +169,7 @@ func TestCrashHelperSubprocess(t *testing.T) {
 			fmt.Fprintln(os.Stderr, "HandleAppendEntries did not succeed:", resp)
 			os.Exit(1)
 		}
-		// Crash unconditionally right after a successful ack — fp (set by
+		// Crash unconditionally right after a successful ack -- fp (set by
 		// the caller to "append.after-ack") never matches an actual
 		// atomicWriteFile failpoint name, so the append above ran to
 		// completion normally; this is a deliberate post-operation crash,

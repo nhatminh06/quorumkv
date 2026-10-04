@@ -11,7 +11,7 @@ import (
 
 // newApplyRecorder returns an ApplyFunc that records the exact sequence
 // of (index, command) calls it receives, and the recorder to inspect it
-// with — used to prove ordering, exactly-once application, and that
+// with -- used to prove ordering, exactly-once application, and that
 // uncommitted entries are never applied.
 type applyRecorder struct {
 	mu    sync.Mutex
@@ -144,7 +144,7 @@ func TestApplyOnlyAppliesCommittedEntries(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond) // give any (incorrect) apply a chance to happen
 	if n.LastApplied() != 0 {
-		t.Fatalf("LastApplied() = %d, want 0 — nothing is committed", n.LastApplied())
+		t.Fatalf("LastApplied() = %d, want 0 -- nothing is committed", n.LastApplied())
 	}
 	if len(rec.indexes()) != 0 {
 		t.Fatalf("apply was called for uncommitted entries: %v", rec.indexes())
@@ -164,7 +164,7 @@ func TestApplyExactlyOncePerRuntime(t *testing.T) {
 	waitForCondition(t, time.Second, func() bool { return n.LastApplied() >= index })
 
 	// Simulate ten more heartbeats/commit triggers carrying the same
-	// commitIndex — must not reapply.
+	// commitIndex -- must not reapply.
 	for i := 0; i < 10; i++ {
 		n.mu.Lock()
 		n.kickApplyLocked()
@@ -310,7 +310,7 @@ func TestWaitAppliedReturnsOnNodeClose(t *testing.T) {
 			t.Fatalf("err = %v, want ErrNodeClosed", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("WaitApplied did not return after Close — waiter leaked")
+		t.Fatalf("WaitApplied did not return after Close -- waiter leaked")
 	}
 }
 
@@ -347,8 +347,8 @@ func TestWaitAppliedDetectsSupersededEntry(t *testing.T) {
 	net.setBlocked("B", false)
 	net.setBlocked("C", false)
 	// PreVote's leader-contact safeguard would otherwise make C reject B's
-	// PreVote — C only just (moments of real wall-clock time ago) accepted
-	// AppendEntries from A — so simulate enough real time having passed
+	// PreVote -- C only just (moments of real wall-clock time ago) accepted
+	// AppendEntries from A -- so simulate enough real time having passed
 	// rather than sleeping for it (see electAndWaitLeader in
 	// fault_recovery_test.go for the same technique).
 	for _, n := range []*Node{a, b, c} {
@@ -364,7 +364,7 @@ func TestWaitAppliedDetectsSupersededEntry(t *testing.T) {
 	}
 
 	// The new leader proposes its own entry at index 1 and, once A is
-	// reachable again, replicates it — a plain heartbeat wouldn't touch
+	// reachable again, replicates it -- a plain heartbeat wouldn't touch
 	// A's stale suffix (it makes no claim beyond prevLogIndex), but a
 	// real conflicting entry at that index forces A to truncate it.
 	if _, _, err := b.Propose([]byte("new-leader-entry")); err != nil {

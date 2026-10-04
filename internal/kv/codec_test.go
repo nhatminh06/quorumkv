@@ -123,7 +123,7 @@ func TestDecodeCommandTrailingBytes(t *testing.T) {
 func TestDecodeCommandOversizedKeyLengthRejected(t *testing.T) {
 	b := mustEncode(t, NewPutCommand([]byte("x"), []byte("1")))
 	// Declare a key length far beyond MaxKeySize without allocating that
-	// much data — the check must fire before any such allocation.
+	// much data -- the check must fire before any such allocation.
 	b[2], b[3], b[4], b[5] = 0xFF, 0xFF, 0xFF, 0xFF
 	_, err := DecodeCommand(b)
 	if !errors.Is(err, ErrMalformedCommand) {
@@ -195,7 +195,7 @@ func TestEncodeDecodeIdentifiedDeleteRoundTrip(t *testing.T) {
 }
 
 // TestIdentifiedPutKnownByteVector independently derives the expected
-// bytes for ClientID=00010203...0f, Sequence=7, PUT x=1 — not merely a
+// bytes for ClientID=00010203...0f, Sequence=7, PUT x=1 -- not merely a
 // round trip through the production encoder.
 func TestIdentifiedPutKnownByteVector(t *testing.T) {
 	id := sampleClientID()

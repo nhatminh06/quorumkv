@@ -12,7 +12,7 @@ import (
 )
 
 // fakeNetwork dispatches RequestVote RPCs directly to a registered peer
-// Node's HandleRequestVote, in process — no sockets, no timing. This lets
+// Node's HandleRequestVote, in process -- no sockets, no timing. This lets
 // pure election tests exercise the exact same StartElection/
 // applyVoteResponse code path that the real TCP transport uses, with an
 // address optionally marked unreachable to simulate a dropped/delayed RPC.
@@ -53,7 +53,7 @@ func (f *fakeNetwork) send(_ context.Context, addr string, req RequestVoteReques
 }
 
 // sendAppend dispatches AppendEntries the same way send dispatches
-// RequestVote — directly to the peer's real HandleAppendEntries, in
+// RequestVote -- directly to the peer's real HandleAppendEntries, in
 // process, honoring the same blocked-address simulation.
 func (f *fakeNetwork) sendAppend(_ context.Context, addr string, req AppendEntriesRequest) (AppendEntriesResponse, error) {
 	f.mu.Lock()
@@ -170,17 +170,17 @@ func TestThreeNodePureElection(t *testing.T) {
 // TestIsolatedCandidatesCannotBumpTermThenRecover models what a classic
 // Raft "split vote" scenario becomes once PreVote exists (Milestone 11):
 // with the network fully partitioned, A and B each attempt an election,
-// but PreVote — never even reaching a majority hypothetically — fails
+// but PreVote -- never even reaching a majority hypothetically -- fails
 // for both before either ever touches its persistent term/vote state.
 // This is exactly PreVote's point: an isolated node's repeated election
 // attempts do not bump the cluster term at all, so there is no split
-// vote to recover from — a materially better outcome than pre-PreVote
+// vote to recover from -- a materially better outcome than pre-PreVote
 // Raft, not merely a different one. Once the partition heals, A's retry
 // reaches a real PreVote quorum and goes on to win a real election in
-// term 1 (not term 2 — no earlier attempt ever advanced it).
+// term 1 (not term 2 -- no earlier attempt ever advanced it).
 //
 // (Round 1 must isolate every node from every other, not just the third
-// voter, so A and B's PreVote rounds can't reach each other either —
+// voter, so A and B's PreVote rounds can't reach each other either --
 // otherwise whichever ran first would simply win the other's PreVote
 // grant before the second ever tried.)
 func TestIsolatedCandidatesCannotBumpTermThenRecover(t *testing.T) {
@@ -213,10 +213,10 @@ func TestIsolatedCandidatesCannotBumpTermThenRecover(t *testing.T) {
 		t.Fatalf("PreVote must fail before either ever becomes Candidate: A=%v B=%v", a.Role(), b.Role())
 	}
 	if a.CurrentTerm() != 0 || b.CurrentTerm() != 0 {
-		t.Fatalf("A/B term = %d/%d, want both unchanged at 0 — a failed PreVote must never bump the term", a.CurrentTerm(), b.CurrentTerm())
+		t.Fatalf("A/B term = %d/%d, want both unchanged at 0 -- a failed PreVote must never bump the term", a.CurrentTerm(), b.CurrentTerm())
 	}
 
-	// Round 2: the partition heals; A retries and wins in term 1 — the
+	// Round 2: the partition heals; A retries and wins in term 1 -- the
 	// first term either of them ever actually reached.
 	net.setBlocked("A", false)
 	net.setBlocked("B", false)

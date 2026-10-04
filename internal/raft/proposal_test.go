@@ -9,7 +9,7 @@ import (
 )
 
 // setTestBeforeBatch installs fn as n's testBeforeBatch hook under
-// queueMu — the same lock proposalWorker reads it through — so the
+// queueMu -- the same lock proposalWorker reads it through -- so the
 // write is guaranteed visible to the worker's next read rather than
 // racing it (both a data race and, worse, a timing race that could let
 // the worker persist a batch before ever observing the hook).
@@ -35,7 +35,7 @@ func singleVoterLeader(t *testing.T) *Node {
 // TestProposeContiguousIndexesUnderConcurrency is item 33/118/119: many
 // concurrent Propose calls must receive a contiguous run of indexes (no
 // gaps, no duplicates, in an order consistent with queue arrival being
-// possible in any interleaving) and — the actual point of batching —
+// possible in any interleaving) and -- the actual point of batching --
 // the resulting Stats() must show fewer log-rewrite batches than
 // proposals, proving concurrent proposals actually shared durable
 // writes rather than each getting its own.
@@ -90,7 +90,7 @@ func TestProposeContiguousIndexesUnderConcurrency(t *testing.T) {
 		t.Fatalf("Stats().ProposalBatches = 0, want > 0")
 	}
 	if stats.ProposalBatches >= int64(count) {
-		t.Fatalf("Stats().ProposalBatches = %d, want < %d proposals — batching under concurrency produced no fewer log rewrites than proposals", stats.ProposalBatches, count)
+		t.Fatalf("Stats().ProposalBatches = %d, want < %d proposals -- batching under concurrency produced no fewer log rewrites than proposals", stats.ProposalBatches, count)
 	}
 	t.Logf("%d proposals persisted in %d batches (%.1f entries/batch avg)", count, stats.ProposalBatches, float64(stats.ProposalBatchEntries)/float64(stats.ProposalBatches))
 }
@@ -98,7 +98,7 @@ func TestProposeContiguousIndexesUnderConcurrency(t *testing.T) {
 // TestProposeBackpressureDeterministic is item 111: with tiny bounds and
 // the worker deterministically held still (via testBeforeBatch, not
 // timing), filling the queue to exactly its configured capacity must
-// make the next Propose fail with ErrBackpressure — every time, not
+// make the next Propose fail with ErrBackpressure -- every time, not
 // just under load.
 func TestProposeBackpressureDeterministic(t *testing.T) {
 	n := singleVoterLeader(t)
@@ -115,7 +115,7 @@ func TestProposeBackpressureDeterministic(t *testing.T) {
 	})
 
 	// This Propose's entry is the one the worker will dequeue and then
-	// block on inside testBeforeBatch — it still counts against the
+	// block on inside testBeforeBatch -- it still counts against the
 	// queue bound (see admitProposal's doc comment: queuedProposals
 	// counts dequeued-but-unpersisted entries too).
 	firstDone := make(chan error, 1)
@@ -194,7 +194,7 @@ func TestProposeQueueByteLimitDeterministic(t *testing.T) {
 	<-held // "first" dequeued and held; still counts as 400 queued bytes
 
 	// "second" can only be ADMITTED while the worker is held (persisting
-	// nothing yet) — it cannot itself complete until release is closed,
+	// nothing yet) -- it cannot itself complete until release is closed,
 	// so it must run in its own goroutine, then be waited for via the
 	// queue depth rather than its own completion.
 	second := make([]byte, 400)
@@ -260,7 +260,7 @@ func TestProposeFailsAfterLeadershipLost(t *testing.T) {
 		t.Fatalf("Propose after step-down mid-queue: err = %v, want ErrNotLeader", err)
 	}
 	if n.LastLogIndex() != 0 {
-		t.Fatalf("LastLogIndex() = %d, want 0 — a rejected batch must never append as a follower", n.LastLogIndex())
+		t.Fatalf("LastLogIndex() = %d, want 0 -- a rejected batch must never append as a follower", n.LastLogIndex())
 	}
 }
 
@@ -270,7 +270,7 @@ func TestProposeFailsAfterLeadershipLost(t *testing.T) {
 // on work that will never be admitted again.
 func TestNodeCloseFailsQueuedProposals(t *testing.T) {
 	n := newFakeNode(t, 1, nil)
-	// Deliberately not elected leader — proposals will queue and then
+	// Deliberately not elected leader -- proposals will queue and then
 	// fail at persist time regardless, but the point here is Close
 	// draining ones still sitting admitted-but-unprocessed.
 	n.SetProposalLimits(1, 1<<20, DefaultMaxProposalBatchEntries, DefaultMaxProposalBatchBytes)
@@ -292,7 +292,7 @@ func TestNodeCloseFailsQueuedProposals(t *testing.T) {
 	}()
 
 	// Close must be able to complete once the worker unblocks and drains
-	// — release it, then require both Close and the pending Propose to
+	// -- release it, then require both Close and the pending Propose to
 	// resolve promptly.
 	time.Sleep(20 * time.Millisecond)
 	close(release)

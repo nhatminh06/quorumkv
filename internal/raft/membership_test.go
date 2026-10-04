@@ -84,7 +84,7 @@ func TestJointAddQuorum(t *testing.T) {
 //
 // (The milestone prompt's own worked example for A+B+D was corrected
 // here by deriving the majorities directly rather than copying a
-// mistaken example — see item 18's explicit warning.)
+// mistaken example -- see item 18's explicit warning.)
 func TestJointRemoveQuorum(t *testing.T) {
 	m := JointMembership(cfg(1, 2, 3, 4), cfg(1, 2, 3))
 	cases := []struct {
@@ -104,15 +104,15 @@ func TestJointRemoveQuorum(t *testing.T) {
 }
 
 // TestNoUnionMajorityBug is item 145: a set can be a majority of
-// union(old,new) while still failing one side's own majority — the
+// union(old,new) while still failing one side's own majority -- the
 // implementation must not accidentally compute quorum from the union.
 // old=ABC (maj 2), new=ABCD (maj 3): {C,D} is 2 of union{A,B,C,D}=4 (not
 // even a union-majority, but more pointedly) satisfies NEITHER old
-// (C alone =1/2) NOR new (C+D=2/4) — confirms no union-based shortcut is
+// (C alone =1/2) NOR new (C+D=2/4) -- confirms no union-based shortcut is
 // silently granting quorum here. A sharper case: {A,D} is old={A}=1/2 no.
 // The decisive case: old=ABC, new=ABCDE (5 members, maj 3); {A,D,E} is a
 // majority of union (3 of 5 total members = ABCDE) and even 3/5 of new,
-// but old={A}=1/2 — must still be rejected.
+// but old={A}=1/2 -- must still be rejected.
 func TestNoUnionMajorityBug(t *testing.T) {
 	m := JointMembership(cfg(1, 2, 3), cfg(1, 2, 3, 4))
 	// {A,D}: old={A}=1/2 no; new={A,D}=2/4 no.

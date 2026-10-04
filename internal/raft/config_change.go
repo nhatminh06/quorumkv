@@ -7,7 +7,7 @@ import (
 )
 
 // ErrAlreadyVoter is returned by AddVoter when id is already a voter in
-// the current stable configuration — including reusing an existing
+// the current stable configuration -- including reusing an existing
 // NodeID with a different address: this milestone never reinterprets an
 // Add as an address change for an existing member, it always errors.
 var ErrAlreadyVoter = errors.New("raft: node is already a voter")
@@ -18,7 +18,7 @@ var ErrNotAVoter = errors.New("raft: node is not a voter")
 
 // AddVoter starts a joint-consensus transition adding id (at addr) as a
 // new voter, and blocks until that transition fully completes: the final
-// Stable(C_new) entry has committed and been applied on this node — not
+// Stable(C_new) entry has committed and been applied on this node -- not
 // merely appended, and not merely committed. See docs/membership.md for
 // the full protocol.
 //
@@ -27,12 +27,12 @@ var ErrNotAVoter = errors.New("raft: node is not a voter")
 //   - ErrMembershipChangeInProgress if a transition is already active
 //     (only one add/remove runs at a time).
 //   - ErrAlreadyVoter if id is already a voter (including reusing an
-//     existing NodeID with a different address — always an error, never
+//     existing NodeID with a different address -- always an error, never
 //     reinterpreted as an address change).
 //   - ErrInvalidConfiguration if addr is empty/oversized or the resulting
 //     configuration would be otherwise invalid.
 //   - ctx's error if ctx is done before the transition completes. The
-//     transition itself is not aborted by this — it may still commit
+//     transition itself is not aborted by this -- it may still commit
 //     later; the caller must inspect current membership (MembershipStatus)
 //     before retrying rather than assuming failure.
 //   - ErrNodeClosed if Close is called while this call is waiting.
@@ -51,7 +51,7 @@ func (n *Node) AddVoter(ctx context.Context, id NodeID, addr string) error {
 }
 
 // RemoveVoter starts a joint-consensus transition removing id as a voter
-// (id may be this node itself — see docs/membership.md for self-removal
+// (id may be this node itself -- see docs/membership.md for self-removal
 // behavior), and blocks until that transition fully completes, with the
 // same completion/error semantics as AddVoter.
 //
@@ -75,7 +75,7 @@ func (n *Node) RemoveVoter(ctx context.Context, id NodeID) error {
 // changeMembership implements the shared AddVoter/RemoveVoter flow:
 // validate and build the new configuration, append a Joint entry
 // transitioning from the current stable configuration to it (activating
-// immediately, before commit — see rebuildMembershipLocked), then wait
+// immediately, before commit -- see rebuildMembershipLocked), then wait
 // for the whole transition (through the automatically appended final
 // Stable entry) to commit and apply.
 func (n *Node) changeMembership(ctx context.Context, mutate func(old Configuration) (Configuration, error)) error {
@@ -115,7 +115,7 @@ func (n *Node) changeMembership(ctx context.Context, mutate func(old Configurati
 		return err
 	}
 	jointIndex := n.log.LastIndex()
-	n.rebuildMembershipLocked() // activates the Joint immediately, before commit — also starts a worker for any newly-added voter (see reconcileReplicationWorkersLocked)
+	n.rebuildMembershipLocked() // activates the Joint immediately, before commit -- also starts a worker for any newly-added voter (see reconcileReplicationWorkersLocked)
 	n.maybeAdvanceCommitIndexLocked()
 	n.pingTransferChanged()      // LastIndex moved
 	n.wakeAllReplicationLocked() // the Joint entry itself needs replicating to every existing target too
@@ -124,8 +124,8 @@ func (n *Node) changeMembership(ctx context.Context, mutate func(old Configurati
 	return n.waitForStableConfiguration(ctx, jointIndex)
 }
 
-// waitForStableConfiguration blocks until this transition — the Joint
-// entry appended at jointIndex — has run to completion: some Stable
+// waitForStableConfiguration blocks until this transition -- the Joint
+// entry appended at jointIndex -- has run to completion: some Stable
 // entry at or after jointIndex has committed and been applied. This
 // deliberately does not compare current membership against the
 // newC this call originally computed: with event-driven replication
@@ -133,11 +133,11 @@ func (n *Node) changeMembership(ctx context.Context, mutate func(old Configurati
 // fast enough that a second, entirely independent AddVoter/RemoveVoter
 // call starting immediately afterward finds Mode == Stable again and
 // begins (and possibly finishes) its OWN transition before this call's
-// wait loop gets scheduled again — current membership can legitimately
+// wait loop gets scheduled again -- current membership can legitimately
 // have moved past the exact Configuration this call built by the time
 // it checks. That is not a bug (it is two sequential, individually valid
 // transitions, exactly like two sequential Puts to the same key), and
-// this call's own transition still genuinely completed — waiting for
+// this call's own transition still genuinely completed -- waiting for
 // "current == my exact target" would hang until ctx expires despite
 // that, which is what index-based completion (jointIndex is a fixed
 // point in this node's own log, never invalidated by a later,
@@ -151,7 +151,7 @@ func (n *Node) waitForStableConfiguration(ctx context.Context, jointIndex LogInd
 		}
 		// Capture the current channel in the SAME critical section as
 		// the check above (see the Node struct's membershipChanged doc
-		// comment) — a close() landing between unlocking and this select
+		// comment) -- a close() landing between unlocking and this select
 		// is impossible to miss this way, since selecting on an
 		// already-closed channel returns immediately rather than
 		// blocking.
@@ -176,7 +176,7 @@ func (n *Node) waitForStableConfiguration(ctx context.Context, jointIndex LogInd
 // transition self-healing: whichever node eventually becomes (or already
 // is) Leader once the Joint entry is committed will find
 // membership.Mode == ModeJoint with no pending Stable entry and finish
-// the transition automatically — see docs/membership.md. Must be called
+// the transition automatically -- see docs/membership.md. Must be called
 // with n.mu held.
 func (n *Node) maybeCompleteMembershipTransitionLocked() {
 	if n.role != Leader {

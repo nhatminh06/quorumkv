@@ -18,7 +18,7 @@ func TestPreVoteDoesNotMutatePersistentTerm(t *testing.T) {
 		t.Fatalf("expected grant for a fresh higher prospective term with an equally-empty log")
 	}
 	if n.CurrentTerm() != 5 {
-		t.Fatalf("CurrentTerm() = %d, want unchanged 5 — PreVote must never persist the prospective term", n.CurrentTerm())
+		t.Fatalf("CurrentTerm() = %d, want unchanged 5 -- PreVote must never persist the prospective term", n.CurrentTerm())
 	}
 }
 
@@ -29,7 +29,7 @@ func TestPreVoteDoesNotChangeVotedFor(t *testing.T) {
 	}
 	v := n.VotedFor()
 	if v == nil || *v != 9 {
-		t.Fatalf("VotedFor() = %v, want unchanged 9 — PreVote must never touch votedFor", v)
+		t.Fatalf("VotedFor() = %v, want unchanged 9 -- PreVote must never touch votedFor", v)
 	}
 }
 
@@ -89,7 +89,7 @@ func TestPreVoteFreshCandidateGranted(t *testing.T) {
 }
 
 // TestPreVoteRecentLeaderContactRejected proves the leader-contact
-// safeguard rejects an otherwise-perfectly-eligible PreVote request —
+// safeguard rejects an otherwise-perfectly-eligible PreVote request --
 // the core mechanism that keeps an isolated node from disrupting a
 // healthy leader.
 func TestPreVoteRecentLeaderContactRejected(t *testing.T) {
@@ -148,7 +148,7 @@ func TestPreVoteHigherActualTermCausesStepDown(t *testing.T) {
 	n.applyPreVoteResponse(2, PreVoteResponse{Term: 9, VoteGranted: false}, granted)
 
 	if n.CurrentTerm() != 9 {
-		t.Fatalf("CurrentTerm() = %d, want 9 — a higher ACTUAL term in a PreVote response is real evidence", n.CurrentTerm())
+		t.Fatalf("CurrentTerm() = %d, want 9 -- a higher ACTUAL term in a PreVote response is real evidence", n.CurrentTerm())
 	}
 	if n.Role() != Follower {
 		t.Fatalf("Role() = %v, want Follower after learning of a higher term", n.Role())
@@ -167,7 +167,7 @@ func TestPreVoteDuplicateResponseCountedOnce(t *testing.T) {
 	n.applyPreVoteResponse(2, PreVoteResponse{Term: 0, VoteGranted: true}, granted)
 	n.applyPreVoteResponse(2, PreVoteResponse{Term: 0, VoteGranted: true}, granted)
 	if len(granted) != 2 {
-		t.Fatalf("granted = %v, want exactly {1,2} — a duplicate response must not double count", granted)
+		t.Fatalf("granted = %v, want exactly {1,2} -- a duplicate response must not double count", granted)
 	}
 }
 
@@ -191,12 +191,12 @@ func TestSingleNodePreVoteSkipsNetworkEntirely(t *testing.T) {
 }
 
 // TestPassiveNodeDoesNotPreVoteCampaign proves a node that is not an
-// effective voter never even attempts a PreVote round — no network call,
+// effective voter never even attempts a PreVote round -- no network call,
 // no term change.
 func TestPassiveNodeDoesNotPreVoteCampaign(t *testing.T) {
 	// A node whose own bootstrap configuration is real, but which we then
 	// place outside its own effective membership by rebuilding against a
-	// Stable configuration that excludes it — simulating a removed/
+	// Stable configuration that excludes it -- simulating a removed/
 	// not-yet-added node the same way membership_rebuild_test.go does.
 	n := newTestNode(t, 1, PersistentState{}, map[NodeID]string{2: "peer", 3: "peer2"})
 	n.sendPreVote = func(ctx context.Context, addr string, req PreVoteRequest) (PreVoteResponse, error) {
@@ -211,7 +211,7 @@ func TestPassiveNodeDoesNotPreVoteCampaign(t *testing.T) {
 		t.Fatalf("StartElection: %v", err)
 	}
 	if n.Role() == Candidate || n.Role() == Leader {
-		t.Fatalf("Role() = %v, want Follower — a passive node must not campaign", n.Role())
+		t.Fatalf("Role() = %v, want Follower -- a passive node must not campaign", n.Role())
 	}
 	if n.CurrentTerm() != 0 {
 		t.Fatalf("CurrentTerm() = %d, want unchanged 0", n.CurrentTerm())
@@ -229,7 +229,7 @@ func TestPreVoteUsesJointQuorum(t *testing.T) {
 	if m.HasQuorum(granted) {
 		t.Fatalf("test bug: this set must not be Joint quorum")
 	}
-	granted[3] = true // old={1,2,3}=3/3; new={1,2,3}=3/4 — both satisfied
+	granted[3] = true // old={1,2,3}=3/3; new={1,2,3}=3/4 -- both satisfied
 	if !m.HasQuorum(granted) {
 		t.Fatalf("test bug: this set must be Joint quorum")
 	}
@@ -239,12 +239,12 @@ func TestPreVoteUsesJointQuorum(t *testing.T) {
 
 // TestIsolatedFollowerDoesNotDisruptHealthyLeader is the mandatory
 // isolated-follower scenario: C is isolated from A (the healthy leader)
-// and B — a genuine two-way partition, not merely "nobody can reach C"
+// and B -- a genuine two-way partition, not merely "nobody can reach C"
 // (fakeNetwork's single-direction blocking would let C still receive
 // real, informative rejection responses from A/B, which is not true
-// isolation — see directedNetwork/faultCluster for real bidirectional
-// partitions). C repeatedly fails to reach any PreVote quorum, and — the
-// crux — its own currentTerm never advances while truly isolated, since
+// isolation -- see directedNetwork/faultCluster for real bidirectional
+// partitions). C repeatedly fails to reach any PreVote quorum, and -- the
+// crux -- its own currentTerm never advances while truly isolated, since
 // it receives no responses of any kind, honest or otherwise. Once
 // healed, A remains leader at its original term; C simply rejoins as a
 // follower. No disruption is caused solely by C's isolation.
@@ -275,10 +275,10 @@ func TestIsolatedFollowerDoesNotDisruptHealthyLeader(t *testing.T) {
 			t.Fatalf("C StartElection attempt %d: %v", i, err)
 		}
 		if cc.CurrentTerm() != 0 {
-			t.Fatalf("attempt %d: C.CurrentTerm() = %d, want unchanged 0 — a failed PreVote must never bump the term", i, cc.CurrentTerm())
+			t.Fatalf("attempt %d: C.CurrentTerm() = %d, want unchanged 0 -- a failed PreVote must never bump the term", i, cc.CurrentTerm())
 		}
 		if cc.Role() == Candidate || cc.Role() == Leader {
-			t.Fatalf("attempt %d: C.Role() = %v, want Follower — PreVote must fail before C ever campaigns for real", i, cc.Role())
+			t.Fatalf("attempt %d: C.Role() = %v, want Follower -- PreVote must fail before C ever campaigns for real", i, cc.Role())
 		}
 	}
 
@@ -288,14 +288,14 @@ func TestIsolatedFollowerDoesNotDisruptHealthyLeader(t *testing.T) {
 	}
 
 	// Heal the partition: C simply rejoins as a follower once A's next
-	// heartbeat reaches it — no special-cased reconciliation needed.
+	// heartbeat reaches it -- no special-cased reconciliation needed.
 	c.net.heal(3, 1)
 	c.net.heal(3, 2)
 	if !waitFor(time.Second, func() bool { return cc.Role() == Follower && cc.CurrentTerm() == 1 }) {
 		t.Fatalf("C never rejoined as a follower after healing: role=%v term=%d", cc.Role(), cc.CurrentTerm())
 	}
 	if a.Role() != Leader || a.CurrentTerm() != 1 {
-		t.Fatalf("A after healing: role=%v term=%d, want unchanged Leader/1 — no disruption caused solely by C's isolation", a.Role(), a.CurrentTerm())
+		t.Fatalf("A after healing: role=%v term=%d, want unchanged Leader/1 -- no disruption caused solely by C's isolation", a.Role(), a.CurrentTerm())
 	}
 }
 

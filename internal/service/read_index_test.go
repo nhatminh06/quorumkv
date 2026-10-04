@@ -33,12 +33,12 @@ func rawGet(t *testing.T, addr string, key string) clientproto.Response {
 	return resp
 }
 
-// TestIsolatedOldLeaderCannotServeStaleGet is item 53 — the core Milestone
+// TestIsolatedOldLeaderCannotServeStaleGet is item 53 -- the core Milestone
 // 8 proof, run over real TCP (also satisfying item 94/95's real-network
 // requirement): a leader isolated from the majority commits a write, is
 // then partitioned away while the majority elects a new leader and
 // commits a different write, and a GET sent directly to the still-running
-// isolated old leader — which may still believe Role==Leader — must NOT
+// isolated old leader -- which may still believe Role==Leader -- must NOT
 // return the stale value. TIMEOUT, NOT_LEADER, or a context error are all
 // acceptable; a stale StatusOK is not.
 func TestIsolatedOldLeaderCannotServeStaleGet(t *testing.T) {
@@ -74,7 +74,7 @@ func TestIsolatedOldLeaderCannotServeStaleGet(t *testing.T) {
 	// must never return the stale "1".
 	resp := rawGet(t, a.addr(), "x")
 	if resp.Status == clientproto.StatusOK {
-		t.Fatalf("isolated old leader returned StatusOK value %q — stale successful GET, safety violation", resp.Value)
+		t.Fatalf("isolated old leader returned StatusOK value %q -- stale successful GET, safety violation", resp.Value)
 	}
 	switch resp.Status {
 	case clientproto.StatusTimeout, clientproto.StatusNotLeader:
@@ -117,7 +117,7 @@ func TestNewLeaderReadServesQuorumConfirmedValue(t *testing.T) {
 
 // TestHealedOldLeaderReturnsNotLeaderNoStaleRead is item 55: once the
 // partition heals and the old leader learns the higher term, it must
-// answer GET with NOT_LEADER (with a hint once it has one) — never a
+// answer GET with NOT_LEADER (with a hint once it has one) -- never a
 // stale value.
 func TestHealedOldLeaderReturnsNotLeaderNoStaleRead(t *testing.T) {
 	nodes := startCluster(t, 3)
@@ -182,7 +182,7 @@ func TestOneFollowerPartitionedReadStillSucceeds(t *testing.T) {
 }
 
 // TestMajorityPartitionReadBehavior is item 57: the isolated minority
-// leader cannot serve reads, while the connected majority's leader can —
+// leader cannot serve reads, while the connected majority's leader can --
 // directly proving partition-aware read behavior on both sides at once.
 func TestMajorityPartitionReadBehavior(t *testing.T) {
 	nodes := startCluster(t, 3)
@@ -217,7 +217,7 @@ func TestMajorityPartitionReadBehavior(t *testing.T) {
 
 // TestReadAfterCompletedWriteRealTimeOrder is item 58 (mandatory): once a
 // client has received OK for a PUT, a subsequent GET must observe that
-// exact value — proven twice, for two different values, to rule out a
+// exact value -- proven twice, for two different values, to rule out a
 // GET that happens to read stale-but-matching state.
 func TestReadAfterCompletedWriteRealTimeOrder(t *testing.T) {
 	nodes := startCluster(t, 3)
@@ -270,7 +270,7 @@ func TestFailoverReadAfterCommittedWrite(t *testing.T) {
 
 // TestRealTCPReadIndexHealthyPath is item 94 (mandatory): a real,
 // healthy three-node cluster over real TCP serves GET through the full
-// ReadIndex path — quorum probe AppendEntries, real socket responses,
+// ReadIndex path -- quorum probe AppendEntries, real socket responses,
 // quorum confirmation, WaitApplied, then the local KV read.
 func TestRealTCPReadIndexHealthyPath(t *testing.T) {
 	nodes := startCluster(t, 3)

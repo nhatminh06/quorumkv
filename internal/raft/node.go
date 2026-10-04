@@ -136,7 +136,7 @@ type Node struct {
 	// deterministically instead of depending on real sleeps.
 	nowFunc func() time.Time
 	// lastLeaderContact is when this node last accepted valid AppendEntries
-	// contact from a current/higher-term leader — the one signal PreVote's
+	// contact from a current/higher-term leader -- the one signal PreVote's
 	// leader-contact safeguard is built on (see docs/raft-election.md).
 	// Zero value means "never observed" this process run.
 	lastLeaderContact time.Time
@@ -147,7 +147,7 @@ type Node struct {
 	// receive. Close cancels it and waits (via bgWG) for every background
 	// goroutine spawned under it to actually exit before returning, so a
 	// caller that has called Close can rely on no further heartbeats or
-	// application happening — not just that cancellation was requested.
+	// application happening -- not just that cancellation was requested.
 	bgCtx    context.Context
 	bgCancel context.CancelFunc
 	bgWG     sync.WaitGroup
@@ -165,7 +165,7 @@ type Node struct {
 	// under, guarantees one of two orderings: the spawn's Add
 	// happens-before bgClosing is set (a normal, safe Add-before-Wait),
 	// or the spawn observes bgClosing already true and never calls Add
-	// at all — never a race between them.
+	// at all -- never a race between them.
 	bgClosing  bool
 	persistent PersistentState
 	role       Role
@@ -189,11 +189,11 @@ type Node struct {
 	// replication assumptions are invalidated (conflict backtrack,
 	// snapshot takeover, worker (re)creation). A response is only ever
 	// allowed to mutate nextIndex/matchIndex if it was sent under the
-	// CURRENT generation — a response from an earlier generation is
+	// CURRENT generation -- a response from an earlier generation is
 	// stale by definition and is ignored, regardless of Success.
 	replicationGeneration map[NodeID]uint64
 	// workers holds one replicationWorker per current replication
-	// target, present only while role == Leader. Never persisted —
+	// target, present only while role == Leader. Never persisted --
 	// purely runtime scheduling state, reconciled against
 	// n.membership.Targets on every rebuildMembershipLocked call (see
 	// reconcileReplicationWorkersLocked).
@@ -210,11 +210,11 @@ type Node struct {
 	commitIndex LogIndex
 
 	// Application pipeline: see apply.go. lastApplied/applying/applyErr/
-	// waiters are all volatile — reconstructed by replaying the log up to
+	// waiters are all volatile -- reconstructed by replaying the log up to
 	// the restored commitIndex on every startup, never persisted directly.
 	// applyMu (distinct from mu, the Raft state lock) serializes ApplyFunc
 	// against SnapshotFunc/RestoreFunc so a snapshot always corresponds to
-	// exactly the lastApplied index it claims — see CreateSnapshot.
+	// exactly the lastApplied index it claims -- see CreateSnapshot.
 	applyFunc   ApplyFunc
 	snapshotFn  SnapshotFunc
 	restoreFn   RestoreFunc
@@ -239,7 +239,7 @@ type Node struct {
 
 	// membership is this node's effective configuration, always rebuilt
 	// (never incrementally patched) from baseConfiguration plus every
-	// EntryConfiguration entry surviving in the log — see
+	// EntryConfiguration entry surviving in the log -- see
 	// rebuildMembershipLocked. baseConfiguration is the stable
 	// configuration as of the log's current BaseIndex: the most recent
 	// snapshot's stored Configuration (or, for a legacy snapshot with no
@@ -248,7 +248,7 @@ type Node struct {
 	// configuration itself if not. Once any real Configuration entry
 	// exists at or after BaseIndex+1, it is found by the rebuild walk and
 	// wins over baseConfiguration regardless of what SetPeers/SetSelfAddr
-	// are called with afterward — so persisted configuration history is
+	// are called with afterward -- so persisted configuration history is
 	// authoritative forever without needing a separate sticky flag.
 	membership           Membership
 	baseConfiguration    Configuration
@@ -258,23 +258,23 @@ type Node struct {
 	// just baseConfiguration, with no entry ever walked into it).
 	// pendingStableIndex is the log index of an appended-but-not-yet-
 	// committed final Stable entry following the current Joint
-	// membership, or 0 if none — see rebuildMembershipLocked and
+	// membership, or 0 if none -- see rebuildMembershipLocked and
 	// maybeCompleteMembershipTransitionLocked (config_change.go).
 	// membershipChanged is closed and replaced with a fresh channel (see
 	// notifyMembershipChangedLocked) every time a rebuild produces a
 	// possibly-different membership, broadcasting to every current
-	// waiter at once — AddVoter/RemoveVoter block on it instead of
+	// waiter at once -- AddVoter/RemoveVoter block on it instead of
 	// polling. This must be a close-and-replace broadcast, not a
 	// non-blocking buffered-1 "ping" (that was M14's original design
 	// here, and it lost wakeups: two membership changes can legitimately
-	// run concurrently — see waitForStableConfiguration's doc comment —
+	// run concurrently -- see waitForStableConfiguration's doc comment --
 	// so more than one goroutine can be waiting on this signal at once,
 	// and a buffered-1 channel only ever wakes ONE of them per send,
 	// silently dropping the rest whenever multiple state changes happen
 	// in quick succession before every waiter has had a chance to drain
 	// it). A waiter must capture the current channel value under n.mu in
-	// the same critical section where it checks its condition — never
-	// read n.membershipChanged again after unlocking — so a close()
+	// the same critical section where it checks its condition -- never
+	// read n.membershipChanged again after unlocking -- so a close()
 	// landing in the gap between "condition checked false" and "start
 	// waiting" is impossible to miss (closing a channel a waiter has
 	// already grabbed a reference to still unblocks it immediately).
@@ -283,7 +283,7 @@ type Node struct {
 	membershipChanged    chan struct{}
 
 	// transfer is this node's in-progress leadership transfer, if any (see
-	// leadership_transfer.go) — nil when idle. Never persisted: a crash or
+	// leadership_transfer.go) -- nil when idle. Never persisted: a crash or
 	// restart simply forgets it, which is correct (no transfer state
 	// survives a process boundary). transferChanged is pinged (same
 	// non-blocking, buffered-1 pattern as membershipChanged) whenever
@@ -295,14 +295,14 @@ type Node struct {
 
 	// Proposal admission/batching (see proposal.go): Propose enqueues onto
 	// proposalCh after reserving space against the queuedProposals/
-	// queuedProposalBytes bounds (guarded by queueMu, distinct from mu —
+	// queuedProposalBytes bounds (guarded by queueMu, distinct from mu --
 	// admission must not contend with routine Raft state-transition
 	// locking); proposalWorker is the single goroutine that drains it and
 	// turns concurrently-queued proposals into one shared Log.Append per
 	// batch. All of this is purely a local-persistence/latency concern;
 	// it changes nothing about commit/apply/replication safety.
 	queueMu                 sync.Mutex
-	closed                  bool // set under queueMu by Close, before bgCancel — see propose/admitProposal
+	closed                  bool // set under queueMu by Close, before bgCancel -- see propose/admitProposal
 	queuedProposals         int
 	queuedProposalBytes     int64
 	maxQueuedProposals      int
@@ -312,7 +312,7 @@ type Node struct {
 	proposalCh              chan *pendingProposal
 	// testBeforeBatch, if set, is called by proposalWorker after it has
 	// dequeued the first proposal of a batch but before it drains any
-	// more or persists — test-only hook (never set outside _test.go
+	// more or persists -- test-only hook (never set outside _test.go
 	// files) used to deterministically hold the worker still so a test
 	// can fill the queue to an exact bound without a timing race; nil
 	// (a no-op) in every production Node. See TestProposeBackpressureDeterministic.
@@ -327,7 +327,7 @@ type Node struct {
 //
 // If a snapshot exists, its state is restored (via restoreFn) and
 // lastApplied/commitIndex start from at least its lastIncludedIndex
-// before anything else happens — never regressing either. If the log was
+// before anything else happens -- never regressing either. If the log was
 // not yet compacted through the snapshot's boundary (a crash between
 // Milestone 7's mandatory "persist snapshot, then compact log" ordering
 // left that step unfinished), NewNode finishes it here rather than
@@ -335,7 +335,7 @@ type Node struct {
 // re-apply.
 //
 // NewNode then begins (in the background) replaying any
-// committed-but-unapplied prefix of the log through applyFunc — call
+// committed-but-unapplied prefix of the log through applyFunc -- call
 // WaitApplied(ctx, node's initial CommitIndex, 0) to block until that
 // replay completes if the caller needs the state machine ready before
 // serving anything. applyFunc/snapshotFn/restoreFn may be nil: committed
@@ -344,7 +344,7 @@ type Node struct {
 // snapshotFn makes CreateSnapshot fail; a nil restoreFn is a no-op.
 //
 // NewNode returns an error if the durably recorded commitIndex, or the
-// snapshot's lastIncludedIndex, exceeds the log's last index — states
+// snapshot's lastIncludedIndex, exceeds the log's last index -- states
 // that should never occur from this package's own persistence ordering,
 // and are treated as corruption rather than silently clamped.
 func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapshotStore *SnapshotStore, peers map[NodeID]string, applyFunc ApplyFunc, snapshotFn SnapshotFunc, restoreFn RestoreFunc) (*Node, error) {
@@ -366,7 +366,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		// itself was durably published but before the log's own boundary
 		// rewrite completed. InstallSnapshotBoundary (not Compact, which
 		// requires the log to already reach newBaseIndex) is the general
-		// reconciliation for this — it keeps a verified-matching local
+		// reconciliation for this -- it keeps a verified-matching local
 		// suffix when the log already reaches the boundary, and discards
 		// the entire suffix otherwise, exactly like a live InstallSnapshot
 		// RPC would.
@@ -417,7 +417,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 		heartbeatInterval:   defaultHeartbeatInterval,
 		resetCh:             make(chan struct{}, 1),
 		nowFunc:             time.Now,
-		membershipChanged:   make(chan struct{}), // never sent to — only closed-and-replaced; see notifyMembershipChangedLocked
+		membershipChanged:   make(chan struct{}), // never sent to -- only closed-and-replaced; see notifyMembershipChangedLocked
 		transferChanged:     make(chan struct{}, 1),
 		bgCtx:               bgCtx,
 		bgCancel:            bgCancel,
@@ -474,7 +474,7 @@ func NewNode(id NodeID, store *Store, log *Log, commitStore *CommitStore, snapsh
 //
 // maxQueuedProposals may never exceed DefaultMaxQueuedProposals: unlike
 // the other three bounds, n.proposalCh's buffer capacity is fixed at
-// construction (see NewNode) and never resized — resizing it here would
+// construction (see NewNode) and never resized -- resizing it here would
 // mean replacing the channel field out from under proposalWorker's
 // already-running, unsynchronized reads of it, a real data/timing race.
 // A count bound smaller than the default (the only case any test in
@@ -503,7 +503,7 @@ func (n *Node) Close() {
 	n.closed = true
 	n.queueMu.Unlock()
 
-	// Mark bgClosing before canceling too — see the Node struct's doc
+	// Mark bgClosing before canceling too -- see the Node struct's doc
 	// comment on bgClosing and spawnBackgroundLocked/spawnBackground.
 	n.mu.Lock()
 	n.bgClosing = true
@@ -539,7 +539,7 @@ func (n *Node) logInfo(event string, args ...any) {
 
 // spawnBackgroundLocked registers one more bgWG-tracked background
 // goroutine unless this node is already closing, in which case it
-// refuses (returns false) — see the Node struct's bgClosing doc comment
+// refuses (returns false) -- see the Node struct's bgClosing doc comment
 // for why this is the only safe way to call bgWG.Add. Must be called
 // with n.mu held; the caller launches the goroutine itself (with
 // `defer n.bgWG.Done()`) only if this returns true.
@@ -554,7 +554,7 @@ func (n *Node) spawnBackgroundLocked() bool {
 // spawnBackground is spawnBackgroundLocked's wrapper for a caller that
 // does not already hold n.mu: it acquires n.mu only for the
 // check-and-Add, then launches f in its own goroutine (unlocked) if
-// permitted. f itself is responsible for `defer n.bgWG.Done()` — this
+// permitted. f itself is responsible for `defer n.bgWG.Done()` -- this
 // intentionally mirrors spawnBackgroundLocked's convention rather than
 // adding a second, hidden Done() call, since several callers pass an
 // existing method (e.g. n.proposalWorker) that already manages its own.
@@ -576,7 +576,7 @@ func (n *Node) Handler() transport.Handler {
 
 // SetPeers replaces this node's peer address table. It exists for
 // initial cluster bootstrap, where a node must start listening (to learn
-// its own OS-assigned address) before every peer's address is known —
+// its own OS-assigned address) before every peer's address is known --
 // it is not a dynamic membership-change API.
 func (n *Node) SetPeers(peers map[NodeID]string) {
 	n.mu.Lock()
@@ -588,7 +588,7 @@ func (n *Node) SetPeers(peers map[NodeID]string) {
 // SetSelfAddr records this node's own dialable address. It exists for
 // initial cluster bootstrap, alongside SetPeers, so this node's bootstrap
 // Configuration (used until any real membership change is ever applied)
-// has a real address for itself — needed so a newly-added future peer,
+// has a real address for itself -- needed so a newly-added future peer,
 // or a snapshot's stored stable configuration, can resolve it. Before
 // this is ever called, a non-empty placeholder is used; since Targets
 // always excludes self, correctness of replication/election/quorum never
@@ -607,7 +607,7 @@ func (n *Node) SetSelfAddr(addr string) {
 // surviving log entry from BaseIndex+1 onward and apply each
 // EntryConfiguration entry found in order:
 //
-//   - A Joint entry activates immediately, before it ever commits — a
+//   - A Joint entry activates immediately, before it ever commits -- a
 //     node's effective membership is derived from its own local log, not
 //     from a globally agreed "committed" source (see docs/membership.md).
 //   - A Stable entry (completing a transition) activates only once it is
@@ -650,7 +650,7 @@ func (n *Node) rebuildMembershipLocked() {
 				entryIndex = idx
 				pendingStableIndex = 0
 			} else {
-				// An uncommitted final Stable entry — leave effective as
+				// An uncommitted final Stable entry -- leave effective as
 				// the Joint state that preceded it, but remember this so a
 				// leader doesn't append a second completing entry.
 				pendingStableIndex = idx
@@ -667,7 +667,7 @@ func (n *Node) rebuildMembershipLocked() {
 // notifyMembershipChangedLocked broadcasts to every current
 // waitForStableConfiguration caller that membership-related state may
 // have changed, by closing the current membershipChanged channel and
-// replacing it with a fresh one — see the Node struct's doc comment on
+// replacing it with a fresh one -- see the Node struct's doc comment on
 // membershipChanged for why this must be a broadcast, not a "ping one
 // waiter" send. Must be called with n.mu held.
 func (n *Node) notifyMembershipChangedLocked() {
@@ -680,7 +680,7 @@ func (n *Node) notifyMembershipChangedLocked() {
 // joint-quorum-aware targeting, including a newly added not-yet-committed
 // peer, is always correct), but the address for any ID this node
 // currently has an entry for in n.peers wins over whatever address the
-// (possibly stale, snapshot/log-derived) Membership itself has recorded —
+// (possibly stale, snapshot/log-derived) Membership itself has recorded --
 // n.peers is this node's own freshest operational knowledge (kept current
 // by SetPeers) and must not regress to a historical address just because
 // a Configuration entry or snapshot boundary happens to embed one. A peer
@@ -724,7 +724,7 @@ func (n *Node) bootstrapConfigurationLocked() Configuration {
 
 // SetVoteSend and SetAppendSend replace the functions this node uses to
 // send RequestVote/AppendEntries RPCs. Production code never calls
-// these — the defaults (sendOverTransport/sendAppendOverTransport)
+// these -- the defaults (sendOverTransport/sendAppendOverTransport)
 // already go over the real transport. They exist so deterministic
 // fault-injection tests outside this package can wrap the real sender
 // with an allow/block decision while still delegating to real TCP for
@@ -876,7 +876,7 @@ func (n *Node) VotedFor() *NodeID {
 // current term, if known: itself if it is Leader, or the sender of the
 // last valid AppendEntries it accepted. ok is false if unknown (e.g. this
 // node is Candidate, or recently stepped up to a higher term with no
-// leader contact yet) — callers must not fabricate a destination in that
+// leader contact yet) -- callers must not fabricate a destination in that
 // case.
 func (n *Node) LeaderHint() (id NodeID, ok bool) {
 	n.mu.Lock()
@@ -894,7 +894,7 @@ func (n *Node) lastLogInfo() (LogIndex, Term) {
 }
 
 // stepDownLocked updates currentTerm to newTerm, clears votedFor, and
-// becomes Follower — persisting before any of that is externally visible.
+// becomes Follower -- persisting before any of that is externally visible.
 // If persistence fails, no in-memory state is changed and the error is
 // returned; callers must not treat the step-down as having happened.
 // Must be called with n.mu held.
@@ -925,7 +925,7 @@ func (n *Node) stepDownLocked(newTerm Term) error {
 }
 
 // stepToFollowerLocked converts a Candidate or Leader to Follower without
-// touching persistent term/vote state — used when valid same-term leader
+// touching persistent term/vote state -- used when valid same-term leader
 // contact proves another leader already exists for this term (Raft
 // requires stepping down here, but not a term change). It also stops this
 // node's own heartbeat loop, if it had one. Must be called with n.mu held.
@@ -933,7 +933,7 @@ func (n *Node) stepToFollowerLocked() {
 	n.role = Follower
 	n.votes = nil
 	if n.leaderCancel != nil {
-		n.leaderCancel() // also cancels every current replicationWorker — they are children of leaderCtx
+		n.leaderCancel() // also cancels every current replicationWorker -- they are children of leaderCtx
 		n.leaderCancel = nil
 		n.leaderCtx = nil
 	}
@@ -989,7 +989,7 @@ func (n *Node) becomeLeaderLocked() {
 }
 
 // resetTimer requests that Run restart its election timeout. It is
-// called only when this node grants a vote in HandleRequestVote — there
+// called only when this node grants a vote in HandleRequestVote -- there
 // is no heartbeat-based reset because AppendEntries does not exist yet,
 // so a granted vote is the only signal available this milestone that the
 // cluster is making election progress.
@@ -1001,7 +1001,7 @@ func (n *Node) resetTimer() {
 }
 
 // pingTransferChanged wakes any leadership-transfer waiter (catch-up or
-// completion — see leadership_transfer.go) blocked on transferChanged, so
+// completion -- see leadership_transfer.go) blocked on transferChanged, so
 // it can re-check its condition instead of polling. Must be called with
 // n.mu held (it only touches a channel, so this is really about keeping
 // every call site obviously paired with the state change it announces).
@@ -1014,17 +1014,17 @@ func (n *Node) pingTransferChanged() {
 
 // hasRecentLeaderContactLocked reports whether this node accepted valid
 // AppendEntries contact from a current/higher-term leader within the last
-// minElectionTimeout — PreVote's leader-contact safeguard (see
+// minElectionTimeout -- PreVote's leader-contact safeguard (see
 // docs/raft-election.md): a follower that has recently heard from a
 // healthy leader must not grant a PreVote merely because some other node
 // (e.g. one that is isolated, not the leader) timed out. Deliberately
 // reuses minElectionTimeout, the same constant already governing the
 // shortest legitimate election timeout, rather than a second
-// independently-tuned window — "one clear election/timer model."
+// independently-tuned window -- "one clear election/timer model."
 //
 // A node that is itself the current Leader always counts as having
 // recent contact: it never receives AppendEntries (it only sends them),
-// so lastLeaderContact would otherwise stay perpetually zero for it —
+// so lastLeaderContact would otherwise stay perpetually zero for it --
 // without this, a perfectly healthy, actively-heartbeating leader would
 // grant a hypothetical vote to any challenger presenting a merely
 // technically-higher prospective term, defeating the entire safeguard
@@ -1085,12 +1085,12 @@ func (n *Node) HandleRequestVote(req RequestVoteRequest) (RequestVoteResponse, e
 
 // StartElection runs one PreVote-gated election attempt: first ask every
 // peer, hypothetically, "would you vote for me in currentTerm+1?"
-// (PreVote — see docs/raft-election.md) without touching any persistent
+// (PreVote -- see docs/raft-election.md) without touching any persistent
 // state; only if that round reaches quorum does it proceed to a real
 // election (startRealElection: increment currentTerm, vote for self,
 // persist, RequestVote). PreVote is what keeps a node that has been
 // isolated and timed out repeatedly from bumping the cluster term on
-// every attempt — it can never even get that far without first proving
+// every attempt -- it can never even get that far without first proving
 // it could win.
 //
 // StartElection does not retry and does not loop waiting for further
@@ -1113,14 +1113,14 @@ func (n *Node) StartElection(ctx context.Context) error {
 	prospectiveTerm := n.persistent.CurrentTerm + 1
 	lastIndex, lastTerm := n.lastLogInfo()
 	// A coherent membership snapshot for this one round (item 106): every
-	// quorum decision below — the self-count fast path, and the final
-	// tally — uses this exact value, never a freshly re-read n.membership
+	// quorum decision below -- the self-count fast path, and the final
+	// tally -- uses this exact value, never a freshly re-read n.membership
 	// that could reflect a config change mid-round.
 	roundMembership := n.membership
 	granted := map[NodeID]bool{n.id: true}
 	if roundMembership.HasQuorum(granted) {
 		// Single-node (or otherwise self-sufficient) cluster: no need to
-		// ask anyone hypothetically — go straight to a real election.
+		// ask anyone hypothetically -- go straight to a real election.
 		n.mu.Unlock()
 		return n.startRealElection(ctx)
 	}
@@ -1135,7 +1135,7 @@ func (n *Node) StartElection(ctx context.Context) error {
 	}
 
 	// granted accumulates responses from multiple goroutines below, each
-	// write guarded by n.mu (see applyPreVoteResponse) — not Node state,
+	// write guarded by n.mu (see applyPreVoteResponse) -- not Node state,
 	// just a plain map local to this one round, so a concurrent round (a
 	// second StartElection call racing this one) cannot cross-contaminate
 	// or be contaminated by this one; there is nothing here for a stale
@@ -1158,7 +1158,7 @@ func (n *Node) StartElection(ctx context.Context) error {
 	// Re-verify nothing moved on while this round was in flight: a higher
 	// term learned from a PreVote response's real evidence (see
 	// applyPreVoteResponse), a concurrent election already won, or a
-	// membership change — any of these makes this round's tally stale, so
+	// membership change -- any of these makes this round's tally stale, so
 	// discard it rather than acting on it (item 106/107).
 	stale := n.role == Leader || n.persistent.CurrentTerm != prospectiveTerm-1 || !n.membership.Equal(roundMembership)
 	won := !stale && roundMembership.HasQuorum(granted)
@@ -1171,11 +1171,11 @@ func (n *Node) StartElection(ctx context.Context) error {
 
 // applyPreVoteResponse validates a PreVote response before counting it in
 // this round's local granted tally. A higher ACTUAL term in the response
-// is real evidence this node is behind — unlike merely receiving a
+// is real evidence this node is behind -- unlike merely receiving a
 // request for a higher prospective term, this is processed exactly like
 // any other higher-term evidence (persist, clear votedFor, step down);
 // PreVote must not suppress genuine higher-term information (item 21/90).
-// granted is this one round's local map (see StartElection) — n.mu here
+// granted is this one round's local map (see StartElection) -- n.mu here
 // only serializes concurrent writes to it from multiple response
 // goroutines, the same map is never touched outside this round.
 func (n *Node) applyPreVoteResponse(from NodeID, resp PreVoteResponse, granted map[NodeID]bool) {
@@ -1200,7 +1200,7 @@ func (n *Node) applyPreVoteResponse(from NodeID, resp PreVoteResponse, granted m
 // Shared by two callers with different authorization: StartElection,
 // only after its own PreVote round reaches quorum, and an authorized
 // TimeoutNow-triggered leadership-transfer election (see
-// HandleTimeoutNow), which deliberately bypasses PreVote entirely — the
+// HandleTimeoutNow), which deliberately bypasses PreVote entirely -- the
 // current leader has already authorized the transfer, so there is no
 // disruption risk PreVote needs to guard against here (see
 // docs/leadership-transfer.md).
@@ -1296,7 +1296,7 @@ func (n *Node) applyVoteResponse(electionTerm Term, from NodeID, resp RequestVot
 
 // HandlePreVote implements the Raft PreVote RPC handler. Unlike
 // HandleRequestVote, it never mutates persistent state and never resets
-// the election timer — a PreVote request is not evidence a valid leader
+// the election timer -- a PreVote request is not evidence a valid leader
 // exists, so receiving one must not be treated as leader contact (see
 // docs/raft-election.md). The returned Term is always this node's actual
 // current term, never a claim about having entered ProspectiveTerm.
@@ -1334,15 +1334,15 @@ func (n *Node) HandlePreVote(req PreVoteRequest) (PreVoteResponse, error) {
 // the exact leader/term this node currently recognizes, and only if this
 // node is itself an effective voter; a genuinely higher term in the
 // request is still processed as ordinary higher-term evidence first
-// (persist, clear votedFor, step down — the same as every other RPC
+// (persist, clear votedFor, step down -- the same as every other RPC
 // handler), but that alone never authorizes a campaign: stepping down
 // clears leaderID, so the identity check below will then correctly fail
 // for a request that turns out not to be from a leader this node
-// actually recognized at that term (item 113) — no separate special case
+// actually recognized at that term (item 113) -- no separate special case
 // is needed to prevent an arbitrary higher-term peer from forcing a
 // campaign this way.
 //
-// Once accepted, the real election (bypassing PreVote — see
+// Once accepted, the real election (bypassing PreVote -- see
 // startRealElection) is kicked off in the background so this RPC itself
 // returns promptly; Accepted=true means only that an election attempt
 // was started, not that it will succeed (see leadership_transfer.go for
@@ -1393,7 +1393,7 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 	} else if n.role != Follower {
 		// Same term, valid leader contact: another leader already exists
 		// for this term, so a Candidate or (in principle) a Leader must
-		// step down — without changing term/vote.
+		// step down -- without changing term/vote.
 		n.stepToFollowerLocked()
 	}
 
@@ -1402,7 +1402,7 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 	// since the sender is still that leader and a rejection here isn't a
 	// reason for this follower to start its own election. Track who it
 	// is, too, and record it as the leader-contact evidence PreVote's
-	// safeguard relies on (see hasRecentLeaderContactLocked) — a
+	// safeguard relies on (see hasRecentLeaderContactLocked) -- a
 	// leadership-transfer waiter may also be watching for this exact
 	// contact as evidence its target became leader (see
 	// leadership_transfer.go).
@@ -1441,11 +1441,11 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 			// Configuration entry (this follower's effective membership
 			// must revert to whatever preceded it), and/or the newly
 			// appended suffix may carry one (which must activate
-			// immediately) — either way, re-derive from scratch.
+			// immediately) -- either way, re-derive from scratch.
 			n.rebuildMembershipLocked()
 		}
 		// If conflictAt stays 0, every incoming entry already matched the
-		// local log — an idempotent retransmission — so no write happens.
+		// local log -- an idempotent retransmission -- so no write happens.
 	}
 
 	lastNewIndex := req.PrevLogIndex + LogIndex(len(req.Entries))
@@ -1475,7 +1475,7 @@ func (n *Node) HandleAppendEntries(req AppendEntriesRequest) (AppendEntriesRespo
 // maybeAdvanceCommitIndexLocked implements Raft's commit rule: commitIndex
 // may advance to N only if a majority (including self) has matchIndex >=
 // N AND log[N].term == currentTerm. An entry from an older term is never
-// committed by majority replication alone — it can only become committed
+// committed by majority replication alone -- it can only become committed
 // as a side effect of committing a later current-term entry. Must be
 // called with n.mu held.
 func (n *Node) maybeAdvanceCommitIndexLocked() {
@@ -1494,8 +1494,8 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 		if n.membership.HasQuorum(acked) {
 			// N is already logically committed cluster-wide (a majority
 			// has it) regardless of what happens next. But this node must
-			// not treat that as *durably recorded* — and so must not let
-			// application/client-visible success advance past it — until
+			// not treat that as *durably recorded* -- and so must not let
+			// application/client-visible success advance past it -- until
 			// persisting the new commitIndex here succeeds. On failure,
 			// leave commitIndex unchanged and let the next trigger retry;
 			// do not claim N became uncommitted.
@@ -1515,7 +1515,7 @@ func (n *Node) maybeAdvanceCommitIndexLocked() {
 }
 
 // stepDownIfNoLongerVoterLocked converts a Leader to a passive Follower
-// once its own committed final Stable configuration entry excludes it —
+// once its own committed final Stable configuration entry excludes it --
 // self-removal (see RemoveVoter) is allowed to complete with this leader
 // still leading right up until that point, but the moment the removal is
 // truly final it must stop heartbeating/leading rather than continuing to
@@ -1535,7 +1535,7 @@ func (n *Node) stepDownIfNoLongerVoterLocked() {
 // itself: a wake causes each worker to run one replicationStep, which
 // naturally sends a heartbeat (an AppendEntries with no entries) for a
 // peer that is already caught up, or continues real catch-up progress
-// for one that isn't — either way this is what actually provides
+// for one that isn't -- either way this is what actually provides
 // leader-authority renewal, follower election-timer resets, and
 // commit-index propagation at heartbeatInterval granularity. The
 // initial wake on becoming Leader (or on a peer newly entering the
@@ -1562,15 +1562,15 @@ func (n *Node) heartbeatLoop(ctx context.Context) {
 
 // Propose admits command into this node's proposal queue and blocks
 // until it has been durably persisted to the local log (or definitively
-// failed) — see proposal.go. Concurrent Propose calls may share one
+// failed) -- see proposal.go. Concurrent Propose calls may share one
 // durable Log.Append with each other (batching), but each still only
 // returns once ITS entry specifically is durable; it does not wait for
-// commitment or application — pass the returned (index, term) to
+// commitment or application -- pass the returned (index, term) to
 // WaitApplied for that.
 //
 // Propose fails with ErrReservedCommand if command is empty (a
 // zero-length command is reserved for Raft's own internal current-term
-// barrier no-op — see read_index.go — appended directly, never through
+// barrier no-op -- see read_index.go -- appended directly, never through
 // this path), with ErrBackpressure if the queue is already at its
 // configured count/byte bound, with ErrNodeClosed if the node is closed
 // before or while this proposal is queued, with ErrNotLeader if this
@@ -1622,7 +1622,7 @@ func (n *Node) LastLogIndex() LogIndex {
 }
 
 // SnapshotBoundary returns the index/term of the most recent entry
-// covered by a snapshot (the log's compaction boundary) — (0, 0) if
+// covered by a snapshot (the log's compaction boundary) -- (0, 0) if
 // this node has never compacted. For operational status reporting; not
 // used by any consensus decision.
 func (n *Node) SnapshotBoundary() (LogIndex, Term) {

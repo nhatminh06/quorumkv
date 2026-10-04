@@ -10,13 +10,13 @@ import (
 )
 
 // handleAdmin decodes and dispatches one operational admin request (see
-// internal/adminproto) — status inspection, snapshot creation,
+// internal/adminproto) -- status inspection, snapshot creation,
 // leadership transfer, and voter add/remove. Every operation beyond
 // OpStatus goes straight through the corresponding real raft.Node method
 // (Node.CreateSnapshot, Node.TransferLeadership, Node.AddVoter,
 // Node.RemoveVoter): this is a thin wire wrapper, not a second
 // implementation. Unauthenticated, like the client protocol it shares a
-// connection with — see docs/operations.md.
+// connection with -- see docs/operations.md.
 func (s *Service) handleAdmin(ctx context.Context, m transport.Message) (transport.Message, error) {
 	req, err := adminproto.DecodeRequest(m.Payload)
 	if err != nil {
@@ -63,8 +63,8 @@ func (s *Service) adminNotLeaderResponse() adminproto.Response {
 
 // adminStatus is intentionally NOT gated on leadership: an operator must
 // be able to inspect a follower (or a candidate) too, not just the
-// leader. It is read-only observational metadata — see StatusInfo's own
-// doc comment — never a linearizable read: no ReadIndex, no quorum
+// leader. It is read-only observational metadata -- see StatusInfo's own
+// doc comment -- never a linearizable read: no ReadIndex, no quorum
 // round trip, no mutation of term/log/membership/commit/timers.
 func (s *Service) adminStatus() adminproto.Response {
 	status := s.node.MembershipStatus()
@@ -176,11 +176,11 @@ func (s *Service) logAdmin(event string, args ...any) {
 }
 
 // adminErrorResponse maps a real raft.Node error to the admin protocol's
-// small fixed status set — never a raw error string over the wire (same
+// small fixed status set -- never a raw error string over the wire (same
 // discipline as clientproto). A context deadline/cancellation, or any
 // error this mapping doesn't specifically recognize, becomes
 // StatusTimeout: the underlying operation's outcome is not necessarily
-// negative, just unconfirmed — see docs/runbook-membership.md and
+// negative, just unconfirmed -- see docs/runbook-membership.md and
 // docs/runbook-leadership-transfer.md on why that must not be
 // auto-retried blindly.
 func adminErrorResponse(err error) adminproto.Response {

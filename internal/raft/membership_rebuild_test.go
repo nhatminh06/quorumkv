@@ -4,7 +4,7 @@ import "testing"
 
 // appendConfigEntry appends a raw EntryConfiguration log entry encoding m,
 // at the current term, without going through any membership-change API
-// (which doesn't exist yet at the point these mechanics are exercised) —
+// (which doesn't exist yet at the point these mechanics are exercised) --
 // a direct, white-box way to test rebuildMembershipLocked's walk.
 func appendConfigEntry(t *testing.T, n *Node, term Term, m Membership) LogIndex {
 	t.Helper()
@@ -24,8 +24,8 @@ func appendConfigEntry(t *testing.T, n *Node, term Term, m Membership) LogIndex 
 }
 
 // TestRebuildActivatesJointBeforeCommit proves a Joint configuration
-// entry takes effect as soon as it is locally appended — before it ever
-// commits — per the spec's "derive from local log" rule (item 29).
+// entry takes effect as soon as it is locally appended -- before it ever
+// commits -- per the spec's "derive from local log" rule (item 29).
 func TestRebuildActivatesJointBeforeCommit(t *testing.T) {
 	n := newTestNode(t, 1, PersistentState{CurrentTerm: 1}, map[NodeID]string{2: "B", 3: "C"})
 	joint := JointMembership(cfg(1, 2, 3), cfg(1, 2, 3, 4))
@@ -82,7 +82,7 @@ func TestRebuildKeepsJointQuorumUntilFinalStableCommits(t *testing.T) {
 
 // TestRebuildRevertsOnTruncation proves an uncommitted Joint entry that
 // gets overwritten by conflict repair (log truncation) is no longer
-// reflected in effective membership — it reverts to whatever preceded it.
+// reflected in effective membership -- it reverts to whatever preceded it.
 func TestRebuildRevertsOnTruncation(t *testing.T) {
 	n := newTestNode(t, 1, PersistentState{CurrentTerm: 1}, map[NodeID]string{2: "B", 3: "C"})
 	joint := JointMembership(cfg(1, 2, 3), cfg(1, 2, 3, 4))

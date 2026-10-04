@@ -12,7 +12,7 @@ import (
 // --- Reserved empty-command no-op ---
 
 // TestProposeRejectsEmptyCommand is item 102: an external/internal normal
-// call to Propose with an empty command must fail — only the internal
+// call to Propose with an empty command must fail -- only the internal
 // barrier path (ensureCurrentTermCommitted) may append one.
 func TestProposeRejectsEmptyCommand(t *testing.T) {
 	n := newFakeNode(t, 1, nil)
@@ -126,7 +126,7 @@ func TestNoOpApplyDoesNotCallApplyFunc(t *testing.T) {
 
 // TestNoOpSurvivesRestart is item 45: a persisted no-op at index 1 and an
 // ordinary command at index 2, both committed, must both replay correctly
-// after restart — no decode failure on the no-op, lastApplied reaches 2,
+// after restart -- no decode failure on the no-op, lastApplied reaches 2,
 // and the ordinary command's effect is present.
 func TestNoOpSurvivesRestart(t *testing.T) {
 	dir := t.TempDir()
@@ -255,7 +255,7 @@ func TestBarrierNotNeededAfterExistingCurrentTermWrite(t *testing.T) {
 		t.Fatalf("ensureCurrentTermCommitted: %v", err)
 	}
 	if n.LastLogIndex() != before {
-		t.Fatalf("LastLogIndex() = %d, want unchanged %d — no barrier should have been appended", n.LastLogIndex(), before)
+		t.Fatalf("LastLogIndex() = %d, want unchanged %d -- no barrier should have been appended", n.LastLogIndex(), before)
 	}
 }
 
@@ -349,7 +349,7 @@ func TestReadIndexOneFollowerDownStillQuorum(t *testing.T) {
 }
 
 // TestReadIndexBothFollowersDownNoQuorum is item 40: with both followers
-// unreachable, a leader cannot confirm quorum — ReadIndex must fail
+// unreachable, a leader cannot confirm quorum -- ReadIndex must fail
 // (bounded), never return stale success.
 func TestReadIndexBothFollowersDownNoQuorum(t *testing.T) {
 	a, _, _, net := setupThreeNodeFakeCluster(t)
@@ -437,7 +437,7 @@ func TestBarrierNoQuorumNoOpDoesNotApply(t *testing.T) {
 		t.Fatalf("ReadIndex succeeded despite no quorum for the barrier")
 	}
 	if a.CommitIndex() != before {
-		t.Fatalf("CommitIndex() = %d, want unchanged %d — an uncommitted no-op must never advance it", a.CommitIndex(), before)
+		t.Fatalf("CommitIndex() = %d, want unchanged %d -- an uncommitted no-op must never advance it", a.CommitIndex(), before)
 	}
 	if a.LastApplied() != before {
 		t.Fatalf("LastApplied() = %d, want unchanged %d", a.LastApplied(), before)
@@ -493,7 +493,7 @@ func TestReadProbeDoesNotModifyReplicationState(t *testing.T) {
 
 // TestReadQuorumWithLogMismatchedFollower is item 96: a follower whose
 // log doesn't match the leader's probe prevLogIndex/prevLogTerm still
-// counts toward read quorum (Success=false, but same term/context) —
+// counts toward read quorum (Success=false, but same term/context) --
 // replication success is not required for leadership confirmation.
 func TestReadQuorumWithLogMismatchedFollower(t *testing.T) {
 	a, b, c, net := setupThreeNodeFakeCluster(t)
@@ -509,7 +509,7 @@ func TestReadQuorumWithLogMismatchedFollower(t *testing.T) {
 		t.Fatalf("B did not catch up")
 	}
 	// Roll B's log back so it no longer matches A's PrevLogIndex/Term for
-	// the probe — B will answer Success=false.
+	// the probe -- B will answer Success=false.
 	b.mu.Lock()
 	b.log.TruncateAndAppend(1, nil)
 	b.mu.Unlock()
@@ -532,7 +532,7 @@ func TestReadQuorumWithLogMismatchedFollower(t *testing.T) {
 // value. A's own periodic heartbeat loop is also live and independently
 // probing B/C every ~50ms, so it may itself observe B's forced higher
 // term and step A down before this test's own explicit ReadIndex call's
-// probe responses are processed — either path is a correct instance of
+// probe responses are processed -- either path is a correct instance of
 // the same safety property, so this asserts the property (ReadIndex
 // fails; A eventually steps down to at least B's term), not which
 // specific code path won the race.
@@ -575,7 +575,7 @@ func TestReadIndexContextCancelDuringProbe(t *testing.T) {
 	defer a.Close() // drain any leftover early-quorum-return probe goroutines before other nodes' cleanup Close runs
 
 	// Install a sender that hangs until ctx is canceled or the test
-	// releases it, in place of fakeNetwork's default — installed before
+	// releases it, in place of fakeNetwork's default -- installed before
 	// StartElection (and thus before the heartbeat loop starts reading
 	// n.sendAppend concurrently) so there is no race on the swap itself.
 	// This also means the barrier no-op ReadIndex needs can never
@@ -645,7 +645,7 @@ func TestReadIndexUnblocksOnNodeClose(t *testing.T) {
 			t.Fatalf("ReadIndex succeeded despite Close")
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("ReadIndex did not unblock after Close — goroutine/waiter leak")
+		t.Fatalf("ReadIndex did not unblock after Close -- goroutine/waiter leak")
 	}
 }
 
@@ -709,7 +709,7 @@ func TestBarrierRecognizesSnapshotBoundaryAsCurrentTermCommit(t *testing.T) {
 		t.Fatalf("ReadIndex: %v", err)
 	}
 	if sn.log.LastIndex() != before {
-		t.Fatalf("LastIndex() = %d, want unchanged %d — no redundant no-op should have been appended", sn.log.LastIndex(), before)
+		t.Fatalf("LastIndex() = %d, want unchanged %d -- no redundant no-op should have been appended", sn.log.LastIndex(), before)
 	}
 	if idx != before {
 		t.Fatalf("ReadIndex() = %d, want %d", idx, before)
@@ -718,7 +718,7 @@ func TestBarrierRecognizesSnapshotBoundaryAsCurrentTermCommit(t *testing.T) {
 
 // TestBarrierAfterFailoverPastSnapshotBoundary is item 99: a new leader
 // whose only committed history is a snapshot from an OLDER term must
-// establish a new-term barrier before ReadIndex succeeds — the old
+// establish a new-term barrier before ReadIndex succeeds -- the old
 // snapshot term does not satisfy the current-term requirement.
 func TestBarrierAfterFailoverPastSnapshotBoundary(t *testing.T) {
 	sn := newSnapshottingNode(t, 1, nil)
@@ -733,7 +733,7 @@ func TestBarrierAfterFailoverPastSnapshotBoundary(t *testing.T) {
 		t.Fatalf("CreateSnapshot: %v", err)
 	}
 
-	// Force this node to a higher term without any new committed entry —
+	// Force this node to a higher term without any new committed entry --
 	// as if it had lost and regained leadership.
 	sn.mu.Lock()
 	newTerm := oldTerm + 3
@@ -756,7 +756,7 @@ func TestBarrierAfterFailoverPastSnapshotBoundary(t *testing.T) {
 		t.Fatalf("ReadIndex: %v", err)
 	}
 	if sn.log.LastIndex() != before+1 {
-		t.Fatalf("LastIndex() = %d, want %d — a new-term barrier no-op should have been appended", sn.log.LastIndex(), before+1)
+		t.Fatalf("LastIndex() = %d, want %d -- a new-term barrier no-op should have been appended", sn.log.LastIndex(), before+1)
 	}
 	if term, ok := sn.log.Term(idx); !ok || term != newTerm {
 		t.Fatalf("Term(readIndex) = (%d, %v), want (%d, true)", term, ok, newTerm)

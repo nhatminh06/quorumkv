@@ -8,12 +8,12 @@ import (
 )
 
 // AppendEntriesRequest is the Raft AppendEntries RPC. A heartbeat is an
-// AppendEntriesRequest with zero Entries — there is no separate heartbeat
+// AppendEntriesRequest with zero Entries -- there is no separate heartbeat
 // RPC.
 //
 // ReadContext (since Milestone 8) is 0 for ordinary replication/heartbeat
 // traffic. A leader confirming ReadIndex quorum sends a non-zero
-// ReadContext on an otherwise-normal, entries-free AppendEntries — see
+// ReadContext on an otherwise-normal, entries-free AppendEntries -- see
 // docs/read-index.md.
 type AppendEntriesRequest struct {
 	Term         Term
@@ -28,13 +28,13 @@ type AppendEntriesRequest struct {
 // AppendEntriesResponse is the Raft AppendEntries RPC response.
 // MatchIndex is only meaningful when Success is true, where it reports
 // the highest index this follower now has that matches the leader's log
-// as of this request (prevLogIndex + len(entries)) — the leader uses it
+// as of this request (prevLogIndex + len(entries)) -- the leader uses it
 // to advance matchIndex/nextIndex directly on success. On failure this
 // milestone relies on simple nextIndex-- backtracking rather than a
 // conflict-index hint, so MatchIndex is 0 and unused.
 //
 // ReadContext (since Milestone 8) always echoes the request's
-// ReadContext, even when Success is false due to a log-prefix mismatch —
+// ReadContext, even when Success is false due to a log-prefix mismatch --
 // log replication success and ReadIndex quorum confirmation are different
 // properties; a current-term response from a live peer proves the latter
 // regardless of the former. See docs/read-index.md.
@@ -47,7 +47,7 @@ type AppendEntriesResponse struct {
 
 // maxEntriesPerAppend bounds how many log entries a single AppendEntries
 // RPC may carry. This is a count-only safety ceiling, not a claim that a
-// batch at this count is small in bytes — see MaxAppendEntriesBytes and
+// batch at this count is small in bytes -- see MaxAppendEntriesBytes and
 // EntriesRange for the actual byte-accurate bound a leader constructs a
 // replication batch against; this constant only stops a decoder from
 // ever having to allocate for an unbounded entry count (see
@@ -69,7 +69,7 @@ const perEntryHeaderSize = 8 + 1 + 4
 
 // MaxAppendEntriesBytes is the encoded-byte target a leader constructs a
 // normal replication batch against (see Log.EntriesRange, used by
-// replication_worker.go) — deliberately well below
+// replication_worker.go) -- deliberately well below
 // maxAppendEntriesEncodedSize (the hard ceiling EncodeAppendEntries
 // itself enforces) so a single valid maxCommandSize entry can always
 // still be sent alone even though it alone exceeds this target (see
@@ -78,7 +78,7 @@ const MaxAppendEntriesBytes = 512 * 1024
 
 // maxAppendEntriesEncodedSize is the hard ceiling EncodeAppendEntries
 // enforces: comfortably below transport.MaxPayloadSize (the actual wire
-// limit — AppendEntries' encoded bytes ARE the transport.Message
+// limit -- AppendEntries' encoded bytes ARE the transport.Message
 // payload directly, with no additional framing inside that bound) so a
 // request built from the byte-accurate EntriesRange/MaxAppendEntriesBytes
 // budget above never comes anywhere near this, and a corrupt/malicious
@@ -88,7 +88,7 @@ const MaxAppendEntriesBytes = 512 * 1024
 const maxAppendEntriesEncodedSize = transport.MaxPayloadSize - 64*1024
 
 // encodedEntrySize is the one place that computes how many wire bytes
-// one LogEntry contributes to an AppendEntries payload — reused by both
+// one LogEntry contributes to an AppendEntries payload -- reused by both
 // EncodeAppendEntries (encoding) and Log.EntriesRange (deciding how many
 // entries to include before ever encoding anything), so there is a
 // single source of size truth rather than two independently-maintained

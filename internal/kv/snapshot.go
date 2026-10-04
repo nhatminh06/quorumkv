@@ -15,7 +15,7 @@ import (
 // internal/raft). The state machine's internal maps have no defined
 // iteration order, so encoding sorts KV keys lexicographically by raw
 // bytes, and (since Milestone 9) client dedup records lexicographically
-// by ClientID — two calls to Snapshot on machines with identical state,
+// by ClientID -- two calls to Snapshot on machines with identical state,
 // built via different insertion orders, always produce byte-identical
 // output.
 //
@@ -27,7 +27,7 @@ import (
 // compacted away.
 //
 //   - version 1 (snapshotVersion1): the original Milestone 7 shape, KV
-//     entries only. Restore still reads this correctly — an old snapshot
+//     entries only. Restore still reads this correctly -- an old snapshot
 //     simply starts with an empty dedup table.
 //   - version 2 (snapshotVersion2): KV entries, then the dedup table.
 //     Snapshot always produces this now (even with an empty dedup
@@ -41,7 +41,7 @@ const (
 // MaxSnapshotSize bounds the total encoded snapshot payload.
 // MaxSnapshotEntries bounds the number of key/value pairs, and (since
 // Milestone 9) MaxSnapshotClients separately bounds the number of client
-// dedup records — the two grow independently (see docs/request-dedup.md
+// dedup records -- the two grow independently (see docs/request-dedup.md
 // on the dedup table's own size being bounded by distinct known
 // ClientIDs, not by request volume). All three are checked before
 // allocation; MaxSnapshotSize is the primary protection, the entry/client
@@ -63,7 +63,7 @@ const snapshotEntryHeaderSize = 4 + 4
 const snapshotClientCountSize = 4
 
 // snapshotClientRecordSize: clientID(16) + lastSequence(8) +
-// fingerprint(32) + result(1), per client dedup record — a fixed size,
+// fingerprint(32) + result(1), per client dedup record -- a fixed size,
 // unlike a KV entry, since none of its fields are variable-length.
 const snapshotClientRecordSize = 16 + 8 + 32 + 1
 
@@ -135,7 +135,7 @@ func (m *StateMachine) Snapshot() ([]byte, error) {
 // Restore replaces the current state (KV contents and, for a version-2
 // snapshot, the dedup table) with the state encoded in data. It decodes
 // and validates the entire payload into fresh structures first and only
-// swaps them in once decoding fully succeeds — a malformed payload never
+// swaps them in once decoding fully succeeds -- a malformed payload never
 // partially mutates existing state. Declared lengths/counts are
 // validated against their respective bounds before allocation.
 func (m *StateMachine) Restore(data []byte) error {

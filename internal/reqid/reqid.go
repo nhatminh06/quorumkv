@@ -25,13 +25,13 @@ import (
 type ClientID [16]byte
 
 // Sequence is a per-ClientID monotonic write counter. 0 is reserved as
-// "invalid/unassigned" — never a legal sequence for an identified write.
+// "invalid/unassigned" -- never a legal sequence for an identified write.
 // The first real write from a ClientID uses Sequence 1.
 type Sequence uint64
 
 // Fingerprint is a deterministic digest of one logical operation (see
 // internal/kv's Fingerprint function), used to detect a client reusing
-// the same (ClientID, Sequence) for two different operations — a client
+// the same (ClientID, Sequence) for two different operations -- a client
 // bug, not a legitimate retry.
 type Fingerprint [32]byte
 
@@ -44,7 +44,7 @@ var ErrSequenceExhausted = errors.New("reqid: client sequence space exhausted")
 // NewClientID generates a fresh, cryptographically random ClientID.
 // crypto/rand (not math/rand, not a timestamp, not a PID) is used because
 // identity collisions across independently created clients must be
-// negligibly unlikely — not because ClientID is a secret.
+// negligibly unlikely -- not because ClientID is a secret.
 func NewClientID() (ClientID, error) {
 	var id ClientID
 	if _, err := rand.Read(id[:]); err != nil {
@@ -54,13 +54,13 @@ func NewClientID() (ClientID, error) {
 }
 
 // IsZero reports whether id is the all-zero ClientID, which is reserved
-// as invalid/uninitialized — never a legal identity for an identified
+// as invalid/uninitialized -- never a legal identity for an identified
 // write (see internal/kv's command codec and docs/request-dedup.md).
 func (id ClientID) IsZero() bool {
 	return id == ClientID{}
 }
 
-// String renders id as lowercase hex, for logging/debugging only — never
+// String renders id as lowercase hex, for logging/debugging only -- never
 // parsed back, never part of any wire/persistent format.
 func (id ClientID) String() string {
 	return hex.EncodeToString(id[:])

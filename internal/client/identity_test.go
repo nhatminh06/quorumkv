@@ -47,7 +47,7 @@ func TestNewWithIDRejectsZeroID(t *testing.T) {
 
 // TestSequenceAdvancesOnlyAfterSuccess proves the client allocates a
 // sequence for a logical operation and only advances past it once that
-// operation reaches a successful terminal outcome — never merely because
+// operation reaches a successful terminal outcome -- never merely because
 // request bytes were sent.
 func TestSequenceAdvancesOnlyAfterSuccess(t *testing.T) {
 	var seen []clientproto.Request
@@ -148,7 +148,7 @@ func TestConcurrentWritesFromOneClientAreSerializedWithUniqueSequences(t *testin
 		t.Fatalf("server saw %d requests, want %d", len(order), n)
 	}
 	// Since writes are serialized, the sequences the server observed must
-	// be exactly 1..n, in that order — proving both uniqueness and
+	// be exactly 1..n, in that order -- proving both uniqueness and
 	// ordering, not merely a set of distinct values.
 	for i, seq := range order {
 		want := reqid.Sequence(i + 1)

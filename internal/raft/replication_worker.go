@@ -6,11 +6,11 @@ import (
 
 // replicationWorker is the volatile runtime scheduling state for one
 // replication target: a coalescing wake signal and the cancel func for
-// its own goroutine's context (a child of the current leaderCtx — see
+// its own goroutine's context (a child of the current leaderCtx -- see
 // becomeLeaderLocked/stepToFollowerLocked, which is why losing
 // leadership alone is enough to stop every worker with no separate
 // bookkeeping). Never persisted; reconciled fresh against
-// n.membership.Targets on every rebuildMembershipLocked — see
+// n.membership.Targets on every rebuildMembershipLocked -- see
 // reconcileReplicationWorkersLocked.
 type replicationWorker struct {
 	// wakeCh is buffered 1: multiple wake reasons arriving before the
@@ -23,11 +23,11 @@ type replicationWorker struct {
 
 // reconcileReplicationWorkersLocked starts a worker for every current
 // replication target that doesn't already have one, and stops (cancels,
-// removes) every worker for a peer no longer among them — the only
+// removes) every worker for a peer no longer among them -- the only
 // place replication worker lifecycle is decided. Called from
 // becomeLeaderLocked (initial set) and from the end of
 // rebuildMembershipLocked (every membership change, including a
-// just-appended not-yet-committed Joint entry — a new voter must start
+// just-appended not-yet-committed Joint entry -- a new voter must start
 // catching up immediately, not only once its entry commits). A no-op
 // while not Leader. Must be called with n.mu held.
 func (n *Node) reconcileReplicationWorkersLocked() {
@@ -68,7 +68,7 @@ func (n *Node) reconcileReplicationWorkersLocked() {
 }
 
 // wakeNow performs the non-blocking, coalescing send every wake site
-// uses: if the channel already has a pending wake, this is a no-op —
+// uses: if the channel already has a pending wake, this is a no-op --
 // the worker will observe current state when it next runs regardless of
 // how many wake reasons fired in the meantime (item 19/20).
 func wakeNow(ch chan struct{}) {
@@ -78,7 +78,7 @@ func wakeNow(ch chan struct{}) {
 	}
 }
 
-// wakeAllReplicationLocked wakes every current replication worker —
+// wakeAllReplicationLocked wakes every current replication worker --
 // used after any local log mutation (a proposal batch, a configuration
 // entry, the ReadIndex no-op barrier) and by the heartbeat ticker. Must
 // be called with n.mu held.
@@ -91,11 +91,11 @@ func (n *Node) wakeAllReplicationLocked() {
 // replicationWorkerLoop is one peer's entire replication schedule for as
 // long as ctx is alive: block for a wake reason, then repeatedly step
 // (send one bounded batch, apply its response) for as long as each step
-// reports more work remains, with no wait in between (item 21) — only
+// reports more work remains, with no wait in between (item 21) -- only
 // once a step reports the peer is caught up (or ctx ends, or a
 // send/step aborts) does it go back to waiting for the next wake. There
 // is deliberately no other loop anywhere that keeps sending to this
-// peer — heartbeatLoop only wakes workers, it does not send RPCs
+// peer -- heartbeatLoop only wakes workers, it does not send RPCs
 // itself.
 func (n *Node) replicationWorkerLoop(ctx context.Context, id NodeID, wakeCh chan struct{}) {
 	defer n.bgWG.Done()
@@ -117,8 +117,8 @@ func (n *Node) replicationWorkerLoop(ctx context.Context, id NodeID, wakeCh chan
 }
 
 // replicationStep performs exactly one bounded unit of replication work
-// for id — either one AppendEntries batch or one InstallSnapshot
-// chunk-loop transfer — and reports whether the caller should
+// for id -- either one AppendEntries batch or one InstallSnapshot
+// chunk-loop transfer -- and reports whether the caller should
 // immediately step again (more work is known to remain) or go back to
 // waiting for a wake. It never sends network I/O while holding n.mu
 // (item 24): request state is captured under lock, sent unlocked, and
@@ -150,7 +150,7 @@ func (n *Node) replicationStep(ctx context.Context, id NodeID) bool {
 		if n.snapshotSending[id] {
 			// A transfer is already in flight for this peer from a
 			// previous step (sendSnapshotToPeer runs its own full
-			// chunk loop before returning) — should not normally
+			// chunk loop before returning) -- should not normally
 			// happen given the worker is single-flight per peer, but
 			// defensively avoid starting a second one.
 			n.mu.Unlock()
@@ -239,7 +239,7 @@ func (n *Node) matchIndexForMetrics(id NodeID) LogIndex {
 // applyReplicationResponse validates and applies one AppendEntries
 // response, returning whether the worker should immediately step again.
 // A response is only ever allowed to mutate nextIndex/matchIndex if it
-// is still for the current role/term/generation for this peer — a
+// is still for the current role/term/generation for this peer -- a
 // higher term steps this node down (affecting every peer, handled once
 // here); anything else stale (older term, older generation, peer no
 // longer a target) is discarded with no effect, exactly like a response
@@ -287,7 +287,7 @@ func (n *Node) applyReplicationResponse(id NodeID, sentTerm Term, sentGeneration
 	}
 
 	// Failure: the assumed prefix was wrong. Back off by one (this
-	// package's existing simple conflict-repair strategy — no second
+	// package's existing simple conflict-repair strategy -- no second
 	// algorithm invented here) and invalidate the generation so any
 	// other still-in-flight speculative response for the old assumption
 	// can never apply itself afterward.

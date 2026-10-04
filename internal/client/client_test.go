@@ -56,8 +56,8 @@ func TestClientFollowsSingleRedirect(t *testing.T) {
 
 // TestClientWriteRedirectLoopIsBoundedByContext is item 56: unlike the
 // old read-style redirect chase (bounded by a fixed attempt count), a
-// write's redirect/retry loop is deliberately unbounded in attempts —
-// bounded only by ctx — because a retried write is now safe (same
+// write's redirect/retry loop is deliberately unbounded in attempts --
+// bounded only by ctx -- because a retried write is now safe (same
 // request identity, server-side dedup). A and B perpetually redirecting
 // to each other must not hang past ctx, and must not succeed.
 func TestClientWriteRedirectLoopIsBoundedByContext(t *testing.T) {
@@ -97,7 +97,7 @@ func TestClientWriteRedirectLoopIsBoundedByContext(t *testing.T) {
 
 // TestClientRetriesWriteAfterTransportFailureWithSameIdentity is items
 // 55/59/94/97: a PUT that fails at the transport level is now safely
-// retried (never true for the old conservative behavior) — and every
+// retried (never true for the old conservative behavior) -- and every
 // retry must carry the exact same ClientID/Sequence (item 59's mandatory
 // rule), never a freshly allocated one.
 func TestClientRetriesWriteAfterTransportFailureWithSameIdentity(t *testing.T) {
@@ -137,8 +137,8 @@ func TestClientRetriesWriteAfterTransportFailureWithSameIdentity(t *testing.T) {
 }
 
 // TestClientWriteRetriesNotLeaderWithoutHint proves a write facing a
-// NOT_LEADER response with no hint (e.g. mid-election) retries — rather
-// than ending after one seed pass as GET does — bounded by ctx.
+// NOT_LEADER response with no hint (e.g. mid-election) retries -- rather
+// than ending after one seed pass as GET does -- bounded by ctx.
 func TestClientWriteRetriesNotLeaderWithoutHint(t *testing.T) {
 	var calls atomic.Int64
 	tr := startFakeServer(t, func(req clientproto.Request) clientproto.Response {

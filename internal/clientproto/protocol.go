@@ -1,6 +1,6 @@
 // Package clientproto defines the bounded binary wire protocol clients use
 // to send PUT/GET/DELETE requests to a QuorumKV node and receive
-// responses. It knows nothing about Raft or the KV state machine — it
+// responses. It knows nothing about Raft or the KV state machine -- it
 // only defines request/response bytes; package service decodes/dispatches
 // them. Payloads travel inside a transport.Message (MessageClientRequest/
 // MessageClientResponse), whose frame already carries a CRC32C over the
@@ -10,7 +10,7 @@
 //
 // Since Milestone 9, a PUT/DELETE request carries a request identity
 // (ClientID, Sequence) so a leader can recognize and safely suppress a
-// retried write's second effect — see docs/request-dedup.md. This is a
+// retried write's second effect -- see docs/request-dedup.md. This is a
 // protocol version bump (protocolVersion 1 -> 2), not an additive/
 // optional field: an old Milestone 1-8 client cannot talk to this
 // server, and vice versa. That compatibility was never promised.
@@ -33,7 +33,7 @@ const (
 	MaxKeySize   = 64 * 1024
 	MaxValueSize = 200 * 1024
 	// MaxLeaderHintSize bounds a NOT_LEADER response's leader address hint
-	// (a "host:port" string) — generous for any realistic address.
+	// (a "host:port" string) -- generous for any realistic address.
 	MaxLeaderHintSize = 256
 )
 
@@ -47,7 +47,7 @@ const (
 )
 
 // Status identifies the outcome of a request. Internal Go error strings
-// are never sent over the wire — only this small fixed set of codes.
+// are never sent over the wire -- only this small fixed set of codes.
 type Status uint8
 
 const (
@@ -60,23 +60,23 @@ const (
 	// StatusStaleRequest (since Milestone 9) means a PUT/DELETE's
 	// Sequence did not match the expected next sequence for its
 	// ClientID (either behind the last applied sequence, or ahead of it
-	// by more than one) — a client/session state disagreement. Terminal:
+	// by more than one) -- a client/session state disagreement. Terminal:
 	// a client must not automatically retry this with a new sequence.
 	StatusStaleRequest
 	// StatusRequestConflict (since Milestone 9) means a PUT/DELETE
 	// reused a (ClientID, Sequence) already used for a *different*
-	// operation — invalid client behavior, not a legitimate retry.
+	// operation -- invalid client behavior, not a legitimate retry.
 	// Terminal.
 	StatusRequestConflict
 	// StatusBusy (since Milestone 13) means this node rejected the
-	// request due to bounded overload — a full proposal admission queue
+	// request due to bounded overload -- a full proposal admission queue
 	// (see raft.ErrBackpressure) or a full service-level concurrency
-	// bound — before ever touching Raft. Nothing was proposed, applied,
+	// bound -- before ever touching Raft. Nothing was proposed, applied,
 	// or otherwise made durable: a PUT/DELETE is always safe to retry
 	// with the exact same request identity (see docs/request-dedup.md),
 	// and a GET is always safe to retry as-is since it is read-only.
 	// This is purely additive to the wire format (protocolVersion is
-	// unchanged) — an old client that has never seen this value simply
+	// unchanged) -- an old client that has never seen this value simply
 	// treats it via its own default/unknown-status handling.
 	StatusBusy
 )
@@ -84,7 +84,7 @@ const (
 // Request is a client PUT/GET/DELETE request.
 //
 //	PUT:    ClientID/Sequence both set (non-zero); Key and Value both set.
-//	GET:    ClientID/Sequence both zero (reads carry no request identity —
+//	GET:    ClientID/Sequence both zero (reads carry no request identity --
 //	        see docs/request-dedup.md); Key set, Value must be empty.
 //	DELETE: ClientID/Sequence both set (non-zero); Key set, Value must be
 //	        empty.
@@ -120,7 +120,7 @@ const requestFixedHeaderSize = 1 + 1 + 16 + 8 + 4 + 4
 // EncodeRequest produces the exact wire bytes for r. All integers
 // big-endian. GET/DELETE requests must not carry a value. A PUT/DELETE
 // must carry a non-zero ClientID and non-zero Sequence (see
-// internal/reqid); a GET must carry neither — one clear, uniform rule
+// internal/reqid); a GET must carry neither -- one clear, uniform rule
 // rather than treating the identity fields as optional.
 func EncodeRequest(r Request) ([]byte, error) {
 	if len(r.Key) > MaxKeySize {

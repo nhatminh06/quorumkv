@@ -50,7 +50,7 @@ echo "--- new leader: node $new_leader ---"
 
 
 # qkv only fails over across --addr seeds on a NOT_LEADER redirect, not on
-# a connection failure — so the crashed node's address is deliberately
+# a connection failure -- so the crashed node's address is deliberately
 # left out here rather than passed and left to fail the first dial.
 echo "--- get x (expect 1, from surviving majority) ---"
 "$QKV_BIN" "${survivor_addrs[@]}" get x

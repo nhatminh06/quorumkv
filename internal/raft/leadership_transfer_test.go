@@ -39,9 +39,9 @@ func TestTransferLeadershipRejectsUnknownTarget(t *testing.T) {
 // entirely unknown NodeID is.
 func TestTransferLeadershipRejectsNonVoterTarget(t *testing.T) {
 	n := singleNodeLeader(t)
-	// Node 5 is known operationally (n.peers has a real address for it —
+	// Node 5 is known operationally (n.peers has a real address for it --
 	// e.g. a removed former voter this node hasn't forgotten how to dial)
-	// but is not in the effective Stable configuration — distinct from an
+	// but is not in the effective Stable configuration -- distinct from an
 	// entirely unknown NodeID, proving the check consults effective
 	// membership, not merely n.peers.
 	n.SetPeers(map[NodeID]string{5: "old-address"})
@@ -92,7 +92,7 @@ func TestConcurrentTransferRequestsOnlyOneSucceeds(t *testing.T) {
 	// Block replication to both targets BEFORE proposing anything: A's
 	// replication workers (see replication_worker.go) are real,
 	// persistent, and already idling-ready the instant A becomes
-	// leader — blocking after Propose returns leaves a real window where
+	// leader -- blocking after Propose returns leaves a real window where
 	// an already-woken worker completes a full (in-process, near-instant)
 	// round trip and advances matchIndex before the block ever takes
 	// effect, especially now that there is no per-round goroutine-spawn
@@ -172,7 +172,7 @@ func TestTransferLeadershipTargetAlreadyCaughtUp(t *testing.T) {
 
 // TestTransferLeadershipTargetBehindWaitsForCatchUp proves the transfer
 // waits for (and completes only after) an initially-behind target
-// actually catches up — it does not send TimeoutNow prematurely.
+// actually catches up -- it does not send TimeoutNow prematurely.
 func TestTransferLeadershipTargetBehindWaitsForCatchUp(t *testing.T) {
 	net := newFakeNetwork()
 	a := newFakeNode(t, 1, map[NodeID]string{2: "B"})
@@ -217,7 +217,7 @@ func TestTransferLeadershipTargetBehindWaitsForCatchUp(t *testing.T) {
 		t.Fatalf("B never became leader: role=%v", b.Role())
 	}
 	if b.LastLogIndex() < lastIndex {
-		t.Fatalf("B.LastLogIndex() = %d, want >= %d — B must have actually caught up before winning", b.LastLogIndex(), lastIndex)
+		t.Fatalf("B.LastLogIndex() = %d, want >= %d -- B must have actually caught up before winning", b.LastLogIndex(), lastIndex)
 	}
 }
 
@@ -251,7 +251,7 @@ func TestTransferLeadershipContextCancellationDuringCatchUp(t *testing.T) {
 	if a.Role() != Leader {
 		t.Fatalf("A.Role() = %v, want unchanged Leader after a failed catch-up", a.Role())
 	}
-	// Normal operation resumes: the freeze (if any was even set — it
+	// Normal operation resumes: the freeze (if any was even set -- it
 	// shouldn't have been, catch-up never reached Handoff) is released.
 	if _, _, err := a.Propose([]byte("y")); err != nil {
 		t.Fatalf("Propose after failed transfer: %v", err)
@@ -290,14 +290,14 @@ func TestTransferLeadershipReturnsBoundedErrorOnNodeClose(t *testing.T) {
 			t.Fatalf("err = %v, want ErrNodeClosed", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("TransferLeadership did not return after Close — leaked")
+		t.Fatalf("TransferLeadership did not return after Close -- leaked")
 	}
 }
 
 // TestMembershipChangeRejectedDuringTransfer is the mandatory pairing to
 // TestTransferLeadershipRejectsDuringJointMembership: while a leadership
 // transfer is active (catching up or already in handoff), AddVoter/
-// RemoveVoter must be rejected — only one major administrative
+// RemoveVoter must be rejected -- only one major administrative
 // transition runs at a time, in either direction.
 func TestMembershipChangeRejectedDuringTransfer(t *testing.T) {
 	net := newFakeNetwork()
@@ -314,7 +314,7 @@ func TestMembershipChangeRejectedDuringTransfer(t *testing.T) {
 	if err := a.StartElection(context.Background()); err != nil {
 		t.Fatalf("StartElection: %v", err)
 	}
-	// Block B (the transfer target) before proposing anything — see the
+	// Block B (the transfer target) before proposing anything -- see the
 	// identical fix in TestConcurrentTransferRequestsOnlyOneSucceeds: A's
 	// replication worker for B is real and already idling-ready the
 	// instant A becomes leader, so blocking only after Propose returns
@@ -354,7 +354,7 @@ func TestMembershipChangeRejectedDuringTransfer(t *testing.T) {
 
 // TestSelfRemovalDoesNotRequireLeadershipTransfer is the mandatory
 // regression check (items 82/132): Milestone 10's leader self-removal
-// remains independently valid — it never requires a prior
+// remains independently valid -- it never requires a prior
 // TransferLeadership call.
 func TestSelfRemovalDoesNotRequireLeadershipTransfer(t *testing.T) {
 	a, _, _, _, _, _, _ := threeNodeFakeClusterWithApply(t)

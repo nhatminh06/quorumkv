@@ -14,11 +14,11 @@ import (
 type link struct{ from, to NodeID }
 
 // directedNetwork dispatches RequestVote/AppendEntries directly to a
-// registered peer Node's real handler, in process — no sockets — while
+// registered peer Node's real handler, in process -- no sockets -- while
 // honoring per-directional link blocking: blocking (A, B) drops only
 // messages FROM A TO B, independent of the reverse direction. This is
 // deliberately not the same as fakeNetwork in election_test.go (which
-// blocks an address symmetrically for every sender) — Milestone 6 needs
+// blocks an address symmetrically for every sender) -- Milestone 6 needs
 // asymmetric partitions.
 type directedNetwork struct {
 	mu      sync.Mutex
@@ -85,7 +85,7 @@ func (d *directedNetwork) isBlocked(from, to NodeID) bool {
 
 // senderFor returns a RequestVote sender bound to "from": it resolves
 // the destination address back to a NodeID, checks directional blocking
-// and liveness (the target node must still be registered — i.e. not
+// and liveness (the target node must still be registered -- i.e. not
 // stopped), and only then dispatches straight to the peer's real
 // HandleRequestVote.
 func (d *directedNetwork) senderFor(from NodeID) sender {
@@ -159,8 +159,8 @@ func (d *directedNetwork) timeoutNowSenderFor(from NodeID) timeoutNowSender {
 // faultCluster is a small deterministic test harness: n nodes, each with
 // its own persistent temp directory and a fixed synthetic address, wired
 // together through a directedNetwork. Node lifecycle (stop/restart)
-// genuinely opens/closes Store/Log/CommitStore/Node — never reuses old
-// in-memory state — matching what "restart" must mean for this milestone.
+// genuinely opens/closes Store/Log/CommitStore/Node -- never reuses old
+// in-memory state -- matching what "restart" must mean for this milestone.
 type faultCluster struct {
 	t     *testing.T
 	net   *directedNetwork
@@ -229,7 +229,7 @@ func (c *faultCluster) start(id NodeID, applyFn ApplyFunc) *Node {
 
 // stop closes the node's background work (heartbeats, apply loop,
 // pending waiters) and removes it from the network so no peer can reach
-// it — simulating a crashed/down process. Its persistent files are left
+// it -- simulating a crashed/down process. Its persistent files are left
 // exactly as they were.
 func (c *faultCluster) stop(id NodeID) {
 	c.t.Helper()
@@ -242,7 +242,7 @@ func (c *faultCluster) stop(id NodeID) {
 
 // restart stops (if still running) and genuinely reconstructs the node
 // from its persistent directory: a new Store, Log, CommitStore, and
-// Node — proving recovery reads from disk rather than surviving in
+// Node -- proving recovery reads from disk rather than surviving in
 // memory.
 func (c *faultCluster) restart(id NodeID, applyFn ApplyFunc) *Node {
 	c.t.Helper()

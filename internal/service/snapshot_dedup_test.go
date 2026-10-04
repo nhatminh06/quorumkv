@@ -13,7 +13,7 @@ import (
 // TestSnapshotCompactionDedupSurvives is item 78 (mandatory): a client
 // write is applied, snapshotted, and compacted out of the log entirely;
 // after restart from that snapshot, retrying the exact same request must
-// still be recognized as a duplicate — dedup state must not depend on
+// still be recognized as a duplicate -- dedup state must not depend on
 // the physical log entry still existing.
 func TestSnapshotCompactionDedupSurvives(t *testing.T) {
 	nodes := startDedupCluster(t, 1) // single node: simplest way to force compaction deterministically
@@ -33,13 +33,13 @@ func TestSnapshotCompactionDedupSurvives(t *testing.T) {
 	if n.svc.node.LastLogIndex() != n.svc.node.LastApplied() {
 		t.Fatalf("precondition: expected the log to be fully compacted through lastApplied")
 	}
-	// The physical log entry for this request is now gone — only the
+	// The physical log entry for this request is now gone -- only the
 	// snapshot (KV + dedup table) remains.
 	if _, ok := n.svc.node.LogEntry(1); ok {
 		t.Fatalf("precondition: entry 1 should have been compacted away")
 	}
 
-	// Retry the exact SAME logical request (ClientID, sequence 1) — not
+	// Retry the exact SAME logical request (ClientID, sequence 1) -- not
 	// c.Put again, which would allocate a new sequence and be a
 	// different logical write. A raw request reproduces a genuine retry
 	// of the already-completed one.
@@ -61,7 +61,7 @@ func TestSnapshotCompactionDedupSurvives(t *testing.T) {
 		t.Fatalf("Get(x) = %q, %v, %v; want 1, true, nil", v, ok, err)
 	}
 	if got := n.applied.Load(); got != 1 {
-		t.Fatalf("state mutated %d times, want exactly 1 — dedup must survive log compaction", got)
+		t.Fatalf("state mutated %d times, want exactly 1 -- dedup must survive log compaction", got)
 	}
 }
 
@@ -86,7 +86,7 @@ func TestRestartFromSnapshotDedupSurvives(t *testing.T) {
 
 	// Restart: close this node/transport and reconstruct fresh Raft +
 	// Service state from the same on-disk directory, exactly like the
-	// existing TestRestartRebuildsKVStateFromCommittedPrefix pattern —
+	// existing TestRestartRebuildsKVStateFromCommittedPrefix pattern --
 	// here specifically to prove dedup state (not just KV) survives.
 	n.tr.Close()
 	n.svc.node.Close()

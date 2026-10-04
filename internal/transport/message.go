@@ -1,12 +1,12 @@
 // Package transport implements bounded framing and TCP request/response
 // delivery for messages exchanged between QuorumKV nodes. It knows nothing
-// about Raft (terms, elections, replication) — it only answers "how do I
+// about Raft (terms, elections, replication) -- it only answers "how do I
 // safely send a bounded message from one node to another." See
 // docs/transport.md for the wire format and delivery guarantees.
 package transport
 
 // MessageType identifies the kind of payload a Message carries. It is a
-// transport-level tag only — transport treats every payload as opaque
+// transport-level tag only -- transport treats every payload as opaque
 // bytes regardless of type. MessagePing/MessagePong/MessageTest exist so
 // this package's own tests can exercise framing and request/response
 // delivery without depending on the raft package (transport must not
@@ -26,8 +26,8 @@ package transport
 // protocol (status, snapshot, leadership transfer, voter add/remove);
 // their payload encoding lives in package adminproto. This is a
 // convenience wrapper over existing Node/Service operations, not a new
-// consensus mechanism, and — like every other message this package
-// carries — is unauthenticated.
+// consensus mechanism, and -- like every other message this package
+// carries -- is unauthenticated.
 type MessageType uint8
 
 const (

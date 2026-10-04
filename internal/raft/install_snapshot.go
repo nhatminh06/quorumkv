@@ -26,7 +26,7 @@ type InstallSnapshotRequest struct {
 }
 
 // InstallSnapshotResponse acknowledges one chunk. NextOffset tells the
-// leader what byte offset the follower expects next — on success that is
+// leader what byte offset the follower expects next -- on success that is
 // Offset+len(Data); on a rejected/out-of-order chunk it is whatever
 // offset the follower actually still expects, so the leader can resume
 // from the right place rather than guessing.

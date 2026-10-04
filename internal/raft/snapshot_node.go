@@ -13,20 +13,20 @@ import (
 // joint-consensus membership transition is active. A snapshot must
 // preserve a single Stable membership at its boundary (see Snapshot.
 // Configuration); rather than support a joint-config snapshot, this
-// milestone simply refuses to snapshot until the transition finishes —
+// milestone simply refuses to snapshot until the transition finishes --
 // an acceptable limitation since membership changes are short and
 // serialized one at a time (see docs/membership.md).
 var ErrMembershipChangeInProgress = errors.New("raft: a membership change is already in progress")
 
 // SnapshotFunc asks the application for a deterministic serialization of
 // its entire current state, called by CreateSnapshot. It runs with
-// applyMu held (not Node's own lock), so it never races with ApplyFunc —
+// applyMu held (not Node's own lock), so it never races with ApplyFunc --
 // the state it captures always corresponds to exactly the lastApplied
 // index CreateSnapshot labels the resulting snapshot with.
 type SnapshotFunc func() ([]byte, error)
 
 // RestoreFunc replaces the application's entire state with the state
-// encoded in data — a full replacement, not commands layered on top of
+// encoded in data -- a full replacement, not commands layered on top of
 // existing state. Like SnapshotFunc, it runs with applyMu held.
 type RestoreFunc func(data []byte) error
 
@@ -62,7 +62,7 @@ type incomingSnapshot struct {
 
 // CreateSnapshot serializes the application's current state at this
 // node's lastApplied index (via SnapshotFunc), persists it durably, and
-// only then compacts the covered Raft log prefix — never the reverse
+// only then compacts the covered Raft log prefix -- never the reverse
 // order. If persisting the snapshot fails, the log is left uncompacted.
 //
 // CreateSnapshot is this milestone's only snapshot trigger: it must be
@@ -152,7 +152,7 @@ func (n *Node) CreateSnapshot() (err error) {
 // the canonical snapshot, reconcile the local log's boundary (retaining
 // any verified-matching suffix, discarding it otherwise), advance
 // durable commit metadata if needed, replace application state via
-// RestoreFunc, then update lastApplied — never acknowledging success
+// RestoreFunc, then update lastApplied -- never acknowledging success
 // before the persistence steps that precede it in this order have
 // completed.
 func (n *Node) HandleInstallSnapshot(req InstallSnapshotRequest) (InstallSnapshotResponse, error) {
@@ -215,7 +215,7 @@ func (n *Node) HandleInstallSnapshot(req InstallSnapshotRequest) (InstallSnapsho
 	n.incoming = nil // transfer session is over either way
 
 	// Stale or already-applied snapshot: never regress. Acknowledge
-	// success without reinstalling — this makes a repeated/superseded
+	// success without reinstalling -- this makes a repeated/superseded
 	// snapshot idempotent rather than an error.
 	if snap.LastIncludedIndex <= n.lastApplied {
 		n.mu.Unlock()
@@ -284,8 +284,8 @@ func (n *Node) installSnapshot(snap Snapshot) error {
 }
 
 // sendSnapshotToPeer transfers the current canonical snapshot to one
-// peer as a tight sequence of chunks — not paced by the heartbeat
-// interval — used when that peer's nextIndex has fallen behind this
+// peer as a tight sequence of chunks -- not paced by the heartbeat
+// interval -- used when that peer's nextIndex has fallen behind this
 // leader's compacted log prefix. Called synchronously from within that
 // peer's own replicationWorker (see replicationStep), which owns
 // n.snapshotSending[id] for the duration; this function only updates
@@ -307,7 +307,7 @@ func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, add
 		return false
 	}
 	if !snap.ConfigurationPresent {
-		// A legacy (pre-Milestone-10) snapshot has no stored membership —
+		// A legacy (pre-Milestone-10) snapshot has no stored membership --
 		// fall back to this leader's own bootstrap/configured membership
 		// as the historical stable config (see docs/membership.md).
 		snap.Configuration = fallbackCfg
@@ -355,7 +355,7 @@ func (n *Node) sendSnapshotToPeer(ctx context.Context, term Term, id NodeID, add
 				n.matchIndex[id] = snap.LastIncludedIndex
 				// A leadership-transfer catch-up waiter may be watching
 				// this peer's matchIndex specifically (see
-				// leadership_transfer.go) — an InstallSnapshot completion
+				// leadership_transfer.go) -- an InstallSnapshot completion
 				// is as much a catch-up event as an ordinary AppendEntries
 				// ack.
 				n.pingTransferChanged()

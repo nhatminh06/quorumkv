@@ -45,8 +45,8 @@ Run "quorumkv node --help" for flag details.
 `)
 }
 
-// runNode is separated from main so the whole node lifecycle — flags,
-// validation, storage recovery, startup, serving, graceful shutdown —
+// runNode is separated from main so the whole node lifecycle -- flags,
+// validation, storage recovery, startup, serving, graceful shutdown --
 // reports errors through a single return path instead of scattered
 // os.Exit calls.
 func runNode(args []string) error {

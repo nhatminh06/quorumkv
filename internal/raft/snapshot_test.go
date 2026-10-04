@@ -57,7 +57,7 @@ func TestSnapshotStoreSurvivesReopen(t *testing.T) {
 // standard hash/crc32 Castagnoli table outside this package. The
 // membership section is EncodeMembership(StableMembership({1:"A"})): see
 // TestInstallSnapshotKnownByteVector for its byte-by-byte derivation
-// (identical here — same Configuration).
+// (identical here -- same Configuration).
 func TestSnapshotKnownByteVector(t *testing.T) {
 	path := tempSnapshotPath(t)
 	if err := NewSnapshotStore(path).Save(Snapshot{LastIncludedIndex: 100, LastIncludedTerm: 6, Data: []byte("abc"), Configuration: sampleSnapshotConfiguration(t)}); err != nil {

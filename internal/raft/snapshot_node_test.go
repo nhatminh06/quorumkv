@@ -173,7 +173,7 @@ func TestCreateSnapshotPersistsAndCompacts(t *testing.T) {
 }
 
 // TestCreateSnapshotNothingAppliedYet proves CreateSnapshot refuses to run
-// before anything has been applied — there is no meaningful state to
+// before anything has been applied -- there is no meaningful state to
 // capture, and lastApplied == 0 must never be treated as a valid boundary.
 func TestCreateSnapshotNothingAppliedYet(t *testing.T) {
 	sn := newSnapshottingNode(t, 1, nil)
@@ -200,7 +200,7 @@ func TestCreateSnapshotNoFunctionConfigured(t *testing.T) {
 
 // TestCreateSnapshotAlreadyCompactedIsNoop proves calling CreateSnapshot
 // again at (or behind) the current boundary is a harmless no-op, not an
-// error — a caller invoking it on a schedule shouldn't need to track
+// error -- a caller invoking it on a schedule shouldn't need to track
 // whether it already ran.
 func TestCreateSnapshotAlreadyCompactedIsNoop(t *testing.T) {
 	sn := newSnapshottingNode(t, 1, nil)
@@ -287,7 +287,7 @@ func TestRestartFromSnapshotOnly(t *testing.T) {
 
 // TestRestartFromSnapshotPlusSuffix proves the mixed case: a snapshot plus
 // additional entries committed after it (never compacted, since no second
-// CreateSnapshot ran) — restart must apply the snapshot, then replay
+// CreateSnapshot ran) -- restart must apply the snapshot, then replay
 // exactly the retained suffix on top of it, without re-applying anything
 // the snapshot already covers.
 func TestRestartFromSnapshotPlusSuffix(t *testing.T) {
@@ -529,7 +529,7 @@ func TestHandleInstallSnapshotSessionMismatchRestartsAtZero(t *testing.T) {
 
 // TestHandleInstallSnapshotStaleSnapshotIsIdempotent proves a snapshot
 // whose boundary is at or behind lastApplied is acknowledged successfully
-// without reinstalling anything — a duplicate/superseded transfer must not
+// without reinstalling anything -- a duplicate/superseded transfer must not
 // regress state or error.
 func TestHandleInstallSnapshotStaleSnapshotIsIdempotent(t *testing.T) {
 	sn := newSnapshottingNode(t, 1, nil)
@@ -635,12 +635,12 @@ func TestHandleInstallSnapshotTermChangeMidTransferAborts(t *testing.T) {
 		t.Fatalf("resp = %+v, want Success=false Term=5 (stale-term chunk must be rejected)", resp)
 	}
 	if sn.LastApplied() != 0 {
-		t.Fatalf("LastApplied() = %d, want 0 — a stale-term transfer must never install", sn.LastApplied())
+		t.Fatalf("LastApplied() = %d, want 0 -- a stale-term transfer must never install", sn.LastApplied())
 	}
 }
 
 // TestSetInstallSnapshotSend proves the setter exists and is honored, the
-// same way SetVoteSend/SetAppendSend are — required for deterministic
+// same way SetVoteSend/SetAppendSend are -- required for deterministic
 // fault-injection tests outside this package to intercept InstallSnapshot.
 func TestSetInstallSnapshotSend(t *testing.T) {
 	sn := newSnapshottingNode(t, 1, nil)
@@ -661,8 +661,8 @@ func TestSetInstallSnapshotSend(t *testing.T) {
 }
 
 // writeLegacyV1SnapshotFile hand-encodes a version-1 (pre-Milestone-10)
-// snapshot file — no membership metadata at all, not merely an empty
-// one — matching exactly what a real pre-M10 on-disk snapshot looked
+// snapshot file -- no membership metadata at all, not merely an empty
+// one -- matching exactly what a real pre-M10 on-disk snapshot looked
 // like, so NewNode's legacy-fallback path is exercised against a
 // realistic fixture rather than one this package's own (always-v2) Save
 // could ever produce.

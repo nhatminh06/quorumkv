@@ -8,7 +8,7 @@ import (
 
 // Handler processes one inbound Message and produces the response to send
 // back on the same connection. Handler knows nothing about transport
-// framing or connection lifecycle — Transport calls it sequentially for each
+// framing or connection lifecycle -- Transport calls it sequentially for each
 // complete request frame on a connection. ctx
 // is canceled when the owning Transport's Close is called, so a handler
 // that wants to return promptly during shutdown should observe ctx.Done().
@@ -20,7 +20,7 @@ type Handler func(ctx context.Context, m Message) (Message, error)
 // compatible: their EOF simply ends the session.
 //
 // Transport does not retry, pool connections, reconnect, or interpret
-// message contents — it only frames and delivers bytes.
+// message contents -- it only frames and delivers bytes.
 type Transport struct {
 	ln     net.Listener
 	h      Handler
@@ -86,7 +86,7 @@ func (t *Transport) acceptLoop() {
 
 // handleConn exchanges frames sequentially; it never pipelines handlers.
 // A malformed request or
-// a handler error closes this connection only — the listener and all
+// a handler error closes this connection only -- the listener and all
 // other connections are unaffected.
 func (t *Transport) handleConn(conn net.Conn) {
 	defer t.wg.Done()
@@ -121,7 +121,7 @@ func (t *Transport) handleConn(conn net.Conn) {
 //
 // A handler that does not observe context cancellation and is not blocked
 // on I/O (e.g. blocked on its own internal channel) will make Close block
-// until that handler returns — Close waits for handlers rather than
+// until that handler returns -- Close waits for handlers rather than
 // abandoning them.
 func (t *Transport) Close() error {
 	t.closeOnce.Do(func() {
@@ -144,7 +144,7 @@ func (t *Transport) Close() error {
 // ctx bounds the whole exchange: dialing, writing the request, and
 // reading the response. If ctx is canceled or its deadline passes while
 // blocked on I/O, the connection is closed to unblock it and ctx.Err() is
-// returned. Send never retries — a returned error does not indicate
+// returned. Send never retries -- a returned error does not indicate
 // whether the remote side processed the request; that judgment belongs to
 // the caller.
 func Send(ctx context.Context, addr string, m Message) (Message, error) {

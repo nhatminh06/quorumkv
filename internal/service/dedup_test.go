@@ -18,7 +18,7 @@ import (
 
 // dedupTestNode is like testNode but also tracks how many times this
 // node's state machine genuinely mutated state for an identified
-// command — real production code has no such counter (see
+// command -- real production code has no such counter (see
 // docs/request-dedup.md's "no increments/counters" scope note); this is
 // purely test instrumentation, computed by asking the state machine
 // (LookupRequest) whether a command about to be applied will actually
@@ -94,7 +94,7 @@ func startDedupCluster(t *testing.T, n int) []*dedupTestNode {
 		tn.peers = nodePeers
 		// t.Cleanup runs LIFO: register the node's own Close first and its
 		// transport's Close second (see startCluster in service_test.go
-		// for why this order matters — a still-open listener can
+		// for why this order matters -- a still-open listener can
 		// otherwise dispatch into a node concurrently tearing down).
 		t.Cleanup(rNodes[i].Close)
 		tr := tn.tr
@@ -104,9 +104,9 @@ func startDedupCluster(t *testing.T, n int) []*dedupTestNode {
 }
 
 // reopenDedupNode reconstructs a fresh Raft + Service from old's on-disk
-// directory and peer table — a genuine restart (new Store/Log/
+// directory and peer table -- a genuine restart (new Store/Log/
 // CommitStore/SnapshotStore/Service/Node), never reusing old's in-memory
-// state — with the same counting-apply instrumentation, listening on a
+// state -- with the same counting-apply instrumentation, listening on a
 // freshly assigned port. old must already be closed (transport and node)
 // before calling this.
 func reopenDedupNode(t *testing.T, old *dedupTestNode) *dedupTestNode {
@@ -153,7 +153,7 @@ func electDedupLeader(t *testing.T, nodes []*dedupTestNode, leaderIdx int) {
 	// See electLeaderAmong in service_test.go: PreVote's leader-contact
 	// safeguard needs a real amount of wall time to pass since any prior
 	// leader's last AppendEntries before a voter will grant a new
-	// hypothetical vote — this helper is reused for failover elections
+	// hypothetical vote -- this helper is reused for failover elections
 	// too, not only a cluster's very first election.
 	time.Sleep(200 * time.Millisecond)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -190,7 +190,7 @@ func electDedupLeader(t *testing.T, nodes []*dedupTestNode, leaderIdx int) {
 // dropResponseOnce wraps a node's real Handler so that the FIRST client
 // request matching (clientID, seq) is processed completely for real
 // (mutating/committing/applying exactly as it normally would) but its
-// response is then discarded and replaced with a transport-level error —
+// response is then discarded and replaced with a transport-level error --
 // simulating "the leader fully processed this write and only the
 // response was lost," per docs/request-dedup.md item 107: this is not
 // simulated by rejecting the request before the leader ever sees it.
@@ -229,7 +229,7 @@ func dropResponseOnce(real transport.Handler) (wrapped transport.Handler, arm fu
 }
 
 // dropResponsesAlways is like dropResponseOnce but keeps dropping every
-// matching request's response (never auto-disarms) — used when a test
+// matching request's response (never auto-disarms) -- used when a test
 // needs the client to keep failing against this node across several
 // retries (e.g. until the node is deliberately crashed), rather than
 // succeeding on its very next attempt.
@@ -266,7 +266,7 @@ func dropResponsesAlways(real transport.Handler) (wrapped transport.Handler, arm
 
 // TestResponseLostAfterCommitPutRetrySucceedsOnce is item 60 (mandatory):
 // the leader commits+applies a PUT, its response is then lost, the
-// client sees a transport failure and retries with the same identity —
+// client sees a transport failure and retries with the same identity --
 // the retry must succeed (OK) and the write must have mutated state
 // exactly once, not twice.
 func TestResponseLostAfterCommitPutRetrySucceedsOnce(t *testing.T) {
@@ -282,7 +282,7 @@ func TestResponseLostAfterCommitPutRetrySucceedsOnce(t *testing.T) {
 		t.Fatalf("re-Listen: %v", err)
 	}
 	t.Cleanup(func() { tr.Close() })
-	// Re-point every peer's route to the leader at the same address —
+	// Re-point every peer's route to the leader at the same address --
 	// the listener was closed and reopened, but transport.Listen was
 	// given the exact same address, so no peer table update is needed.
 	_ = tr
@@ -343,7 +343,7 @@ func TestResponseLostAfterCommitDeleteRetrySucceedsOnce(t *testing.T) {
 	}
 }
 
-// TestRetryToNewLeaderAfterFailoverRecognizesDedup is item 63 — the
+// TestRetryToNewLeaderAfterFailoverRecognizesDedup is item 63 -- the
 // strongest milestone proof: A commits+applies a write, A's response to
 // the client is lost, A then crashes before the client can retry against
 // it, B is elected, and the client retries the SAME request against B.
@@ -393,7 +393,7 @@ func TestRetryToNewLeaderAfterFailoverRecognizesDedup(t *testing.T) {
 	// leaderIdx=1 passed below).
 	electLeaderAmongDedup(t, []*dedupTestNode{b, cNode}, nodes, 1)
 
-	// The retry must reuse c's exact (ClientID, Sequence) — a fresh
+	// The retry must reuse c's exact (ClientID, Sequence) -- a fresh
 	// Client would allocate a new ClientID and defeat dedup entirely, so
 	// this reconstructs a Client from c's identity, pointed at the
 	// surviving nodes.
@@ -414,7 +414,7 @@ func TestRetryToNewLeaderAfterFailoverRecognizesDedup(t *testing.T) {
 	// ever apply this (ClientID, Sequence) more than once. Each replica
 	// independently applies its own copy of the same committed log
 	// entry as ordinary replication (not a bug), so a *combined* count
-	// across replicas is not the right thing to assert — B and C may
+	// across replicas is not the right thing to assert -- B and C may
 	// each individually have applied it once already, from before A
 	// crashed.
 	if got := b.applied.Load(); got > 1 {

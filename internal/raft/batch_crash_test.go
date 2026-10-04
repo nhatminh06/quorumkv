@@ -7,10 +7,10 @@ import (
 )
 
 // TestBatchAppendFailpointAllOrNothing is item 106: a multi-entry
-// Log.Append (what a proposal batch turns into — see proposal.go) is
+// Log.Append (what a proposal batch turns into -- see proposal.go) is
 // exactly one atomicWriteFile publication, so it inherits the same
 // old-or-new guarantee crashpoint_test.go already proves for single
-// entries — this test proves it specifically for a batch, checking that
+// entries -- this test proves it specifically for a batch, checking that
 // a failure never leaves the log with only part of the batch appended.
 func TestBatchAppendFailpointAllOrNothing(t *testing.T) {
 	for _, stage := range atomicFileStages {
@@ -60,7 +60,7 @@ func TestBatchAppendFailpointAllOrNothing(t *testing.T) {
 
 // TestBatchAppendRealCrashAllOrNothing is the genuine-process-crash
 // variant of the above, reusing the raft package's subprocess crash
-// helper (crash_subprocess_test.go) via its existing "log-append" op —
+// helper (crash_subprocess_test.go) via its existing "log-append" op --
 // that op already appends a single entry on top of a pre-existing one;
 // this proves the same real-crash old-or-new guarantee generalizes to a
 // multi-entry batch by appending a batch instead and checking no partial

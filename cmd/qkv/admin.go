@@ -11,14 +11,14 @@ import (
 )
 
 // maxAdminRedirects bounds how many NOT_LEADER hints sendAdmin will
-// follow before giving up — same reasoning as internal/client's own
+// follow before giving up -- same reasoning as internal/client's own
 // bounded redirect chain: a misbehaving or flapping cluster must not
 // cause an unbounded tight loop.
 const maxAdminRedirects = 3
 
 // sendAdmin sends req to the first reachable address among addrs,
-// following a NOT_LEADER redirect hint (bounded) so the common case —
-// "send this admin command to the leader" — does not require the
+// following a NOT_LEADER redirect hint (bounded) so the common case --
+// "send this admin command to the leader" -- does not require the
 // operator to already know who the leader is.
 func sendAdmin(ctx context.Context, addrs []string, req adminproto.Request) (adminproto.Response, error) {
 	payload, err := adminproto.EncodeRequest(req)
@@ -72,7 +72,7 @@ func nextUntried(addrs []string, tried map[string]bool) string {
 }
 
 // humanAdminStatus turns an adminproto.Status into an operator-facing
-// message — see docs/operations.md.
+// message -- see docs/operations.md.
 func humanAdminStatus(resp adminproto.Response) string {
 	switch resp.Status {
 	case adminproto.StatusNotLeader:
@@ -93,7 +93,7 @@ func humanAdminStatus(resp adminproto.Response) string {
 	case adminproto.StatusInvalidConfiguration:
 		return "qkv: that change would produce an invalid configuration (e.g. removing the last voter)"
 	case adminproto.StatusTimeout:
-		return "qkv: timed out waiting for a definite outcome; the operation may or may not have completed — check status before retrying (see docs/operations.md)"
+		return "qkv: timed out waiting for a definite outcome; the operation may or may not have completed -- check status before retrying (see docs/operations.md)"
 	case adminproto.StatusCannotTransferToSelf:
 		return "qkv: cannot transfer leadership to this node itself"
 	case adminproto.StatusTransferRejected:

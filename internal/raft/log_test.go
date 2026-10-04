@@ -259,8 +259,8 @@ func TestEntriesRangeAtSnapshotBoundary(t *testing.T) {
 	}
 
 	// Requesting from the (now-compacted) boundary index itself, or
-	// anything at/before it, must start at BaseIndex()+1 — the same
-	// clamping EntriesFrom already does — never fabricate a compacted
+	// anything at/before it, must start at BaseIndex()+1 -- the same
+	// clamping EntriesFrom already does -- never fabricate a compacted
 	// entry.
 	for _, from := range []LogIndex{0, 1} {
 		got := l.EntriesRange(from, 10, 1<<20)
@@ -425,7 +425,7 @@ func TestLogOversizedCommandRejected(t *testing.T) {
 
 // TestLogV1FileStillLoads proves a pre-Milestone-7 log file (version 1,
 // no baseIndex/baseTerm fields) still loads correctly, equivalent to
-// baseIndex=0, baseTerm=0 — existing repositories must not be
+// baseIndex=0, baseTerm=0 -- existing repositories must not be
 // invalidated by the format upgrade.
 func TestLogV1FileStillLoads(t *testing.T) {
 	path := tempLogPath(t)

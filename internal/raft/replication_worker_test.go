@@ -15,8 +15,8 @@ func (n *Node) applyStructuredReplicationResponse(id NodeID, term Term, generati
 
 // TestStaleReplicationSuccessDoesNotAdvanceProgress proves a success
 // response captured under an older generation than the peer's current
-// one — e.g. a delayed reply to a request sent before a conflict
-// backtrack or an InstallSnapshot takeover invalidated it — has no
+// one -- e.g. a delayed reply to a request sent before a conflict
+// backtrack or an InstallSnapshot takeover invalidated it -- has no
 // effect at all, even though it reports a plausible-looking MatchIndex.
 func TestStaleReplicationSuccessDoesNotAdvanceProgress(t *testing.T) {
 	n := newTestNode(t, 1, PersistentState{}, map[NodeID]string{2: "b"})
@@ -36,7 +36,7 @@ func TestStaleReplicationSuccessDoesNotAdvanceProgress(t *testing.T) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.matchIndex[2] != 0 || n.nextIndex[2] != 1 {
-		t.Fatalf("matchIndex/nextIndex = %d/%d, want unchanged 0/1 — a stale-generation success must never advance progress", n.matchIndex[2], n.nextIndex[2])
+		t.Fatalf("matchIndex/nextIndex = %d/%d, want unchanged 0/1 -- a stale-generation success must never advance progress", n.matchIndex[2], n.nextIndex[2])
 	}
 }
 
@@ -65,7 +65,7 @@ func TestStaleReplicationFailureDoesNotBacktrackProgress(t *testing.T) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.nextIndex[2] != 10 || n.matchIndex[2] != 9 {
-		t.Fatalf("nextIndex/matchIndex = %d/%d, want unchanged 10/9 — a stale-generation failure must never regress an already-repaired peer", n.nextIndex[2], n.matchIndex[2])
+		t.Fatalf("nextIndex/matchIndex = %d/%d, want unchanged 10/9 -- a stale-generation failure must never regress an already-repaired peer", n.nextIndex[2], n.matchIndex[2])
 	}
 }
 
@@ -100,7 +100,7 @@ func TestConflictInvalidatesInflightGeneration(t *testing.T) {
 	n.mu.Unlock()
 
 	// A speculative success for the OLD (pre-failure) assumption, sent
-	// before the failure was known, arrives late — using the OLD
+	// before the failure was known, arrives late -- using the OLD
 	// generation.
 	staleReq := AppendEntriesRequest{Term: term, PrevLogIndex: 4, Entries: entriesOf("would-have-been-wrong")}
 	if more := n.applyStructuredReplicationResponse(2, term, genBeforeFailure, staleReq, AppendEntriesResponse{Term: term, Success: true, MatchIndex: 5}); more {
@@ -146,7 +146,7 @@ func TestHigherTermInvalidatesReplicationGeneration(t *testing.T) {
 
 // TestRemovedPeerResponseIgnored proves a response for a peer no longer
 // present in n.workers (finally removed from membership) is discarded
-// outright — it must not recreate any per-peer state or influence
+// outright -- it must not recreate any per-peer state or influence
 // commit/quorum calculation.
 func TestRemovedPeerResponseIgnored(t *testing.T) {
 	n := newTestNode(t, 1, PersistentState{}, map[NodeID]string{2: "b", 3: "c"})
@@ -218,7 +218,7 @@ func TestReplicationWorkerCatchesFollowerWithoutHeartbeatDelay(t *testing.T) {
 }
 
 // TestNewEntriesWakeReplicationWorker proves a single new entry, on its
-// own, is enough to wake an idle (already caught-up) worker — not just
+// own, is enough to wake an idle (already caught-up) worker -- not just
 // a large burst.
 func TestNewEntriesWakeReplicationWorker(t *testing.T) {
 	net := newFakeNetwork()
@@ -249,7 +249,7 @@ func TestNewEntriesWakeReplicationWorker(t *testing.T) {
 }
 
 // TestReplicationWorkerStopsOnStepDown proves losing leadership clears
-// every per-peer worker (their contexts are children of leaderCtx — see
+// every per-peer worker (their contexts are children of leaderCtx -- see
 // stepToFollowerLocked) rather than leaving them running against a node
 // that is no longer Leader.
 func TestReplicationWorkerStopsOnStepDown(t *testing.T) {
@@ -271,7 +271,7 @@ func TestReplicationWorkerStopsOnStepDown(t *testing.T) {
 
 // TestReplicationWorkerStopsOnClose proves Close waits for every
 // replication worker to actually exit (via bgWG), not just cancels their
-// context and returns — Close itself would otherwise not be a reliable
+// context and returns -- Close itself would otherwise not be a reliable
 // "nothing is running anymore" signal.
 func TestReplicationWorkerStopsOnClose(t *testing.T) {
 	n := newTestNode(t, 1, PersistentState{}, map[NodeID]string{2: "b", 3: "c"})
@@ -291,6 +291,6 @@ func TestReplicationWorkerStopsOnClose(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("Close never returned — a replication worker may be leaked")
+		t.Fatal("Close never returned -- a replication worker may be leaked")
 	}
 }

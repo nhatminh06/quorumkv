@@ -1,14 +1,14 @@
 // Package adminproto defines the bounded binary wire protocol for
 // QuorumKV's operational admin commands: status inspection, snapshot
 // creation, leadership transfer, and voter add/remove. It knows nothing
-// about Raft or the KV state machine — like clientproto, it only defines
+// about Raft or the KV state machine -- like clientproto, it only defines
 // request/response bytes; package service decodes/dispatches them and is
 // the only place that calls into the real raft.Node operations this
 // protocol is a thin wire wrapper over.
 //
 // This protocol is unauthenticated, exactly like the client protocol it
 // sits beside on the same TCP connection (see transport.MessageAdminRequest/
-// MessageAdminResponse) — it is intended for local/trusted-network
+// MessageAdminResponse) -- it is intended for local/trusted-network
 // operation and demos, not a public administrative surface. See
 // docs/operations.md.
 package adminproto
@@ -21,14 +21,14 @@ import (
 
 const protocolVersion = 1
 
-// MaxAddrLen bounds a single voter address in this protocol — generous
+// MaxAddrLen bounds a single voter address in this protocol -- generous
 // for any realistic "host:port" string.
 const MaxAddrLen = 256
 
 // MaxVoters bounds how many voters a StatusInfo's voter lists may
 // declare, matching raft's own Configuration limit (adminproto does not
 // import package raft, so this is not literally the same constant, but
-// is chosen to match it — see package raft's MaxVoters).
+// is chosen to match it -- see package raft's MaxVoters).
 const MaxVoters = 31
 
 // Operation identifies the requested admin command.
@@ -43,7 +43,7 @@ const (
 )
 
 // Status identifies the outcome of an admin request. Internal Go error
-// strings are never sent over the wire — only this small fixed set of
+// strings are never sent over the wire -- only this small fixed set of
 // codes.
 type Status uint8
 
@@ -53,20 +53,20 @@ const (
 	StatusBadRequest
 	StatusInternalError
 	// StatusMembershipChangeInProgress means a Joint transition is
-	// already active — mirrors raft.ErrMembershipChangeInProgress.
+	// already active -- mirrors raft.ErrMembershipChangeInProgress.
 	StatusMembershipChangeInProgress
 	// StatusLeadershipTransferInProgress means a transfer is already
 	// active, or (for OpAddVoter/OpRemoveVoter/OpSnapshot) blocks a new
-	// one from starting — mirrors raft.ErrLeadershipTransferInProgress.
+	// one from starting -- mirrors raft.ErrLeadershipTransferInProgress.
 	StatusLeadershipTransferInProgress
 	// StatusNotAVoter means the request named a NodeID that is not (or
-	// no longer) a voter — mirrors raft.ErrNotAVoter.
+	// no longer) a voter -- mirrors raft.ErrNotAVoter.
 	StatusNotAVoter
 	// StatusInvalidConfiguration mirrors raft.ErrInvalidConfiguration
 	// (e.g. removing the last voter, a duplicate NodeID).
 	StatusInvalidConfiguration
 	// StatusTimeout means the operation's context expired before this
-	// node could confirm a definite outcome — the underlying operation
+	// node could confirm a definite outcome -- the underlying operation
 	// (a membership change, a leadership transfer) may or may not have
 	// actually completed. See docs/runbook-membership.md and
 	// docs/runbook-leadership-transfer.md: do not blindly retry.
@@ -123,7 +123,7 @@ const (
 // meaningful when Mode == MembershipStable.
 //
 // This is observational metadata read directly from the node's own
-// in-memory state — not a linearizable read (see docs/operations.md):
+// in-memory state -- not a linearizable read (see docs/operations.md):
 // it never runs ReadIndex, never blocks on quorum confirmation, and
 // never mutates term, log, membership, commit index, or any timer.
 type StatusInfo struct {

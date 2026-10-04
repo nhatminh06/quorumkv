@@ -7,10 +7,10 @@ import (
 
 // ErrLeadershipTransferInProgress is returned by TransferLeadership when
 // another transfer is already active, and by AddVoter/RemoveVoter/
-// Propose (its internal write-admission freeze — see proposeLocked) when
+// Propose (its internal write-admission freeze -- see proposeLocked) when
 // one is active or in its final handoff phase respectively. Only one
-// major administrative transition — a membership change or a leadership
-// transfer — runs at a time.
+// major administrative transition -- a membership change or a leadership
+// transfer -- runs at a time.
 var ErrLeadershipTransferInProgress = errors.New("raft: a leadership transfer is already in progress")
 
 // ErrCannotTransferToSelf is returned by TransferLeadership when target
@@ -32,19 +32,19 @@ type transferPhase uint8
 const (
 	// transferCatchingUp: the target is being brought up to LastIndex via
 	// ordinary replication (see waitForTransferCatchUp). Client writes
-	// remain allowed — freezing them here would be needless disruption
+	// remain allowed -- freezing them here would be needless disruption
 	// for what may take several replication rounds.
 	transferCatchingUp transferPhase = iota + 1
 	// transferHandoff: the target was caught up and TimeoutNow is about
 	// to be (or has been) sent. New Propose calls, membership changes,
 	// and new ReadIndex calls are all rejected with
-	// ErrLeadershipTransferInProgress from this point on — see
+	// ErrLeadershipTransferInProgress from this point on -- see
 	// proposeLocked, changeMembership, ReadIndex.
 	transferHandoff
 )
 
 // transferState is one Node's in-progress leadership transfer. Never
-// persisted — see the Node.transfer field doc.
+// persisted -- see the Node.transfer field doc.
 type transferState struct {
 	target       NodeID
 	originalTerm Term
@@ -52,10 +52,10 @@ type transferState struct {
 }
 
 // TransferLeadership hands leadership to target through Raft's normal
-// election mechanics — it never simply declares target the leader.
+// election mechanics -- it never simply declares target the leader.
 // The flow: ensure target is fully caught up (ordinary replication,
 // diverting through InstallSnapshot if target is behind the compacted
-// log prefix, exactly like any other catch-up — see replicateToAllPeers),
+// log prefix, exactly like any other catch-up -- see replicateToAllPeers),
 // freeze new write/membership/read admission, send target an authorized
 // TimeoutNow, and wait for real evidence (valid AppendEntries contact
 // from target at a higher term) that it actually won. See
@@ -66,7 +66,7 @@ type transferState struct {
 //   - ErrNotLeader if this node is not currently Leader (checked both
 //     initially and again if lost during catch-up).
 //   - ErrCannotTransferToSelf if target == this node's own ID.
-//   - ErrMembershipChangeInProgress if membership is currently Joint —
+//   - ErrMembershipChangeInProgress if membership is currently Joint --
 //     this milestone deliberately does not mix the two administrative
 //     transitions; retry once the Joint transition finishes.
 //   - ErrLeadershipTransferInProgress if another transfer is already
@@ -80,7 +80,7 @@ type transferState struct {
 //   - ctx's error if ctx is done before the transfer completes. Before
 //     TimeoutNow is sent, this simply aborts the attempt: this node
 //     remains leader, the freeze (if any) is released, normal operation
-//     resumes — see item 121/123 in the milestone notes. After TimeoutNow
+//     resumes -- see item 121/123 in the milestone notes. After TimeoutNow
 //     is accepted, cancellation cannot undo it: the target may still
 //     become leader regardless of what this call returns, an
 //     intentionally ambiguous administrative outcome (an operator should
@@ -126,7 +126,7 @@ func (n *Node) TransferLeadership(ctx context.Context, target NodeID) error {
 			break
 		}
 		// Target regressed between catch-up and the final caught-up
-		// check (item 125: another write landed in between) — loop back
+		// check (item 125: another write landed in between) -- loop back
 		// and catch it up again before trying the handoff once more.
 	}
 
@@ -134,7 +134,7 @@ func (n *Node) TransferLeadership(ctx context.Context, target NodeID) error {
 }
 
 // clearTransfer removes n.transfer if it still identifies the exact
-// transfer this call started (target+originalTerm) — guarding against
+// transfer this call started (target+originalTerm) -- guarding against
 // clearing a different, newer transfer in the unlikely case this one's
 // own cleanup runs late.
 func (n *Node) clearTransfer(target NodeID, originalTerm Term) {
@@ -146,11 +146,11 @@ func (n *Node) clearTransfer(target NodeID, originalTerm Term) {
 }
 
 // waitForTransferCatchUp blocks until matchIndex[target] has reached
-// this node's own LastIndex — i.e. target holds every entry this leader
+// this node's own LastIndex -- i.e. target holds every entry this leader
 // currently has. It does not itself drive replication: the existing
 // heartbeat loop already replicates to every voter, target included,
 // diverting to InstallSnapshot automatically if target has fallen behind
-// the compacted log prefix (see replicateToAllPeers) — there is no
+// the compacted log prefix (see replicateToAllPeers) -- there is no
 // separate catch-up mechanism to build or poll (item 101/102/103): this
 // simply waits on transferChanged, pinged whenever matchIndex or
 // LastIndex moves, rather than sleeping in a loop.
@@ -178,7 +178,7 @@ func (n *Node) waitForTransferCatchUp(ctx context.Context, target NodeID) error 
 }
 
 // attemptHandoff re-verifies (under lock, against a fresh read of
-// matchIndex/LastIndex — item 84: never act on a stale snapshot of
+// matchIndex/LastIndex -- item 84: never act on a stale snapshot of
 // them) that target is still caught up, enters the Handoff freeze phase,
 // and sends TimeoutNow. Returns (true, nil) once TimeoutNow has been
 // accepted; (false, nil) if target turned out to no longer be caught up
@@ -221,7 +221,7 @@ func (n *Node) attemptHandoff(ctx context.Context, target NodeID) (bool, error) 
 // evidence that target actually became leader: valid AppendEntries
 // contact from target at a term higher than originalTerm (see
 // HandleAppendEntries, which is also where the old leader itself learns
-// of and steps down for that higher term — through the exact same
+// of and steps down for that higher term -- through the exact same
 // ordinary higher-term mechanics every RPC handler uses, no special
 // leadership-transfer case in that path). Accepting TimeoutNow is
 // deliberately not treated as success on its own (item 55/67).

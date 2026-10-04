@@ -28,7 +28,7 @@ const dedupCrashExitCode = 92
 const dedupCrashMarker = "QKV_DEDUP_CRASH_REACHED"
 
 // fixedCrashClientID is a known, non-zero, non-random ClientID shared
-// between the crashing subprocess and the parent process — the parent
+// between the crashing subprocess and the parent process -- the parent
 // needs it to construct the exact retry request after the subprocess is
 // gone, and a real random ID would not survive the process boundary.
 var fixedCrashClientID = reqid.ClientID{0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42, 0x42}
@@ -57,7 +57,7 @@ func newSingleNodeService(dir string) (*Service, *raft.Node, *transport.Transpor
 // TestDedupCrashHelperSubprocess is not a real test: it only runs as a
 // re-exec'd subprocess of TestSnapshotDedupSurvivesRealCrash, gated on
 // QKV_CRASHTEST_MODE. It Puts one identified request, takes a snapshot
-// (durably publishing KV + dedup table together — see kv.StateMachine's
+// (durably publishing KV + dedup table together -- see kv.StateMachine's
 // Snapshot/Restore), then crashes the process outright: no Close, no
 // graceful shutdown, proving dedup survival does not depend on any
 // cleanup path a real crash would skip.
@@ -123,12 +123,12 @@ func runDedupCrashSubprocess(t *testing.T, dir string) {
 // of TestSnapshotCompactionDedupSurvives (dedup_test.go's graceful
 // variant, item 78): a real process performs an identified Put, snapshots
 // it (durably publishing KV state and the dedup table together as one
-// opaque blob — internal/raft never sees dedup, only bytes), and is then
+// opaque blob -- internal/raft never sees dedup, only bytes), and is then
 // killed outright via os.Exit with no cleanup. A genuinely fresh Service
 // and Node opened from the same directory in this (parent) process must
 // still recognize a retry of that exact request as a duplicate rather
 // than re-applying it, and must still answer Get with the original
-// value — proving dedup recovery does not implicitly depend on any
+// value -- proving dedup recovery does not implicitly depend on any
 // in-memory or Close()-path state that a real crash would never run.
 func TestSnapshotDedupSurvivesRealCrash(t *testing.T) {
 	dir := t.TempDir()
@@ -173,6 +173,6 @@ func TestSnapshotDedupSurvivesRealCrash(t *testing.T) {
 	outcome := svc.sm.LookupRequest(fixedCrashClientID, 1, kv.Fingerprint(cmd))
 	svc.mu.Unlock()
 	if outcome != kv.AppliedDuplicate {
-		t.Fatalf("LookupRequest after retry = %v, want AppliedDuplicate — dedup table did not survive the crash", outcome)
+		t.Fatalf("LookupRequest after retry = %v, want AppliedDuplicate -- dedup table did not survive the crash", outcome)
 	}
 }

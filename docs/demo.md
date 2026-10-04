@@ -1,7 +1,7 @@
 # Demos
 
 Five scripts under `scripts/` exercise QuorumKV as real OS processes
-over real TCP with real on-disk state — no in-process test harness, no
+over real TCP with real on-disk state -- no in-process test harness, no
 mocked networking. Each is self-contained: it resets and starts its own
 local cluster, runs, and stops the cluster on exit (including on
 failure, via a shell trap).
@@ -25,7 +25,7 @@ store data under `.local/quorumkv/` (gitignored).
 ```
 
 `stop`/`reset` only ever touch PIDs recorded in `.local/quorumkv/pids/`
-by `start-local-cluster.sh` itself — they never search for or signal
+by `start-local-cluster.sh` itself -- they never search for or signal
 unrelated processes.
 
 Once a cluster is running:
@@ -55,8 +55,8 @@ Finds the real elected leader, writes `x=1`, `SIGKILL`s the leader
 process (a genuine crash, not a graceful stop), confirms the surviving
 majority elects a replacement and `x` is still readable, writes `y=2`
 through the new leader, then restarts the crashed node **from its same
-on-disk data directory** and confirms — by polling that node's own
-`status`, not a redirected `get` — that it catches up on both keys.
+on-disk data directory** and confirms -- by polling that node's own
+`status`, not a redirected `get` -- that it catches up on both keys.
 Proves real election, replication, and disk-backed persistence, not
 in-memory survival.
 
@@ -78,8 +78,8 @@ confirms the target's own `status` reports it as leader afterward.
 Writes five keys, snapshots the leader, takes a follower offline,
 writes five more keys and snapshots again (compacting the log past
 where the offline follower left off), then restarts that follower and
-confirms it catches up — necessarily via `InstallSnapshot`, since the
-log entries it's missing no longer exist anywhere in the cluster — and
+confirms it catches up -- necessarily via `InstallSnapshot`, since the
+log entries it's missing no longer exist anywhere in the cluster -- and
 that all ten keys are readable everywhere afterward.
 
 ## Membership demo

@@ -13,7 +13,7 @@ import (
 // leadership-transfer scenario (item 117): A leads a real three-node TCP
 // cluster; TransferLeadership(B) catches B up, freezes new admission,
 // sends an authorized TimeoutNow, and B wins a real (PreVote-bypassing)
-// election — all through genuine Raft RPCs, no manual role assignment.
+// election -- all through genuine Raft RPCs, no manual role assignment.
 // It also folds in item 118 (client state across the handoff): a write
 // committed before the transfer is still readable through the new
 // leader via ReadIndex, and a further write against the new leader
@@ -70,7 +70,7 @@ func TestLeadershipTransferOverRealTCP(t *testing.T) {
 // scenario proving Milestones 7, 10, and 11 compose (items 45/80/120): a
 // brand-new node D, added to the cluster and already behind the leader's
 // compacted log prefix, must be caught up (via real InstallSnapshot, the
-// same replication machinery any far-behind voter uses — no special
+// same replication machinery any far-behind voter uses -- no special
 // transfer-specific data path) before TimeoutNow is ever sent.
 func TestLeadershipTransferToFarBehindSnapshotTarget(t *testing.T) {
 	c := newSnapshottingTCPCluster(t, []NodeID{1, 2, 3})
@@ -123,7 +123,7 @@ func TestLeadershipTransferToFarBehindSnapshotTarget(t *testing.T) {
 
 // TestLeadershipTransferTargetPartitionedFails is the mandatory
 // target-unreachable scenario (item 121): the target never becomes
-// reachable, so TransferLeadership must fail via ctx — the leader
+// reachable, so TransferLeadership must fail via ctx -- the leader
 // remains leader throughout, with no term change and no disruption, and
 // can serve normally once the caller gives up.
 func TestLeadershipTransferTargetPartitionedFails(t *testing.T) {
@@ -137,7 +137,7 @@ func TestLeadershipTransferTargetPartitionedFails(t *testing.T) {
 	originalTerm := a.CurrentTerm()
 
 	c.net.partition(1, 2) // B (the intended target) is unreachable
-	// Give B something to be behind on — an empty log trivially satisfies
+	// Give B something to be behind on -- an empty log trivially satisfies
 	// matchIndex >= LastIndex, which would let the transfer race straight
 	// to TimeoutNow (and fail there instead, for a different, less
 	// interesting reason) rather than genuinely blocking in catch-up.
@@ -164,7 +164,7 @@ func TestLeadershipTransferTargetPartitionedFails(t *testing.T) {
 }
 
 // TestRepeatedLeadershipTransferCycle is item 146: A -> B -> C -> A, with
-// a write between each transfer, proving the cycle is stable — the
+// a write between each transfer, proving the cycle is stable -- the
 // committed KV state, term monotonicity, and single-leader-per-term
 // invariant all hold throughout, with no deadlocks.
 func TestRepeatedLeadershipTransferCycle(t *testing.T) {
@@ -202,7 +202,7 @@ func TestRepeatedLeadershipTransferCycle(t *testing.T) {
 
 	// The final leader's own commitIndex cannot retroactively cover the
 	// earlier terms' entries until it commits something in its own term
-	// (Raft's commit rule — see maybeAdvanceCommitIndexLocked: an
+	// (Raft's commit rule -- see maybeAdvanceCommitIndexLocked: an
 	// older-term entry only becomes committed as a side effect of
 	// committing a later current-term one). One more write forces that.
 	final := c.nodes[1]

@@ -14,7 +14,7 @@ import (
 
 // CommitStore persists commitIndex separately from currentTerm/votedFor
 // (Store) and the Raft log itself. Before Milestone 5, commitIndex was
-// purely volatile — acceptable while nothing replayed committed entries
+// purely volatile -- acceptable while nothing replayed committed entries
 // into an application. Now restart must know which durable log entries
 // are safe to replay, so commitIndex needs its own durable record.
 //
@@ -41,7 +41,7 @@ const commitMetaFileSize = 4 + 1 + 8 + 4
 // ErrCorruptCommitMeta indicates a commit-metadata file exists but failed
 // validation (bad magic, unsupported version, wrong size, or a checksum
 // mismatch). A missing file is a fresh node (commitIndex 0), which is not
-// the same as a corrupt one — corruption is never silently treated as 0,
+// the same as a corrupt one -- corruption is never silently treated as 0,
 // since that could make a node replay less of its committed history than
 // it durably recorded, or (worse, for a future leader) mis-evaluate what
 // is safely committed.

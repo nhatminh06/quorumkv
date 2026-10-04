@@ -1,7 +1,7 @@
 package main
 
 // This file builds and runs the actual quorumkv and qkv binaries as real
-// OS processes over real TCP with real persistent directories — not
+// OS processes over real TCP with real persistent directories -- not
 // internal test helpers, not in-process clusters. This is the strongest
 // possible proof that the executables built in this milestone actually
 // work the way an operator would use them.
@@ -118,7 +118,7 @@ func (np *nodeProcess) output() string {
 	return np.out.String()
 }
 
-// kill sends SIGKILL — simulating a real crash, not a graceful exit.
+// kill sends SIGKILL -- simulating a real crash, not a graceful exit.
 func (np *nodeProcess) kill(t *testing.T) {
 	t.Helper()
 	if np.cmd == nil || np.cmd.Process == nil {
@@ -174,9 +174,9 @@ func runQkv(t *testing.T, qkvPath string, args ...string) (stdout, stderr string
 }
 
 // waitForAnyLeader polls qkv status against each of addrs in turn until
-// SOME node reports role: leader — a real contested election can be won
+// SOME node reports role: leader -- a real contested election can be won
 // by any voter, not necessarily the first address a test happens to
-// list — and fails the test after timeout. Returns that node's address
+// list -- and fails the test after timeout. Returns that node's address
 // and status output.
 func waitForAnyLeader(t *testing.T, qkvPath string, addrs []string, timeout time.Duration) (leaderAddr, status string) {
 	t.Helper()
@@ -198,7 +198,7 @@ func waitForAnyLeader(t *testing.T, qkvPath string, addrs []string, timeout time
 	return "", ""
 }
 
-// freePort asks the OS for an ephemeral port by briefly binding to it —
+// freePort asks the OS for an ephemeral port by briefly binding to it --
 // good enough for tests that immediately hand the port to a subprocess;
 // see startNode's callers for the (small, standard-for-this-kind-of-test)
 // TOCTOU window this leaves.

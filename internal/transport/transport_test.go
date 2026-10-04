@@ -126,7 +126,7 @@ func TestOversizedFrameRejectedWithoutAllocatingPayload(t *testing.T) {
 	header[7] = byte(oversized >> 16)
 	header[8] = byte(oversized >> 8)
 	header[9] = byte(oversized)
-	// Deliberately do not send MaxPayloadSize+1 bytes of payload — a
+	// Deliberately do not send MaxPayloadSize+1 bytes of payload -- a
 	// correct server rejects based on the declared length alone.
 	sendRaw(t, tr.Addr(), header)
 
@@ -291,7 +291,7 @@ func TestCloseCancelsHandlerContext(t *testing.T) {
 
 // TestCloseWaitsForUncooperativeHandler proves Close does not abandon a
 // handler that ignores context cancellation and is not blocked on
-// connection I/O — it waits for the handler to actually return.
+// connection I/O -- it waits for the handler to actually return.
 func TestCloseWaitsForUncooperativeHandler(t *testing.T) {
 	unblock := make(chan struct{})
 	handlerStarted := make(chan struct{})

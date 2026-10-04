@@ -17,9 +17,9 @@ import (
 // TestServiceConcurrencyBackpressureDeterministic is item 55/56: with
 // the admission bound filled to exactly its capacity (by directly
 // occupying every slot, not by racing real concurrent requests), a real
-// client PUT started while the bound is full must not error out — per
+// client PUT started while the bound is full must not error out -- per
 // item 50 the client automatically retries a BUSY response with the
-// same request identity — and must complete successfully as soon as a
+// same request identity -- and must complete successfully as soon as a
 // slot is released, with no restart required.
 func TestServiceConcurrencyBackpressureDeterministic(t *testing.T) {
 	nodes := startCluster(t, 1)
@@ -28,7 +28,7 @@ func TestServiceConcurrencyBackpressureDeterministic(t *testing.T) {
 	n.svc.node.SetObserver(n.svc.Metrics())
 	n.svc.SetMaxConcurrentRequests(1)
 
-	// Occupy the only admission slot directly — deterministic, no timing
+	// Occupy the only admission slot directly -- deterministic, no timing
 	// dependency on how long a real request takes to process.
 	n.svc.admission <- struct{}{}
 
@@ -40,11 +40,11 @@ func TestServiceConcurrencyBackpressureDeterministic(t *testing.T) {
 		putDone <- c.Put(ctx, []byte("x"), []byte("1"))
 	}()
 
-	// The PUT must still be retrying, not having given up, a bit later —
+	// The PUT must still be retrying, not having given up, a bit later --
 	// proving BUSY alone never becomes a terminal client-visible error.
 	select {
 	case err := <-putDone:
-		t.Fatalf("Put returned early (err=%v) while admission was still full — BUSY must be retried, not surfaced", err)
+		t.Fatalf("Put returned early (err=%v) while admission was still full -- BUSY must be retried, not surfaced", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 	var metrics strings.Builder
@@ -73,9 +73,9 @@ func TestServiceConcurrencyBackpressureDeterministic(t *testing.T) {
 // tiny-capacity service with real concurrent requests must never let
 // more than the configured bound run concurrently, must produce at
 // least one BUSY response, and must leave the server fully responsive
-// once the flood subsides — proven by a plain request succeeding
+// once the flood subsides -- proven by a plain request succeeding
 // afterward. Uses real concurrency (not a synchronization barrier)
-// because the property under test — an accurate, race-free semaphore —
+// because the property under test -- an accurate, race-free semaphore --
 // is exactly what a barrier-based test would trivially satisfy without
 // actually exercising the concurrent admit path.
 func TestServiceConcurrencyFloodStaysBounded(t *testing.T) {
@@ -95,7 +95,7 @@ func TestServiceConcurrencyFloodStaysBounded(t *testing.T) {
 	// admission is not exported for direct observation from a real flood,
 	// so this measures via real client outcomes instead: with 300
 	// concurrent GETs launched against a capacity-2 server (deliberately
-	// lopsided — goroutine creation is far cheaper than a real GET's
+	// lopsided -- goroutine creation is far cheaper than a real GET's
 	// ReadIndex/quorum round trip, so this margin is what makes
 	// saturation reliable without any artificial synchronization
 	// barrier), seeing at least one BUSY among them is the observable
@@ -135,7 +135,7 @@ func TestServiceConcurrencyFloodStaysBounded(t *testing.T) {
 // PUT that hits raft.ErrBackpressure at the proposal layer must surface
 // as BUSY over the wire, and internal/client's automatic retry (same
 // ClientID/Sequence, per docs/request-dedup.md) must still complete the
-// write successfully once the queue has room again — never allocating a
+// write successfully once the queue has room again -- never allocating a
 // new sequence for the retry.
 func TestProposalQueueBackpressureViaClientRetry(t *testing.T) {
 	nodes := startCluster(t, 1)
@@ -176,7 +176,7 @@ func TestProposalQueueBackpressureViaClientRetry(t *testing.T) {
 
 // TestBusyResponseDoesNotAdvanceDedupState is item 44: a request the
 // service rejects with BUSY (via the admission bound, before Raft is
-// ever touched) must leave that (ClientID, Sequence) completely unseen —
+// ever touched) must leave that (ClientID, Sequence) completely unseen --
 // a subsequent real attempt with the same identity must succeed as a
 // fresh write, not be rejected as stale/duplicate.
 func TestBusyResponseDoesNotAdvanceDedupState(t *testing.T) {

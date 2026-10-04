@@ -15,7 +15,7 @@ import (
 	"os"
 )
 
-// Exit codes. Kept small and documented rather than a large taxonomy —
+// Exit codes. Kept small and documented rather than a large taxonomy --
 // see docs/operations.md.
 const (
 	exitOK       = 0

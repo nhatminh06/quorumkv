@@ -136,7 +136,7 @@ func TestHandleRequestVoteDifferentCandidateSameTermRejected(t *testing.T) {
 
 // TestHandleRequestVoteCandidateSameTermCompetingRequestRejected proves a
 // node that became Candidate (and so voted for itself) denies a same-term
-// RequestVote from a different candidate — Raft's log-freshness pure
+// RequestVote from a different candidate -- Raft's log-freshness pure
 // comparison is covered independently in request_vote_test.go; this test
 // covers the node-level "already voted for self" path specifically.
 func TestHandleRequestVoteCandidateSameTermCompetingRequestRejected(t *testing.T) {
@@ -146,7 +146,7 @@ func TestHandleRequestVoteCandidateSameTermCompetingRequestRejected(t *testing.T
 	}
 	// startRealElection directly: this test is about real-election
 	// candidate state, not about PreVote (which has its own dedicated
-	// tests — see prevote_test.go/node_prevote_test.go).
+	// tests -- see prevote_test.go/node_prevote_test.go).
 	if err := n.startRealElection(context.Background()); err != nil {
 		t.Fatalf("startRealElection: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestHandleRequestVoteGrantFailsIfPersistenceFails(t *testing.T) {
 		t.Fatalf("HandleRequestVote succeeded despite persistence failure, want error")
 	}
 	if n.VotedFor() != nil {
-		t.Fatalf("VotedFor() = %v, want nil — a vote must never be granted without persisting first", n.VotedFor())
+		t.Fatalf("VotedFor() = %v, want nil -- a vote must never be granted without persisting first", n.VotedFor())
 	}
 	if n.CurrentTerm() != 0 {
 		t.Fatalf("CurrentTerm() = %d, want unchanged 0", n.CurrentTerm())
@@ -229,7 +229,7 @@ func TestStartElectionFailsIfPersistenceFails(t *testing.T) {
 		t.Fatalf("Role() = %v, want unchanged Follower", n.Role())
 	}
 	if n.CurrentTerm() != 0 {
-		t.Fatalf("CurrentTerm() = %d, want unchanged 0 — must not advertise an unpersisted term", n.CurrentTerm())
+		t.Fatalf("CurrentTerm() = %d, want unchanged 0 -- must not advertise an unpersisted term", n.CurrentTerm())
 	}
 }
 

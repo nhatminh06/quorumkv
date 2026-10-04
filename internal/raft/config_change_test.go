@@ -128,7 +128,7 @@ func TestRemoveVoterRejectsRemovingLastVoter(t *testing.T) {
 // concurrency scenario (item ~112): two goroutines call AddVoter/
 // RemoveVoter concurrently on the same leader, and there is no race (run
 // under -race). The invariant actually being protected is mutual
-// exclusion of two OVERLAPPING transitions — changeMembership's guard
+// exclusion of two OVERLAPPING transitions -- changeMembership's guard
 // (n.membership.Mode == ModeJoint) is checked and acted on atomically
 // under n.mu, so a second call can never observe Mode == ModeStable and
 // append its own Joint entry while an earlier Joint is still active.
@@ -139,12 +139,12 @@ func TestRemoveVoterRejectsRemovingLastVoter(t *testing.T) {
 // entire Joint-to-Stable transition can complete before the other
 // goroutine is even scheduled, in which case the second call's own
 // check legitimately sees Mode == ModeStable again and starts its own,
-// independent, equally valid transition — both succeeding. That is two
+// independent, equally valid transition -- both succeeding. That is two
 // sequential administrative operations, not a violated invariant,
 // exactly like two sequential Puts to the same key never being expected
 // to serialize into "first succeeds, second is rejected." Only that
-// combination — both blocked, both erroring some other way, or a
-// timeout (meaning some transition never actually completed) — would
+// combination -- both blocked, both erroring some other way, or a
+// timeout (meaning some transition never actually completed) -- would
 // indicate an actual bug.
 func TestConcurrentMembershipChangesOnlyOneSucceeds(t *testing.T) {
 	net := newFakeNetwork()
@@ -194,10 +194,10 @@ func TestConcurrentMembershipChangesOnlyOneSucceeds(t *testing.T) {
 	}
 	// At least one call must actually succeed (nothing valid explains
 	// zero successes), and every call must reach a definite outcome
-	// (successes+inProgress covers both results — no timeout, no other
+	// (successes+inProgress covers both results -- no timeout, no other
 	// error). Whether the second call became its own independent
-	// success or was rejected as in-progress depends on scheduling — see
-	// the doc comment above — and either is correct.
+	// success or was rejected as in-progress depends on scheduling -- see
+	// the doc comment above -- and either is correct.
 	if successes < 1 || successes+inProgress != len(results) {
 		t.Fatalf("results = %v, want every call to either succeed or observe ErrMembershipChangeInProgress, with at least one success", results)
 	}
@@ -227,7 +227,7 @@ func TestMembershipStatusIsDefensiveCopy(t *testing.T) {
 // end-to-end add scenario: a fresh node (no prior knowledge of the
 // cluster) is added via AddVoter, replicates and applies the cluster's
 // existing history plus the transition's own entries, and ends up a full
-// Stable voter — all before AddVoter returns (it only returns once the
+// Stable voter -- all before AddVoter returns (it only returns once the
 // final Stable entry has committed and applied, not merely appended).
 func TestAddVoterEndToEndNewNodeCatchesUpAndBecomesVoter(t *testing.T) {
 	a, _, _, smA, _, _, net := threeNodeFakeClusterWithApply(t)
@@ -309,7 +309,7 @@ func TestRemoveVoterEndToEndDropsVoterFromTargets(t *testing.T) {
 // TestSelfRemovalLeaderStepsDownAfterCompletion is the mandatory
 // self-removal scenario: a leader can remove itself; the transition
 // proceeds to completion (the leader keeps leading long enough to finish
-// it); once the final Stable entry — which excludes it — commits and
+// it); once the final Stable entry -- which excludes it -- commits and
 // applies, it stops acting as leader, with no higher term required.
 func TestSelfRemovalLeaderStepsDownAfterCompletion(t *testing.T) {
 	a, _, _, _, _, _, _ := threeNodeFakeClusterWithApply(t)
@@ -331,7 +331,7 @@ func TestSelfRemovalLeaderStepsDownAfterCompletion(t *testing.T) {
 
 // TestCreateSnapshotBlockedDuringJointThenAllowedAfter is the mandatory
 // scenario: CreateSnapshot must refuse with ErrMembershipChangeInProgress
-// while a joint transition is active, and succeed once it completes — a
+// while a joint transition is active, and succeed once it completes -- a
 // snapshot can only ever describe a single Stable membership.
 func TestCreateSnapshotBlockedDuringJointThenAllowedAfter(t *testing.T) {
 	net := newFakeNetwork()
@@ -391,7 +391,7 @@ func TestCreateSnapshotBlockedDuringJointThenAllowedAfter(t *testing.T) {
 
 // TestJointWriteCommitRequiresBothMajorities is the mandatory partition
 // proof for write commitment during a Joint transition: reaching a
-// majority of the OLD configuration alone is not sufficient — a write
+// majority of the OLD configuration alone is not sufficient -- a write
 // only commits once a majority of NEW is also reachable. This is a
 // real end-to-end commit proof (real Propose/replication/CommitIndex),
 // complementing the pure Membership.HasQuorum math in membership_test.go.
@@ -411,7 +411,7 @@ func TestJointWriteCommitRequiresBothMajorities(t *testing.T) {
 	activateJointDirectly(t, a, cfg(1, 2, 3), cfg(1, 2, 3, 4))
 
 	// Case 1: only B reachable besides self. old={A,B}=2/2 (majority(ABC)
-	// = 2) is satisfied, but new={A,B}=2/4 (majority(ABCD)=3) is not —
+	// = 2) is satisfied, but new={A,B}=2/4 (majority(ABCD)=3) is not --
 	// the write must NOT commit.
 	index1, _, err := a.Propose([]byte("case1"))
 	if err != nil {
@@ -419,11 +419,11 @@ func TestJointWriteCommitRequiresBothMajorities(t *testing.T) {
 	}
 	time.Sleep(200 * time.Millisecond)
 	if a.CommitIndex() >= index1 {
-		t.Fatalf("CommitIndex() = %d, want < %d — old-majority-alone must not be sufficient during Joint", a.CommitIndex(), index1)
+		t.Fatalf("CommitIndex() = %d, want < %d -- old-majority-alone must not be sufficient during Joint", a.CommitIndex(), index1)
 	}
 
 	// Case 2: also unblock C. old={A,B,C}=3/3 and new={A,B,C}=3/4 are
-	// both satisfied — the write (and everything still pending) must now
+	// both satisfied -- the write (and everything still pending) must now
 	// commit, without D ever having been reachable.
 	net.setBlocked("C", false)
 	if !waitFor(2*time.Second, func() bool { return a.CommitIndex() >= index1 }) {
@@ -441,13 +441,13 @@ func TestJointReadIndexRequiresBothMajorities(t *testing.T) {
 	d.sendPreVote, d.sendTimeoutNow = net.sendPreVote, net.sendTimeoutNow
 	net.register("D", d)
 	net.setBlocked("D", true)
-	// Block C before the Joint entry ever exists — see the identical
+	// Block C before the Joint entry ever exists -- see the identical
 	// comment in TestJointWriteCommitRequiresBothMajorities for why.
 	net.setBlocked("C", true)
 
 	activateJointDirectly(t, a, cfg(1, 2, 3), cfg(1, 2, 3, 4))
 
-	// old={A,B}=2/2 satisfied, new={A,B}=2/4 not — ReadIndex must fail.
+	// old={A,B}=2/2 satisfied, new={A,B}=2/4 not -- ReadIndex must fail.
 	roCtx, roCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	_, err := a.ReadIndex(roCtx)
 	roCancel()
@@ -455,7 +455,7 @@ func TestJointReadIndexRequiresBothMajorities(t *testing.T) {
 		t.Fatalf("ReadIndex succeeded with only old's majority reachable during Joint, want failure")
 	}
 
-	// old={A,B,C}=3/3, new={A,B,C}=3/4 — both satisfied, ReadIndex must
+	// old={A,B,C}=3/3, new={A,B,C}=3/4 -- both satisfied, ReadIndex must
 	// now succeed.
 	net.setBlocked("C", false)
 	roCtx2, roCancel2 := context.WithTimeout(context.Background(), 2*time.Second)
@@ -492,10 +492,10 @@ func activateJointDirectly(t *testing.T, n *Node, oldC, newC Configuration) {
 
 // TestJointElectionRequiresBothMajorities is the mandatory partition
 // proof for leader election during a Joint transition: a candidate must
-// not win with only a majority of OLD — it needs a majority of NEW too.
+// not win with only a majority of OLD -- it needs a majority of NEW too.
 // C and D are kept blocked from before the Joint entry is even appended,
 // so the transition can never auto-complete (new=ABCD needs 3 of 4, and
-// only A+B are ever mutually reachable until this test opens C up) —
+// only A+B are ever mutually reachable until this test opens C up) --
 // otherwise the leader-crash self-healing logic (by design) would race
 // ahead and finish the transition before this test can observe it mid-way.
 func TestJointElectionRequiresBothMajorities(t *testing.T) {
@@ -513,7 +513,7 @@ func TestJointElectionRequiresBothMajorities(t *testing.T) {
 	}
 	// This test is about Joint quorum math for PreVote/election, not
 	// realistic leader-transition mechanics: PreVote's leader-contact
-	// safeguard (a healthy Leader always rejects a hypothetical vote —
+	// safeguard (a healthy Leader always rejects a hypothetical vote --
 	// see docs/raft-election.md) would otherwise make A refuse B's
 	// PreVote unconditionally merely because A is still nominally
 	// Leader, regardless of the quorum math this test wants to exercise.
@@ -524,7 +524,7 @@ func TestJointElectionRequiresBothMajorities(t *testing.T) {
 
 	// Case 1: only A reachable besides self (C, D still blocked). B's
 	// candidacy gets A's vote: old={A,B}=2/2 (majority(ABC)=2) satisfied,
-	// but new={A,B}=2/4 (majority(ABCD)=3) is not — B must not win.
+	// but new={A,B}=2/4 (majority(ABCD)=3) is not -- B must not win.
 	ctx1, cancel1 := context.WithTimeout(context.Background(), time.Second)
 	if err := b.StartElection(ctx1); err != nil {
 		t.Fatalf("StartElection: %v", err)
@@ -535,12 +535,12 @@ func TestJointElectionRequiresBothMajorities(t *testing.T) {
 	}
 
 	// Case 2: also unblock C (D stays blocked). B's candidacy gets A's
-	// and C's votes: old={A,B,C}=3/3 and new={A,B,C}=3/4 — both
+	// and C's votes: old={A,B,C}=3/3 and new={A,B,C}=3/4 -- both
 	// satisfied, B must win, with D never having been reachable.
 	net.setBlocked("C", false)
 	// A's background heartbeat loop may win the race to reach C first
 	// once unblocked, which would make C reject B's immediately-following
-	// PreVote under the leader-contact safeguard — clear it so this test
+	// PreVote under the leader-contact safeguard -- clear it so this test
 	// doesn't depend on that race.
 	cNode.mu.Lock()
 	cNode.lastLeaderContact = time.Time{}

@@ -3,7 +3,7 @@
 `internal/raft` implements persistent Raft term/vote state and
 RequestVote-based leader election. Since Milestone 4 it uses each node's
 real replicated Raft log for vote freshness, and leader heartbeats
-(AppendEntries with no entries) now keep an elected leader stable — see
+(AppendEntries with no entries) now keep an elected leader stable -- see
 [docs/raft-log-replication.md](raft-log-replication.md) for the log,
 AppendEntries, and commit model. "Known limitations" below still applies
 to what this document alone covers.
@@ -20,8 +20,8 @@ votedFor  (nil, or the NodeID voted for in currentTerm)
 Volatile (reset on restart, in `Node`):
 
 ```text
-role       — always starts Follower, loaded term/vote from disk
-votes      — vote tally, valid only while Candidate in the current election
+role       -- always starts Follower, loaded term/vote from disk
+votes      -- vote tally, valid only while Candidate in the current election
 ```
 
 Role is deliberately never persisted.
@@ -54,7 +54,7 @@ complete previous state or the complete new state, never a partial write.
 A missing file means a brand-new node: `Load` returns `currentTerm=0,
 votedFor=nil` with no error. An *existing* file that fails validation
 (bad magic, unsupported version, wrong size, invalid hasVotedFor byte, or
-checksum mismatch) returns `ErrCorruptState` instead — it is never
+checksum mismatch) returns `ErrCorruptState` instead -- it is never
 silently treated as a fresh/zero state, since that could let a node
 violate the vote-once-per-term safety property after partial disk
 corruption.
@@ -74,7 +74,7 @@ term (8B) | candidateID (8B) | lastLogIndex (8B) | lastLogTerm (8B)
 `lastLogIndex`/`lastLogTerm` were added to the RPC ahead of log
 replication so the wire format wouldn't need an incompatible change
 later. Since Milestone 4, both are populated from each node's actual
-`Log` (`LastIndex`/`LastTerm`) rather than a hardcoded `(0, 0)` — a fresh
+`Log` (`LastIndex`/`LastTerm`) rather than a hardcoded `(0, 0)` -- a fresh
 node with an empty log still naturally produces `(0, 0)` via the log's
 own sentinel convention (see docs/raft-log-replication.md), so behavior
 for an empty-log cluster is unchanged.
@@ -91,14 +91,14 @@ term (8B) | voteGranted (1B, 0 or 1)
 
 1. `req.Term < currentTerm` → deny, don't touch persistent state.
 2. `req.Term > currentTerm` → step down first: persist the new term with
-   `votedFor` cleared, become Follower — *before* evaluating the vote.
+   `votedFor` cleared, become Follower -- *before* evaluating the vote.
 3. Grant only if `votedFor` is nil or already equals `req.CandidateID`,
    **and** the candidate's log is at least as up to date as this node's
    (see below). Granting to the same candidate twice in the same term is
    idempotent.
 4. A vote is persisted before the response reports it granted; if
    persisting fails, `HandleRequestVote` returns an error and the
-   response is never sent — this node never claims to have granted a
+   response is never sent -- this node never claims to have granted a
    vote it didn't actually persist.
 
 Log freshness (`LogUpToDate`, a pure function so it's usable once real
@@ -117,7 +117,7 @@ Before ever incrementing `currentTerm`, `Node.StartElection` runs a
 `currentTerm+1`?" that mutates no persistent state on either side. Only
 once that round reaches quorum does the real election (below) begin.
 This is what keeps a node that has been isolated and repeatedly timed
-out from bumping the cluster's term on every attempt — it can never even
+out from bumping the cluster's term on every attempt -- it can never even
 reach the real election without first proving it could win.
 
 `PreVoteRequest`/`PreVoteResponse` mirror `RequestVoteRequest`/
@@ -128,12 +128,12 @@ explicit: the response's `term` is always the responder's *actual*
 current term, never a claim about having entered the prospective one.
 
 `Node.HandlePreVote` rejects (never granting, never touching persistent
-state or `votedFor`, never resetting the election timer — a PreVote
+state or `votedFor`, never resetting the election timer -- a PreVote
 request is not evidence a valid leader exists) if:
 
-- `prospectiveTerm <= currentTerm` — wouldn't advance anything.
+- `prospectiveTerm <= currentTerm` -- wouldn't advance anything.
 - **The responder has accepted valid AppendEntries contact from a leader
-  within the last `minElectionTimeout`** — the core
+  within the last `minElectionTimeout`** -- the core
   disruption-prevention rule (`hasRecentLeaderContactLocked`,
   deliberately reusing the same constant that already governs the
   shortest legitimate election timeout rather than a second
@@ -142,20 +142,20 @@ request is not evidence a valid leader exists) if:
   AppendEntries (only sends them), so without this a healthy,
   actively-heartbeating leader would have no protection at all and would
   grant a vote to any challenger presenting a merely
-  technically-higher prospective term — exactly the scenario this
+  technically-higher prospective term -- exactly the scenario this
   safeguard exists to prevent.
 - The candidate, or the responder itself, is not an effective voter in
-  the responder's own membership (see docs/membership.md) — same
+  the responder's own membership (see docs/membership.md) -- same
   `Membership.IsVoter`/`HasQuorum` abstraction RequestVote/commit/
   ReadIndex already use, including dual-majority quorum during a Joint
   transition. There is no separate union-majority shortcut for PreVote.
 - The candidate's log is not at least as up to date (`LogUpToDate`, the
-  same shared helper RequestVote uses — no duplicated, subtly different
+  same shared helper RequestVote uses -- no duplicated, subtly different
   freshness logic).
 
 On the candidate side, `applyPreVoteResponse` still processes a **higher
 actual term** in a response as real evidence (persist, clear `votedFor`,
-step down) exactly like every other higher-term path — PreVote never
+step down) exactly like every other higher-term path -- PreVote never
 suppresses genuine higher-term information, it only refuses to manufacture
 term increases from responses that carry none. The round's vote tally is
 a plain local variable, not `Node` state, so a second concurrent
@@ -164,7 +164,7 @@ response from an abandoned round has nothing shared to corrupt.
 
 A leadership-transfer target's election (see
 [docs/leadership-transfer.md](leadership-transfer.md)) deliberately
-bypasses PreVote entirely via an authorized `TimeoutNow` — the current
+bypasses PreVote entirely via an authorized `TimeoutNow` -- the current
 leader has already decided to hand off, so there is no disruption risk
 left for PreVote to guard against. Every other election, including one
 started by `Node.Run`'s ordinary timer, always goes through PreVote
@@ -208,7 +208,7 @@ and re-acquires the lock only to validate and apply each response.
 
 Production election timeout is randomized in the 150–300ms range
 (`randomElectionTimeout`), so followers don't all time out together. Tests
-never depend on that real range — `Node.timeoutFunc` is an injectable
+never depend on that real range -- `Node.timeoutFunc` is an injectable
 `func() time.Duration`, overridden with short fixed values for
 deterministic/fast tests, and most election tests call `StartElection`
 directly rather than going through the timer at all.
@@ -218,7 +218,7 @@ node isn't already Leader, it starts an election. The timer restarts
 whenever the timeout fires, an election attempt finishes, or `resetTimer`
 is called. Since Milestone 4, `resetTimer` fires on two signals: granting
 a vote (`HandleRequestVote`), and any valid current-term (or higher-term)
-AppendEntries contact from a leader (`HandleAppendEntries`) — including a
+AppendEntries contact from a leader (`HandleAppendEntries`) -- including a
 heartbeat. That second signal is now the primary mechanism keeping a
 healthy cluster's followers from starting unnecessary elections; see
 docs/raft-log-replication.md for the heartbeat interval and exact reset
@@ -227,9 +227,9 @@ rules.
 ## Known limitations
 
 - No automatic leader balancing, ranking, or preferred-leader
-  configuration — [docs/leadership-transfer.md](leadership-transfer.md)
+  configuration -- [docs/leadership-transfer.md](leadership-transfer.md)
   is an explicit, caller-specified, best-effort handoff, never automatic.
-- `internal/kv` and `internal/wal` are untouched — the Milestone 1 WAL is
+- `internal/kv` and `internal/wal` are untouched -- the Milestone 1 WAL is
   a state-machine command log, not the Raft log; they are separate
   concerns by design. See docs/raft-log-replication.md for further
   limitations specific to log replication and commit.

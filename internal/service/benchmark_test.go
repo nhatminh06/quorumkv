@@ -16,13 +16,13 @@ import (
 
 // This file is the M13 reproducible benchmark harness: real 3-node
 // clusters over real loopback TCP (reusing startCluster/electLeader from
-// service_test.go — no separate fake/in-memory cluster implementation),
+// service_test.go -- no separate fake/in-memory cluster implementation),
 // the real client protocol, and the real durable log path (no failpoint,
-// no skipped fsync — see docs/performance.md's "no unsafe fast mode").
+// no skipped fsync -- see docs/performance.md's "no unsafe fast mode").
 // These are Go benchmarks (Benchmark...), never run by `go test ./...`
 // (see -run '^$' in the documented commands in docs/performance.md).
 
-// latencies is a benchmark-local, goroutine-safe latency collector — not
+// latencies is a benchmark-local, goroutine-safe latency collector -- not
 // a monitoring subsystem, just enough to report p50/p95/p99 for one
 // benchmark run.
 type latencies struct {
@@ -71,7 +71,7 @@ func valueOfSize(n int) []byte {
 
 // benchCluster brings up a real n-node cluster and elects nodes[0]
 // leader, reusing exactly the same helpers the correctness test suite
-// uses (see service_test.go) — no separate benchmark-only cluster
+// uses (see service_test.go) -- no separate benchmark-only cluster
 // implementation (item 6).
 func benchCluster(b *testing.B, n int) ([]*testNode, *testNode) {
 	b.Helper()
@@ -107,7 +107,7 @@ func BenchmarkThreeNodeSequentialPut(b *testing.B) {
 }
 
 // runConcurrent drives exactly `concurrency` goroutines, each with its
-// own Client (own ClientID — item 11), dividing b.N total operations
+// own Client (own ClientID -- item 11), dividing b.N total operations
 // evenly across them and calling op(ctx, client, opIndex) for each. This
 // is deliberately manual (not b.RunParallel, whose parallelism scales
 // with GOMAXPROCS rather than an exact requested count) so "32 clients"
@@ -220,7 +220,7 @@ func BenchmarkThreeNodeReadUnderWrite(b *testing.B) {
 // --- Workload E: follower falls behind, heal, measure catch-up ---
 
 // BenchmarkFollowerCatchUp is not a throughput/latency micro-benchmark
-// like A-D — it reports one measurement per b.N iteration (rebuilding
+// like A-D -- it reports one measurement per b.N iteration (rebuilding
 // the whole scenario each time), following the standard go test bench
 // convention. See docs/performance.md for how this is actually invoked
 // (typically -benchtime=1x, since each iteration is itself an entire
@@ -264,7 +264,7 @@ func benchmarkFollowerCatchUp(b *testing.B, laggingEntries int, trigger bool) {
 		lastIndex := leader.svc.node.LastLogIndex()
 
 		// Heal: reopen the follower's transport on a fresh port serving
-		// the SAME underlying node/service (its log is untouched — only
+		// the SAME underlying node/service (its log is untouched -- only
 		// its listener was closed), and tell the leader its new address.
 		newTr, err := transport.Listen("127.0.0.1:0", follower.svc.Handler())
 		if err != nil {

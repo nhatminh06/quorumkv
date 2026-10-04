@@ -38,7 +38,7 @@ type faultLink struct{ from, to raft.NodeID }
 // faultNet is a directional fault controller for real-TCP service-level
 // tests: it sits above transport.Send (per Milestone 6's design) and
 // decides whether a Raft RPC a node is about to send is allowed through.
-// Anything allowed still travels over a real socket via transport.Send —
+// Anything allowed still travels over a real socket via transport.Send --
 // this only ever says yes/no, never fakes the network itself.
 type faultNet struct {
 	mu       sync.Mutex
@@ -223,13 +223,13 @@ func TestClientReceivesNoFalseOKWhenLeaderCrashesMidWrite(t *testing.T) {
 			t.Fatalf("client Put returned success despite the leader crashing before commit")
 		}
 	case <-time.After(3 * time.Second):
-		t.Fatalf("client Put did not return within a bounded time — goroutine/waiter leak")
+		t.Fatalf("client Put did not return within a bounded time -- goroutine/waiter leak")
 	}
 }
 
 // TestSurvivingMajorityRecoversValueAfterClientOK is item 59: once a
 // client has received OK for a write, immediately stopping the leader
-// must not lose it — a newly elected leader among the survivors still
+// must not lose it -- a newly elected leader among the survivors still
 // has it.
 func TestSurvivingMajorityRecoversValueAfterClientOK(t *testing.T) {
 	nodes := startCluster(t, 3)
@@ -255,10 +255,10 @@ func TestSurvivingMajorityRecoversValueAfterClientOK(t *testing.T) {
 }
 
 // TestClientRedirectsToNewLeaderAfterFailover is item 36 (updated for
-// Milestone 9's safe-retry semantics — see item 55): a client seeded only
+// Milestone 9's safe-retry semantics -- see item 55): a client seeded only
 // with a now-dead former leader's address can no longer succeed on its
 // own (it has no other address to fall back to, so it exhausts its ctx
-// retrying — proving it does NOT silently give up after one transport
+// retrying -- proving it does NOT silently give up after one transport
 // failure, item 97's mandate, rather than the old immediate-failure
 // behavior); a fresh client seeded with a surviving node succeeds
 // normally.
@@ -280,7 +280,7 @@ func TestClientRedirectsToNewLeaderAfterFailover(t *testing.T) {
 
 	// The client is only seeded with A, which is gone: it retries (per
 	// Milestone 9) but has nowhere else to go, so it must still fail
-	// once its own bounded ctx expires — not hang forever, not succeed.
+	// once its own bounded ctx expires -- not hang forever, not succeed.
 	deadCtx, deadCancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer deadCancel()
 	if err := c.Put(deadCtx, []byte("y"), []byte("2")); err == nil {

@@ -25,7 +25,7 @@ func TestMembershipChangeOverRealTCP(t *testing.T) {
 	}
 
 	// Commit several entries, then snapshot+compact past them, so a
-	// brand-new joiner cannot catch up via AppendEntries alone — it must
+	// brand-new joiner cannot catch up via AppendEntries alone -- it must
 	// go through real InstallSnapshot.
 	var last LogIndex
 	for _, cmd := range []string{"one", "two", "three"} {
